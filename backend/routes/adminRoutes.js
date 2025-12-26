@@ -11,6 +11,9 @@ const categoryController = require('../controllers/categoryController');
 const orderController = require('../controllers/orderController');
 const paymentController = require('../controllers/paymentController');
 
+// Utils
+const asyncHandler = require('../utils/asyncHandler');
+
 // Middleware
 const { protect } = require('../middleware/auth');
 const { adminOnly } = require('../middleware/role');
@@ -28,13 +31,18 @@ router.use(protect);
 router.use(adminOnly);
 
 // ==================== DASHBOARD ====================
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', asyncHandler(async (req, res) => {
     const { Order, User, Product } = require('../models');
 
-    const [orderStats, userCount, productCount] = await Promise.all([
+    const [orderStats, userCount, productCount, recentOrders] = await Promise.all([
         Order.getDashboardStats(),
         User.countDocuments({ isActive: true }),
         Product.countDocuments({ isActive: true }),
+        Order.find()
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .populate('user', 'name email')
+            .select('orderNumber status pricing createdAt user'),
     ]);
 
     res.status(200).json({
@@ -43,12 +51,13 @@ router.get('/dashboard', async (req, res) => {
             ...orderStats,
             totalUsers: userCount,
             totalProducts: productCount,
+            recentOrders,
         },
     });
-});
+}));
 
 // ==================== PRODUCTS ====================
-router.get('/products', paginationValidator, async (req, res) => {
+router.get('/products', paginationValidator, asyncHandler(async (req, res) => {
     // Get all products including inactive for admin
     const { Product } = require('../models');
     const { paginate } = require('../utils/helpers');
@@ -69,7 +78,7 @@ router.get('/products', paginationValidator, async (req, res) => {
         pagination,
         data: { products },
     });
-});
+}));
 
 router.post('/products', createProductValidator, productController.createProduct);
 router.put('/products/:id', mongoIdValidator('id'), updateProductValidator, productController.updateProduct);
@@ -81,7 +90,7 @@ router.delete('/products/:id/images/:imageId', productController.deleteImage);
 router.post('/categories', createCategoryValidator, categoryController.createCategory);
 router.put('/categories/:id', mongoIdValidator('id'), categoryController.updateCategory);
 router.delete('/categories/:id', mongoIdValidator('id'), categoryController.deleteCategory);
-router.post('/categories/:id/image', mongoIdValidator('id'), uploadCategoryImage.single('image'), async (req, res) => {
+router.post('/categories/:id/image', mongoIdValidator('id'), uploadCategoryImage.single('image'), asyncHandler(async (req, res) => {
     const { Category } = require('../models');
     const category = await Category.findById(req.params.id);
 
@@ -100,7 +109,7 @@ router.post('/categories/:id/image', mongoIdValidator('id'), uploadCategoryImage
         message: 'Category image uploaded',
         data: { category },
     });
-});
+}));
 
 // ==================== ORDERS ====================
 router.get('/orders', paginationValidator, orderController.getAllOrders);
@@ -108,7 +117,7 @@ router.get('/orders/:id', mongoIdValidator('id'), orderController.getOrder);
 router.put('/orders/:id/status', mongoIdValidator('id'), orderController.updateOrderStatus);
 
 // ==================== USERS ====================
-router.get('/users', paginationValidator, async (req, res) => {
+router.get('/users', paginationValidator, asyncHandler(async (req, res) => {
     const { User } = require('../models');
     const { paginate } = require('../utils/helpers');
 
@@ -131,9 +140,9 @@ router.get('/users', paginationValidator, async (req, res) => {
         pagination,
         data: { users },
     });
-});
+}));
 
-router.put('/users/:id/status', mongoIdValidator('id'), async (req, res) => {
+router.put('/users/:id/status', mongoIdValidator('id'), asyncHandler(async (req, res) => {
     const { User } = require('../models');
     const { isActive } = req.body;
 
@@ -152,9 +161,9 @@ router.put('/users/:id/status', mongoIdValidator('id'), async (req, res) => {
         message: `User ${isActive ? 'activated' : 'deactivated'}`,
         data: { user },
     });
-});
+}));
 
-router.put('/users/:id/role', mongoIdValidator('id'), async (req, res) => {
+router.put('/users/:id/role', mongoIdValidator('id'), asyncHandler(async (req, res) => {
     const { User } = require('../models');
     const { role } = req.body;
 
@@ -177,7 +186,7 @@ router.put('/users/:id/role', mongoIdValidator('id'), async (req, res) => {
         message: `User role updated to ${role}`,
         data: { user },
     });
-});
+}));
 
 // ==================== PAYMENTS ====================
 router.post('/payments/cod-collected', paymentController.markCODCollected);

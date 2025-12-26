@@ -7,3 +7,5 @@ export { authAPI } from './auth';
 export { productsAPI, categoriesAPI } from './products';
 export { cartAPI } from './cart';
 export { ordersAPI, paymentsAPI } from './orders';
+export { adminAPI } from './admin';
+

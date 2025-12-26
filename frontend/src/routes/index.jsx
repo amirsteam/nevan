@@ -31,12 +31,10 @@ import {
 // Admin Pages
 import AdminLayout from '../pages/admin/AdminLayout';
 import AdminDashboard from '../pages/admin/Dashboard';
-import {
-    Products as AdminProducts,
-    Categories as AdminCategories,
-    Orders as AdminOrders,
-    Users as AdminUsers,
-} from '../pages/admin/placeholders';
+import AdminProducts from '../pages/admin/Products';
+import AdminCategories from '../pages/admin/Categories';
+import AdminOrders from '../pages/admin/Orders';
+import AdminUsers from '../pages/admin/Users';
 
 const router = createBrowserRouter([
     {
