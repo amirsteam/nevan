@@ -186,8 +186,122 @@ const run = async () => {
                     createdAt: new Date(),
                     updatedAt: new Date(),
                 },
+                {
+                    name: 'Handmade Baby Sweater',
+                    slug: 'handmade-baby-sweater',
+                    description: 'Soft, warm, and comfortable handmade wool sweater for babies.',
+                    price: 1200,
+                    comparePrice: 1500,
+                    category: catMap['Felt Products'],
+                    stock: 50,
+                    sku: 'SWT-001',
+                    isFeatured: true,
+                    isActive: true,
+                    images: [
+                        { url: 'https://images.unsplash.com/photo-1519238263496-6361937a42d8?w=600', isPrimary: true }, // Blue/Main
+                        { url: 'https://images.unsplash.com/photo-1515488042361-25f4682f087e?w=600', isPrimary: false }, // Red
+                        { url: 'https://images.unsplash.com/photo-1519457431-44ccd64a579b?w=600', isPrimary: false }  // Detail
+                    ],
+                    variants: [
+                        {
+                            name: 'Size',
+                            options: [
+                                { value: 'Small Size(0–1 yrs)', priceModifier: 0, stock: 10 },
+                                { value: 'Medium Size( 1–4 yrs)', priceModifier: 200, stock: 10 },
+                                { value: 'Large Size (4–6 yrs)', priceModifier: 400, stock: 10 },
+                                { value: 'XL Size (6–8 yrs)', priceModifier: 600, stock: 10 },
+                                { value: 'XXL Size (8-10 yrs)', priceModifier: 800, stock: 10 }
+                            ]
+                        },
+                        {
+                            name: 'Color',
+                            options: [
+                                { value: 'Blue', priceModifier: 0, stock: 25, image: 'https://images.unsplash.com/photo-1519238263496-6361937a42d8?w=600' },
+                                { value: 'Red', priceModifier: 0, stock: 25, image: 'https://images.unsplash.com/photo-1515488042361-25f4682f087e?w=600' }
+                            ]
+                        }
+                    ],
+                    ratings: { average: 4.5, count: 12 },
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                {
+                    name: 'Kids Woolen Cap',
+                    slug: 'kids-woolen-cap',
+                    description: 'Warm and cozy handknit woolen cap for kids. Perfect for Nepal winters.',
+                    price: 450,
+                    comparePrice: 600,
+                    category: catMap['Felt Products'],
+                    stock: 60,
+                    sku: 'CAP-001',
+                    isFeatured: true,
+                    isActive: true,
+                    images: [
+                        { url: 'https://images.unsplash.com/photo-1576871337622-98d48d1cf531?w=600', isPrimary: true },
+                        { url: 'https://images.unsplash.com/photo-1529958030586-3aae4ca485ff?w=600', isPrimary: false },
+                    ],
+                    variants: [
+                        {
+                            name: 'Size',
+                            options: [
+                                { value: 'Small Size(0–1 yrs)', priceModifier: 0, stock: 15 },
+                                { value: 'Medium Size( 1–4 yrs)', priceModifier: 50, stock: 15 },
+                                { value: 'Large Size (4–6 yrs)', priceModifier: 100, stock: 15 },
+                                { value: 'XL Size (6–8 yrs)', priceModifier: 150, stock: 15 },
+                            ]
+                        },
+                        {
+                            name: 'Color',
+                            options: [
+                                { value: 'Rainbow', priceModifier: 0, stock: 30, image: 'https://images.unsplash.com/photo-1576871337622-98d48d1cf531?w=600' },
+                                { value: 'Navy', priceModifier: 0, stock: 30, image: 'https://images.unsplash.com/photo-1529958030586-3aae4ca485ff?w=600' },
+                            ]
+                        }
+                    ],
+                    ratings: { average: 4.8, count: 8 },
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
+                {
+                    name: 'Traditional Nepali Vest',
+                    slug: 'traditional-nepali-vest',
+                    description: 'Beautiful handcrafted Nepali vest with traditional embroidery patterns.',
+                    price: 2200,
+                    comparePrice: 2800,
+                    category: catMap['Hemp Products'],
+                    stock: 40,
+                    sku: 'VST-001',
+                    isFeatured: true,
+                    isActive: true,
+                    images: [
+                        { url: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600', isPrimary: true },
+                        { url: 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600', isPrimary: false },
+                    ],
+                    variants: [
+                        {
+                            name: 'Size',
+                            options: [
+                                { value: 'Small Size(0–1 yrs)', priceModifier: 0, stock: 10 },
+                                { value: 'Medium Size( 1–4 yrs)', priceModifier: 300, stock: 10 },
+                                { value: 'Large Size (4–6 yrs)', priceModifier: 500, stock: 10 },
+                                { value: 'XL Size (6–8 yrs)', priceModifier: 700, stock: 5 },
+                                { value: 'XXL Size (8-10 yrs)', priceModifier: 900, stock: 5 },
+                            ]
+                        },
+                        {
+                            name: 'Color',
+                            options: [
+                                { value: 'Maroon', priceModifier: 0, stock: 20, image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=600' },
+                                { value: 'Brown', priceModifier: 100, stock: 20, image: 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600' },
+                            ]
+                        }
+                    ],
+                    ratings: { average: 4.2, count: 5 },
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                },
             ]);
-            console.log('   Created 6 products');
+            console.log('   Created 9 products');
 
             console.log('\n✨ Data imported successfully!\n');
             console.log('🔐 Admin: amir@svi.edu.np / Bivan@2036');

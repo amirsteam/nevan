@@ -34,30 +34,40 @@ const Home = () => {
     return (
         <div>
             {/* Hero Section */}
-            <section className="relative bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-primary-dark)] text-white overflow-hidden">
-                <div className="absolute inset-0 opacity-10">
-                    <div className="absolute inset-0" style={{
-                        backgroundImage: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.4"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-                    }} />
+            {/* Hero Section */}
+            <section className="relative h-[600px] flex items-center overflow-hidden bg-[var(--color-primary-dark)] text-white">
+                {/* Dynamic Background Image */}
+                <div className="absolute inset-0 z-0">
+                    <div className={`absolute inset-0 bg-black/50 z-10 ${loading ? 'opacity-100' : 'opacity-60'}`} />
+                    {featuredProducts.length > 0 && (
+                        <img
+                            src={featuredProducts[0]?.images?.[0]?.url || '/placeholder.jpg'}
+                            alt="Featured Handicraft"
+                            className="w-full h-full object-cover animate-slow-zoom opacity-80"
+                        />
+                    )}
                 </div>
 
-                <div className="container-app py-20 md:py-32 relative z-10">
-                    <div className="max-w-2xl">
-                        <span className="inline-block px-4 py-1 bg-white/20 rounded-full text-sm mb-6">
+                <div className="container-app relative z-20">
+                    <div className="max-w-2xl animate-slideUp">
+                        <span className="inline-block px-4 py-1 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full text-sm mb-6 font-medium tracking-wide">
                             ✨ Handcrafted in Nepal
                         </span>
-                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight drop-shadow-lg">
                             Authentic Nepali Handicrafts
                         </h1>
-                        <p className="text-lg md:text-xl text-white/80 mb-8">
+                        <p className="text-lg md:text-xl text-white/90 mb-8 leading-relaxed max-w-xl drop-shadow-md">
                             Discover the beauty of traditional Nepali craftsmanship. Each piece tells a story of heritage, skill, and dedication.
                         </p>
                         <div className="flex flex-wrap gap-4">
-                            <Link to="/products" className="btn bg-white text-[var(--color-primary)] hover:bg-white/90">
-                                Shop Now
-                                <ArrowRight className="w-4 h-4" />
+                            <Link 
+                                to={featuredProducts.length > 0 ? `/products/${featuredProducts[0].slug}` : "/products"} 
+                                className="btn bg-white text-[var(--color-primary)] hover:bg-gray-100 border-none px-8 py-3 text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all"
+                            >
+                                Shop Featured
+                                <ArrowRight className="w-5 h-5" />
                             </Link>
-                            <Link to="/categories" className="btn border border-white/30 hover:bg-white/10">
+                            <Link to="/categories" className="btn bg-transparent border-2 border-white text-white hover:bg-white hover:text-[var(--color-primary)] px-8 py-3 text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all">
                                 Explore Categories
                             </Link>
                         </div>

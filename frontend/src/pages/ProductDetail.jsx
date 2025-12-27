@@ -37,21 +37,31 @@ const ProductDetail = () => {
     const [quantity, setQuantity] = useState(1);
     const [selectedVariants, setSelectedVariants] = useState({});
 
+    // Initialize logic
     useEffect(() => {
         const fetchProduct = async () => {
             setLoading(true);
             try {
                 const response = await productsAPI.getProduct(slug);
-                setProduct(response.data.product);
+                const fetchedProduct = response.data.product;
+                setProduct(fetchedProduct);
 
-                // Initialize variant selections
+                // Initialize variant selections - single select for ALL
                 const initialVariants = {};
-                response.data.product.variants?.forEach((variant) => {
+                fetchedProduct.variants?.forEach((variant) => {
                     if (variant.options.length > 0) {
-                        initialVariants[variant.name] = variant.options[0].value;
+                        initialVariants[variant.name] = variant.options[0];
                     }
                 });
                 setSelectedVariants(initialVariants);
+                
+                // Set initial image from color variant if it has one
+                const colorVariant = fetchedProduct.variants?.find(v => v.name.toLowerCase() === 'color');
+                if (colorVariant?.options[0]?.image) {
+                    const imgIndex = fetchedProduct.images.findIndex(img => img.url === colorVariant.options[0].image);
+                    if (imgIndex !== -1) setSelectedImage(imgIndex);
+                }
+
             } catch (error) {
                 console.error('Failed to fetch product:', error);
             } finally {
@@ -61,11 +71,20 @@ const ProductDetail = () => {
         fetchProduct();
     }, [slug]);
 
-    const handleVariantChange = (variantName, optionValue) => {
+    // Single-select variant change for ALL variants
+    const handleVariantChange = (variantName, option) => {
         setSelectedVariants((prev) => ({
             ...prev,
-            [variantName]: optionValue,
+            [variantName]: option,
         }));
+
+        // Switch main image if this option has an image (for colors)
+        if (option.image) {
+            const imgIndex = product.images.findIndex(img => img.url === option.image);
+            if (imgIndex !== -1) {
+                setSelectedImage(imgIndex);
+            }
+        }
     };
 
     const handleAddToCart = async () => {
@@ -74,9 +93,10 @@ const ProductDetail = () => {
             return;
         }
 
-        const variantsToAdd = Object.entries(selectedVariants).map(([name, value]) => ({
+        // Build variants array for cart
+        const variantsToAdd = Object.entries(selectedVariants).map(([name, option]) => ({
             variantName: name,
-            optionValue: value,
+            optionValue: option.value,
         }));
 
         try {
@@ -87,6 +107,7 @@ const ProductDetail = () => {
             })).unwrap();
             toast.success('Added to cart!');
         } catch (error) {
+            console.error(error);
             toast.error(error || 'Failed to add to cart');
         }
     };
@@ -98,9 +119,9 @@ const ProductDetail = () => {
             </div>
         );
     }
-
-    if (!product) {
-        return (
+    
+    // ... render check existing ...
+    if (!product) { /* ... same ... */ return (
             <div className="container-app py-20 text-center">
                 <h1 className="text-2xl font-bold mb-4">Product Not Found</h1>
                 <Link to="/products" className="btn btn-primary">
@@ -110,7 +131,18 @@ const ProductDetail = () => {
         );
     }
 
-    const discount = calculateDiscount(product.comparePrice, product.price);
+    const calculateTotalPrice = () => {
+        const basePrice = product.price;
+        // Sum all selected variant modifiers
+        const modifiers = Object.values(selectedVariants).reduce(
+            (sum, opt) => sum + (opt?.priceModifier || 0),
+            0
+        );
+        return basePrice + modifiers;
+    };
+
+    const currentPrice = calculateTotalPrice();
+    const discount = calculateDiscount(product.comparePrice, currentPrice);
 
     return (
         <div className="container-app py-8">
@@ -206,9 +238,9 @@ const ProductDetail = () => {
                     {/* Price */}
                     <div className="flex items-baseline gap-3">
                         <span className="text-3xl font-bold text-[var(--color-primary)]">
-                            {formatPrice(product.price)}
+                            {formatPrice(currentPrice)}
                         </span>
-                        {product.comparePrice > product.price && (
+                        {product.comparePrice > currentPrice && (
                             <span className="text-xl text-[var(--color-text-muted)] line-through">
                                 {formatPrice(product.comparePrice)}
                             </span>
@@ -222,24 +254,96 @@ const ProductDetail = () => {
                     {product.variants?.map((variant) => (
                         <div key={variant._id}>
                             <h3 className="font-medium mb-2">{variant.name}</h3>
-                            <div className="flex flex-wrap gap-2">
-                                {variant.options.map((option) => (
-                                    <button
-                                        key={option._id}
-                                        onClick={() => handleVariantChange(variant.name, option.value)}
-                                        disabled={option.stock === 0}
-                                        className={`px-4 py-2 rounded-lg border transition-colors ${selectedVariants[variant.name] === option.value
-                                                ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
-                                                : option.stock === 0
-                                                    ? 'border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text-muted)] cursor-not-allowed'
-                                                    : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
-                                            }`}
-                                    >
-                                        {option.value}
-                                        {option.priceModifier > 0 && ` (+${formatPrice(option.priceModifier)})`}
-                                    </button>
-                                ))}
-                            </div>
+                            
+                            {/* Render based on variant type */}
+                            {variant.name.toLowerCase() === 'size' ? (
+                                // BUTTON SWATCHES FOR SIZE
+                                <div className="flex flex-wrap gap-2">
+                                    {variant.options.map((option) => {
+                                        const isSelected = selectedVariants[variant.name]?._id === option._id;
+                                        return (
+                                            <button
+                                                key={option._id}
+                                                type="button"
+                                                onClick={() => handleVariantChange(variant.name, option)}
+                                                disabled={option.stock === 0}
+                                                className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all
+                                                    ${isSelected
+                                                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
+                                                        : option.stock === 0
+                                                            ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                            : 'border-[var(--color-border)] hover:border-[var(--color-primary)] bg-white'
+                                                    }
+                                                `}
+                                            >
+                                                {option.value}
+                                                {option.priceModifier > 0 && (
+                                                    <span className="ml-1 text-xs opacity-75">
+                                                        (+{formatPrice(option.priceModifier)})
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : variant.name.toLowerCase() === 'color' ? (
+                                // SWATCHES FOR COLOR
+                                <div className="flex flex-wrap gap-3">
+                                    {variant.options.map((option) => (
+                                        <button
+                                            key={option._id}
+                                            onClick={() => handleVariantChange(variant.name, option)}
+                                            disabled={option.stock === 0}
+                                            title={`${option.value}${option.priceModifier > 0 ? ` (+${formatPrice(option.priceModifier)})` : ''}`}
+                                            className={`w-10 h-10 rounded-full border-2 transition-all relative
+                                                ${selectedVariants[variant.name]?.value === option.value
+                                                    ? 'border-[var(--color-primary)] scale-110 ring-2 ring-[var(--color-primary)] ring-offset-2'
+                                                    : 'border-gray-200 hover:border-gray-300'
+                                                }
+                                                ${option.stock === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+                                            `}
+                                            style={
+                                                option.image 
+                                                ? { 
+                                                    backgroundImage: `url(${option.image})`,
+                                                    backgroundSize: 'cover',
+                                                    backgroundPosition: 'center',
+                                                    backgroundColor: option.value.toLowerCase() // fallback
+                                                  }
+                                                : { backgroundColor: option.value.toLowerCase() }
+                                            }
+                                        >
+                                            {/* Fallback for invalid colors or just purely visual consistency */}
+                                            <span className="sr-only">{option.value}</span>
+                                            {option.stock === 0 && (
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <div className="w-full h-0.5 bg-gray-400 rotate-45"></div>
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                // STANDARD BUTTONS FOR OTHER VARIANTS
+                                <div className="flex flex-wrap gap-2">
+                                    {variant.options.map((option) => (
+                                        <button
+                                            key={option._id}
+                                            onClick={() => handleVariantChange(variant.name, option)}
+                                            disabled={option.stock === 0}
+                                            className={`px-4 py-2 rounded-lg border transition-colors ${selectedVariants[variant.name]?.value === option.value
+                                                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
+                                                    : option.stock === 0
+                                                        ? 'border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text-muted)] cursor-not-allowed'
+                                                        : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
+                                                }`}
+                                        >
+                                            {option.value}
+                                            {option.priceModifier > 0 && ` (+${formatPrice(option.priceModifier)})`}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))}
 

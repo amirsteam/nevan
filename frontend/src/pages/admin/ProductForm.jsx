@@ -27,10 +27,260 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
         metaDescription: '',
     });
 
+    // Size options preset
+    const SIZE_OPTIONS = [
+        'Small Size(0–1 yrs)',
+        'Medium Size( 1–4 yrs)',
+        'Large Size (4–6 yrs)',
+        'XL Size (6–8 yrs)',
+        'XXL Size (8-10 yrs)',
+    ];
+
     // Variants state
+    const [hasVariants, setHasVariants] = useState(false);
     const [variants, setVariants] = useState([]);
 
-    // Images state
+    // ... (rest of simple states)
+
+    // Initialize form with product data
+    useEffect(() => {
+        if (product) {
+            // ... (existing formData init)
+            setFormData({
+                name: product.name || '',
+                description: product.description || '',
+                shortDescription: product.shortDescription || '',
+                price: product.price || '',
+                comparePrice: product.comparePrice || '',
+                category: product.category?._id || product.category || '',
+                stock: product.stock || '',
+                sku: product.sku || '',
+                isFeatured: product.isFeatured || false,
+                isActive: product.isActive !== false,
+                metaTitle: product.metaTitle || '',
+                metaDescription: product.metaDescription || '',
+            });
+            
+            if (product.variants && product.variants.length > 0) {
+                setHasVariants(true);
+                setVariants(product.variants);
+            } else {
+                setHasVariants(false);
+                setVariants([]);
+            }
+            
+            setExistingImages(product.images || []);
+        }
+    }, [product]);
+
+    // ... (existing handlers)
+
+    // Toggle Variants
+    const handleHasVariantsChange = (checked) => {
+        setHasVariants(checked);
+        if (checked && variants.length === 0) {
+            // Add default Size variant if checking
+            handleAddVariant();
+        } else if (!checked) {
+            // Optional: confirm before clearing? For now just clear or hide. 
+            // Better to just hide UI but keep state until submit? 
+            // logic below filters "cleanVariants". If !hasVariants, likely want to send empty variants.
+            // But let's just use the toggle to show/hide the section.
+        }
+    };
+
+    // ... (existing handleAddVariant, etc)
+
+
+    
+    // ... (render)
+
+    /* REPLACE THE VARIANTS RENDER SECTION */
+    /* Starting around line 496 */
+    /* 
+        <div className="space-y-4">
+            <div className="flex justify-between items-center border-b border-[var(--color-border)] pb-2">
+                <h3 className="font-semibold text-lg">Variants</h3>
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                        type="checkbox" 
+                        checked={hasVariants} 
+                        onChange={(e) => handleHasVariantsChange(e.target.checked)}
+                        className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
+                    />
+                    <span className="text-sm font-medium">This product has variants</span>
+                </label>
+            </div>
+
+            {hasVariants && (
+                <div className="space-y-6">
+                    {variants.map((variant, variantIndex) => (
+                        <div
+                            key={variant._id}
+                            className="border border-[var(--color-border)] rounded-lg p-4 bg-gray-50/50"
+                        >
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="flex-1 mr-4">
+                                    <label className="block text-sm font-medium mb-1">
+                                        Variant Type
+                                    </label>
+                                    <select
+                                        value={variant.name}
+                                        onChange={(e) =>
+                                            handleVariantNameChange(variantIndex, e.target.value)
+                                        }
+                                        className="select w-full md:w-1/3"
+                                    >
+                                        <option value="">Select Type...</option>
+                                        <option value="Size">Size</option>
+                                        <option value="Color">Color</option>
+                                        <option value="Material">Material</option>
+                                        <option value="Style">Style</option>
+                                    </select>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleRemoveVariant(variantIndex)}
+                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-12 gap-2 text-sm font-medium text-[var(--color-text-muted)]">
+                                    <div className="col-span-3">Value</div>
+                                    <div className="col-span-2">Price +/-</div>
+                                    <div className="col-span-2">Stock</div>
+                                    <div className="col-span-4">Image URL (Optional)</div>
+                                    <div className="col-span-1"></div>
+                                </div>
+
+                                {variant.options.map((option, optionIndex) => (
+                                    <div
+                                        key={option._id}
+                                        className="grid grid-cols-12 gap-2 items-center"
+                                    >
+                                        <div className="col-span-3">
+                                            {variant.name === 'Size' ? (
+                                                <select
+                                                    value={option.value}
+                                                    onChange={(e) =>
+                                                        handleOptionChange(
+                                                            variantIndex,
+                                                            optionIndex,
+                                                            'value',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    className="select w-full"
+                                                >
+                                                    <option value="">Select Size</option>
+                                                    {SIZE_OPTIONS.map((size) => (
+                                                        <option key={size} value={size}>
+                                                            {size}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <input
+                                                    type="text"
+                                                    value={option.value}
+                                                    onChange={(e) =>
+                                                        handleOptionChange(
+                                                            variantIndex,
+                                                            optionIndex,
+                                                            'value',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    className="input w-full"
+                                                    placeholder="e.g., Red"
+                                                />
+                                            )}
+                                        </div>
+
+                                        <input
+                                            type="number"
+                                            value={option.priceModifier}
+                                            onChange={(e) =>
+                                                handleOptionChange(
+                                                    variantIndex,
+                                                    optionIndex,
+                                                    'priceModifier',
+                                                    e.target.value
+                                                )
+                                            }
+                                            className="input col-span-2"
+                                            placeholder="0"
+                                        />
+                                        <input
+                                            type="number"
+                                            value={option.stock}
+                                            onChange={(e) =>
+                                                handleOptionChange(
+                                                    variantIndex,
+                                                    optionIndex,
+                                                    'stock',
+                                                    e.target.value
+                                                )
+                                            }
+                                            className="input col-span-2"
+                                            placeholder="0"
+                                            min="0"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={option.image || ''}
+                                            onChange={(e) =>
+                                                handleOptionChange(
+                                                    variantIndex,
+                                                    optionIndex,
+                                                    'image',
+                                                    e.target.value
+                                                )
+                                            }
+                                            className="input col-span-4"
+                                            placeholder="https://..."
+                                        />
+                                        <div className="col-span-1 flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    handleRemoveOption(variantIndex, optionIndex)
+                                                }
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                <button
+                                    type="button"
+                                    onClick={() => handleAddOption(variantIndex)}
+                                    className="text-sm text-[var(--color-primary)] hover:underline flex items-center gap-1"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                    Add Option
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    <button
+                        type="button"
+                        onClick={handleAddVariant}
+                        className="btn btn-secondary text-sm py-2 w-full flex items-center justify-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Another Variant Type
+                    </button>
+                </div>
+            )}
+        </div>
+    */
     const [existingImages, setExistingImages] = useState([]);
     const [newImages, setNewImages] = useState([]);
     const [uploadingImages, setUploadingImages] = useState(false);
@@ -96,7 +346,7 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
             {
                 _id: `temp-${Date.now()}`,
                 name: '',
-                options: [{ _id: `temp-opt-${Date.now()}`, value: '', priceModifier: 0, stock: 0 }],
+                options: [{ _id: `temp-opt-${Date.now()}`, value: '', priceModifier: 0, stock: 0, image: '' }],
             },
         ]);
     };
@@ -118,7 +368,7 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                 ...updated[variantIndex],
                 options: [
                     ...updated[variantIndex].options,
-                    { _id: `temp-opt-${Date.now()}`, value: '', priceModifier: 0, stock: 0 },
+                    { _id: `temp-opt-${Date.now()}`, value: '', priceModifier: 0, stock: 0, image: '' },
                 ],
             };
             return updated;
@@ -160,6 +410,56 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
             }
             return updated;
         });
+    };
+
+    // Handle variant option image upload
+    const handleVariantImageUpload = async (variantIndex, optionIndex, file) => {
+        if (!product?._id) {
+            toast.error('Please save the product first before uploading variant images');
+            return;
+        }
+
+        const variant = variants[variantIndex];
+        const option = variant?.options[optionIndex];
+
+        if (!variant?._id || !option?._id) {
+            toast.error('Please save the product first to get variant IDs');
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            const response = await adminAPI.uploadVariantImage(
+                product._id,
+                variant._id,
+                option._id,
+                formData
+            );
+
+            // Update local state with the new image URL
+            const updatedProduct = response.data.data.product;
+            const updatedVariant = updatedProduct.variants.find(v => v._id === variant._id);
+            const updatedOption = updatedVariant?.options.find(o => o._id === option._id);
+
+            if (updatedOption?.image) {
+                setVariants(prev => {
+                    const updated = [...prev];
+                    updated[variantIndex] = {
+                        ...updated[variantIndex],
+                        options: updated[variantIndex].options.map((opt, idx) =>
+                            idx === optionIndex ? { ...opt, image: updatedOption.image } : opt
+                        ),
+                    };
+                    return updated;
+                });
+                toast.success('Variant image uploaded');
+            }
+        } catch (error) {
+            console.error('Variant image upload error:', error);
+            toast.error('Failed to upload variant image');
+        }
     };
 
     // Handle new image upload
@@ -242,23 +542,28 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                 productData.metaDescription = formData.metaDescription.trim();
             }
 
-            // Add variants only if there are valid ones
-            const cleanVariants = variants
-                .filter((v) => v.name?.trim() && v.options.length > 0)
-                .map((v) => ({
-                    name: v.name.trim(),
-                    options: v.options
-                        .filter((o) => o.value?.trim())
-                        .map((o) => ({
-                            value: o.value.trim(),
-                            priceModifier: parseFloat(o.priceModifier) || 0,
-                            stock: parseInt(o.stock) || 0,
-                        })),
-                }))
-                .filter((v) => v.options.length > 0);
+            // Add variants only if active and valid
+            if (hasVariants) {
+                const cleanVariants = variants
+                    .filter((v) => v.name?.trim() && v.options.length > 0)
+                    .map((v) => ({
+                        name: v.name.trim(),
+                        options: v.options
+                            .filter((o) => o.value?.trim())
+                            .map((o) => ({
+                                value: o.value.trim(),
+                                priceModifier: parseFloat(o.priceModifier) || 0,
+                                stock: parseInt(o.stock) || 0,
+                                image: o.image?.trim() || null,
+                            })),
+                    }))
+                    .filter((v) => v.options.length > 0);
 
-            if (cleanVariants.length > 0) {
-                productData.variants = cleanVariants;
+                if (cleanVariants.length > 0) {
+                    productData.variants = cleanVariants;
+                }
+            } else {
+                productData.variants = [];
             }
 
             let savedProduct;
@@ -496,46 +801,50 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
             <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-[var(--color-border)] pb-2">
                     <h3 className="font-semibold text-lg">Variants</h3>
-                    <button
-                        type="button"
-                        onClick={handleAddVariant}
-                        className="btn btn-secondary text-sm py-1"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add Variant
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                            <input
+                                type="checkbox"
+                                checked={hasVariants}
+                                onChange={(e) => handleHasVariantsChange(e.target.checked)}
+                                className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
+                            />
+                            <span className="text-sm font-medium">Enable Variants</span>
+                        </label>
+                    </div>
                 </div>
 
-                {variants.length === 0 ? (
-                    <p className="text-[var(--color-text-muted)] text-sm">
-                        Add variants like Size, Color, etc. for products with multiple options.
-                    </p>
-                ) : (
-                    <div className="space-y-6">
+                {hasVariants && (
+                    <div className="space-y-6 animate-fadeIn">
                         {variants.map((variant, variantIndex) => (
                             <div
                                 key={variant._id}
-                                className="border border-[var(--color-border)] rounded-lg p-4"
+                                className="border border-[var(--color-border)] rounded-lg p-4 bg-gray-50/30"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex-1 mr-4">
                                         <label className="block text-sm font-medium mb-1">
-                                            Variant Name (e.g., Size, Color)
+                                            Variant Type
                                         </label>
-                                        <input
-                                            type="text"
+                                        <select
                                             value={variant.name}
                                             onChange={(e) =>
                                                 handleVariantNameChange(variantIndex, e.target.value)
                                             }
-                                            className="input"
-                                            placeholder="e.g., Size"
-                                        />
+                                            className="select w-full md:w-1/3"
+                                        >
+                                            <option value="">Select Type</option>
+                                            <option value="Size">Size</option>
+                                            <option value="Color">Color</option>
+                                            <option value="Material">Material</option>
+                                            <option value="Style">Style</option>
+                                        </select>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveVariant(variantIndex)}
                                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                        title="Remove Variant Group"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
@@ -544,10 +853,11 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                 {/* Variant Options */}
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-12 gap-2 text-sm font-medium text-[var(--color-text-muted)]">
-                                        <div className="col-span-4">Value</div>
-                                        <div className="col-span-3">Price Modifier</div>
-                                        <div className="col-span-3">Stock</div>
-                                        <div className="col-span-2"></div>
+                                        <div className="col-span-3">Value</div>
+                                        <div className="col-span-2">Price +/-</div>
+                                        <div className="col-span-2">Stock</div>
+                                        <div className="col-span-4">Image URL (Optional)</div>
+                                        <div className="col-span-1"></div>
                                     </div>
 
                                     {variant.options.map((option, optionIndex) => (
@@ -555,20 +865,45 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                             key={option._id}
                                             className="grid grid-cols-12 gap-2 items-center"
                                         >
-                                            <input
-                                                type="text"
-                                                value={option.value}
-                                                onChange={(e) =>
-                                                    handleOptionChange(
-                                                        variantIndex,
-                                                        optionIndex,
-                                                        'value',
-                                                        e.target.value
-                                                    )
-                                                }
-                                                className="input col-span-4"
-                                                placeholder="e.g., XL"
-                                            />
+                                            <div className="col-span-3">
+                                                {variant.name === 'Size' ? (
+                                                    <select
+                                                        value={option.value}
+                                                        onChange={(e) =>
+                                                            handleOptionChange(
+                                                                variantIndex,
+                                                                optionIndex,
+                                                                'value',
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        className={`select w-full text-sm py-2 px-2 ${!option.value ? 'text-gray-400' : ''}`}
+                                                    >
+                                                        <option value="">Select Size...</option>
+                                                        {SIZE_OPTIONS.map((size) => (
+                                                            <option key={size} value={size} className="text-gray-900">
+                                                                {size}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <input
+                                                        type="text"
+                                                        value={option.value}
+                                                        onChange={(e) =>
+                                                            handleOptionChange(
+                                                                variantIndex,
+                                                                optionIndex,
+                                                                'value',
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        className="input w-full"
+                                                        placeholder={variant.name === 'Color' ? 'e.g., Red' : 'Value'}
+                                                    />
+                                                )}
+                                            </div>
+                                            
                                             <input
                                                 type="number"
                                                 value={option.priceModifier}
@@ -580,7 +915,7 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                                         e.target.value
                                                     )
                                                 }
-                                                className="input col-span-3"
+                                                className="input col-span-2"
                                                 placeholder="0"
                                             />
                                             <input
@@ -594,11 +929,48 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                                         e.target.value
                                                     )
                                                 }
-                                                className="input col-span-3"
+                                                className="input col-span-2"
                                                 placeholder="0"
                                                 min="0"
                                             />
-                                            <div className="col-span-2 flex justify-end">
+                                            <div className="col-span-4 flex items-center gap-2">
+                                                {option.image ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <img
+                                                            src={option.image}
+                                                            alt="Variant"
+                                                            className="w-10 h-10 object-cover rounded border"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOptionChange(variantIndex, optionIndex, 'image', '')}
+                                                            className="text-xs text-red-500 hover:underline"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <label className="cursor-pointer">
+                                                        <span className="btn btn-secondary text-xs py-1 px-2">
+                                                            {isEdit ? 'Upload Image' : 'Save first'}
+                                                        </span>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            className="hidden"
+                                                            disabled={!isEdit}
+                                                            onChange={(e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) {
+                                                                    handleVariantImageUpload(variantIndex, optionIndex, file);
+                                                                    e.target.value = '';
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                )}
+                                            </div>
+                                            <div className="col-span-1 flex justify-end">
                                                 <button
                                                     type="button"
                                                     onClick={() =>
@@ -615,7 +987,7 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                     <button
                                         type="button"
                                         onClick={() => handleAddOption(variantIndex)}
-                                        className="text-sm text-[var(--color-primary)] hover:underline flex items-center gap-1"
+                                        className="text-sm text-[var(--color-primary)] hover:underline flex items-center gap-1 font-medium mt-2"
                                     >
                                         <Plus className="w-3 h-3" />
                                         Add Option
@@ -623,6 +995,14 @@ const ProductForm = ({ product, categories, onSuccess, onCancel }) => {
                                 </div>
                             </div>
                         ))}
+                         <button
+                            type="button"
+                            onClick={handleAddVariant}
+                            className="btn btn-secondary text-sm py-2 w-full flex items-center justify-center gap-2 border-dashed"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Another Variant Group
+                        </button>
                     </div>
                 )}
             </div>

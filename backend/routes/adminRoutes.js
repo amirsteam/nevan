@@ -85,6 +85,7 @@ router.put('/products/:id', mongoIdValidator('id'), updateProductValidator, prod
 router.delete('/products/:id', mongoIdValidator('id'), productController.deleteProduct);
 router.post('/products/:id/images', mongoIdValidator('id'), uploadProductImages.array('images', 10), productController.uploadImages);
 router.delete('/products/:id/images/:imageId', productController.deleteImage);
+router.post('/products/:id/variants/:variantId/options/:optionId/image', mongoIdValidator('id'), uploadProductImages.single('image'), productController.uploadVariantImage);
 
 // ==================== CATEGORIES ====================
 router.get('/categories', categoryController.getAdminCategories);

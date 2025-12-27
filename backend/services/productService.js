@@ -203,6 +203,33 @@ const deleteProductImage = async (productId, imageId) => {
     return product;
 };
 
+/**
+ * Upload image for a specific variant option (Admin)
+ */
+const uploadVariantImage = async (productId, variantId, optionId, file) => {
+    const product = await Product.findById(productId);
+    if (!product) {
+        throw new AppError('Product not found', 404);
+    }
+
+    const variant = product.variants.id(variantId);
+    if (!variant) {
+        throw new AppError('Variant not found', 404);
+    }
+
+    const option = variant.options.id(optionId);
+    if (!option) {
+        throw new AppError('Variant option not found', 404);
+    }
+
+    // If there was a previous image, we could delete it from Cloudinary here
+    // For now, just overwrite the URL
+    option.image = file.path; // Cloudinary URL
+    await product.save();
+
+    return product;
+};
+
 module.exports = {
     getProducts,
     getProductBySlug,
@@ -212,4 +239,5 @@ module.exports = {
     deleteProduct,
     addProductImages,
     deleteProductImage,
+    uploadVariantImage,
 };

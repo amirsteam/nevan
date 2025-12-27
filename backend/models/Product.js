@@ -23,6 +23,10 @@ const variantOptionSchema = new mongoose.Schema({
         type: Number,
         default: 0, // Amount to add/subtract from base price
     },
+    image: {
+        type: String, // URL of the variant image
+        default: null,
+    },
     stock: {
         type: Number,
         default: 0,
