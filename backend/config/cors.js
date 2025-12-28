@@ -8,6 +8,7 @@ const corsOptions = {
         const allowedOrigins = [
             process.env.FRONTEND_URL,
             process.env.ADMIN_URL,
+            'http://localhost:8081',
             // Add production URLs here
         ].filter(Boolean); // Remove undefined values
 
