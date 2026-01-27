@@ -3,36 +3,36 @@
 /* Custom CSS Variables for BivanHandicraft Theme */
 :root {
   /* Primary - Earthy Brown (Nepali Handicraft vibe) */
-  --color-primary: #8B4513;
-  --color-primary-dark: #6B3410;
-  --color-primary-light: #A0522D;
+  --color-primary: #8b4513;
+  --color-primary-dark: #6b3410;
+  --color-primary-light: #a0522d;
 
   /* Accent - Golden (Premium feel) */
-  --color-accent: #DAA520;
-  --color-accent-dark: #B8860B;
-  --color-accent-light: #FFD700;
+  --color-accent: #daa520;
+  --color-accent-dark: #b8860b;
+  --color-accent-light: #ffd700;
 
   /* Neutral */
-  --color-bg: #FAFAF8;
-  --color-surface: #FFFFFF;
-  --color-text: #1F2937;
-  --color-text-muted: #6B7280;
-  --color-border: #E5E7EB;
+  --color-bg: #fafaf8;
+  --color-surface: #ffffff;
+  --color-text: #1f2937;
+  --color-text-muted: #6b7280;
+  --color-border: #e5e7eb;
 
   /* Status */
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-error: #EF4444;
-  --color-info: #3B82F6;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
 }
 
 /* Dark Mode */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-bg: #111827;
-    --color-surface: #1F2937;
-    --color-text: #F9FAFB;
-    --color-text-muted: #9CA3AF;
+    --color-surface: #1f2937;
+    --color-text: #f9fafb;
+    --color-text-muted: #9ca3af;
     --color-border: #374151;
   }
 }
@@ -40,7 +40,11 @@
 /* Base Layer */
 @layer base {
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family:
+      "Inter",
+      system-ui,
+      -apple-system,
+      sans-serif;
     background-color: var(--color-bg);
     color: var(--color-text);
     line-height: 1.6;
@@ -59,28 +63,28 @@
 /* Components Layer */
 @layer components {
   /* Custom Utilities */
-.container-app {
-  width: 100%;
-  max-width: 1280px;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-}
-
-@media (min-width: 640px) {
   .container-app {
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    width: 100%;
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
-}
 
-@media (min-width: 1024px) {
-  .container-app {
-    padding-left: 2rem;
-    padding-right: 2rem;
+  @media (min-width: 640px) {
+    .container-app {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
   }
-}
+
+  @media (min-width: 1024px) {
+    .container-app {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
 
   /* Button Base */
   .btn {
@@ -270,10 +274,10 @@
   }
 
   .toggle.active {
-  background-color: var(--color-primary);
-}
+    background-color: var(--color-primary);
+  }
   .toggle::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 2px;
     left: 2px;
@@ -334,11 +338,18 @@
   .page-enter-active {
     opacity: 1;
     transform: translateY(0);
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    transition:
+      opacity 0.3s ease,
+      transform 0.3s ease;
   }
 
   .skeleton {
-    background: linear-gradient(90deg, var(--color-border) 25%, var(--color-surface) 50%, var(--color-border) 75%);
+    background: linear-gradient(
+      90deg,
+      var(--color-border) 25%,
+      var(--color-surface) 50%,
+      var(--color-border) 75%
+    );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
@@ -360,38 +371,223 @@
     animation: slideUp 0.3s ease-out forwards;
   }
 
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out forwards;
+  }
+
+  .animate-slideOut {
+    animation: slideOut 0.2s ease-in forwards;
+  }
+
+  .animate-bounce-subtle {
+    animation: bounceSubtle 2s infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulseSlow 3s infinite;
+  }
+
   @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @keyframes slideUp {
-  from {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slideOut {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes bounceSubtle {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  @keyframes pulseSlow {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  .animate-slow-zoom {
+    animation: slowZoom 20s linear infinite alternate;
+  }
+
+  @keyframes slowZoom {
+    from {
+      transform: scale(1);
+    }
+    to {
+      transform: scale(1.1);
+    }
+  }
+
+  /* Stat Card for Admin Dashboard */
+  .stat-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    padding: 1rem;
+    transition: all 0.2s ease;
+  }
+
+  .stat-card:hover {
+    box-shadow:
+      0 10px 15px -3px rgba(0, 0, 0, 0.1),
+      0 4px 6px -4px rgba(0, 0, 0, 0.1);
+    border-color: rgba(139, 69, 19, 0.3);
+    transform: translateY(-2px);
+  }
+
+  /* Quick Action Card */
+  .quick-action-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .quick-action-card:hover {
+    border-color: var(--color-primary);
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.1),
+      0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
+
+  /* Product Card Enhancement */
+  .product-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    position: relative;
+    transition: box-shadow 0.2s ease;
+  }
+
+  .product-card .product-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
+    transform: translateX(1rem);
+    transition: all 0.2s ease;
   }
 
-  to {
+  .product-card:hover .product-actions {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateX(0);
   }
-}
 
-.animate-slow-zoom {
-  animation: slowZoom 20s linear infinite alternate;
-}
+  /* Notification Dot */
+  .notification-dot {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    background-color: #ef4444;
+    color: white;
+    font-size: 0.75rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 500;
+  }
 
-@keyframes slowZoom {
-  from {
-    transform: scale(1);
-  }
-  to {
-    transform: scale(1.1);
-  }
-}
   /* Admin Additional Utilities */
   .badge-info {
     background-color: rgba(59, 130, 246, 0.1);
     color: var(--color-info);
+  }
+
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+
+  /* Focus Ring Utility */
+  .focus-ring:focus {
+    box-shadow:
+      0 0 0 2px var(--color-surface),
+      0 0 0 4px var(--color-primary);
+    outline: none;
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    background: linear-gradient(
+      to right,
+      var(--color-primary),
+      var(--color-accent)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }

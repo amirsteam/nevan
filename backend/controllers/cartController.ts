@@ -2,9 +2,9 @@
  * Cart Controller
  * Handles HTTP requests for shopping cart
  */
-import { Request, Response } from 'express';
-import * as cartService from '../services/cartService';
-import asyncHandler from '../utils/asyncHandler';
+import { Request, Response } from "express";
+import * as cartService from "../services/cartService";
+import asyncHandler from "../utils/asyncHandler";
 
 /**
  * @desc    Get user's cart
@@ -12,14 +12,14 @@ import asyncHandler from '../utils/asyncHandler';
  * @access  Private
  */
 const getCart = asyncHandler(async (req: Request, res: Response) => {
-    if (req.user) {
-        const cart = await cartService.getCart((req.user as any)._id);
-    
-        res.status(200).json({
-            status: 'success',
-            data: { cart },
-        });
-    }
+  if (req.user) {
+    const cart = await cartService.getCart((req.user as any)._id);
+
+    res.status(200).json({
+      status: "success",
+      data: { cart },
+    });
+  }
 });
 
 /**
@@ -28,21 +28,21 @@ const getCart = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private
  */
 const addToCart = asyncHandler(async (req: Request, res: Response) => {
-    const { productId, quantity, variantId } = req.body;
-    if (req.user) {
-        const cart = await cartService.addToCart(
-            (req.user as any)._id,
-            productId,
-            quantity,
-            variantId
-        );
-    
-        res.status(200).json({
-            status: 'success',
-            message: 'Item added to cart',
-            data: { cart },
-        });
-    }
+  const { productId, quantity, variantId } = req.body;
+  if (req.user) {
+    const cart = await cartService.addToCart(
+      (req.user as any)._id,
+      productId,
+      quantity,
+      variantId,
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Item added to cart",
+      data: { cart },
+    });
+  }
 });
 
 /**
@@ -51,20 +51,20 @@ const addToCart = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private
  */
 const updateCartItem = asyncHandler(async (req: Request, res: Response) => {
-    const { quantity } = req.body;
-    if (req.user) {
-        const cart = await cartService.updateCartItem(
-            (req.user as any)._id,
-            req.params.itemId,
-            quantity
-        );
-    
-        res.status(200).json({
-            status: 'success',
-            message: 'Cart updated',
-            data: { cart },
-        });
-    }
+  const { quantity } = req.body;
+  if (req.user) {
+    const cart = await cartService.updateCartItem(
+      (req.user as any)._id,
+      req.params.itemId as string,
+      quantity,
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Cart updated",
+      data: { cart },
+    });
+  }
 });
 
 /**
@@ -73,18 +73,18 @@ const updateCartItem = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private
  */
 const removeFromCart = asyncHandler(async (req: Request, res: Response) => {
-    if (req.user) {
-        const cart = await cartService.removeFromCart(
-            (req.user as any)._id,
-            req.params.itemId
-        );
-    
-        res.status(200).json({
-            status: 'success',
-            message: 'Item removed from cart',
-            data: { cart },
-        });
-    }
+  if (req.user) {
+    const cart = await cartService.removeFromCart(
+      (req.user as any)._id,
+      req.params.itemId as string,
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: "Item removed from cart",
+      data: { cart },
+    });
+  }
 });
 
 /**
@@ -93,21 +93,15 @@ const removeFromCart = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private
  */
 const clearCart = asyncHandler(async (req: Request, res: Response) => {
-    if (req.user) {
-        const cart = await cartService.clearCart((req.user as any)._id);
-    
-        res.status(200).json({
-            status: 'success',
-            message: 'Cart cleared',
-            data: { cart },
-        });
-    }
+  if (req.user) {
+    const cart = await cartService.clearCart((req.user as any)._id);
+
+    res.status(200).json({
+      status: "success",
+      message: "Cart cleared",
+      data: { cart },
+    });
+  }
 });
 
-export {
-    getCart,
-    addToCart,
-    updateCartItem,
-    removeFromCart,
-    clearCart,
-};
+export { getCart, addToCart, updateCartItem, removeFromCart, clearCart };
