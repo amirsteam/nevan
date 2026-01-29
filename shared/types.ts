@@ -7,6 +7,19 @@
 // Common Types
 // ============================================
 
+// Product size options - shared across frontend and backend
+export const PRODUCT_SIZES = [
+  "Small Size (0-1 yrs)",
+  "Medium Size (1-4 yrs)",
+  "Large Size (4-6 yrs)",
+  "XL Size (6-8 yrs)",
+  "XXL Size (8-10 yrs)",
+  "Standard Size",
+  "One Size",
+] as const;
+
+export type ProductSize = (typeof PRODUCT_SIZES)[number];
+
 export interface IImage {
   url: string;
   publicId: string;

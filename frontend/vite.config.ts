@@ -11,6 +11,7 @@ export default defineConfig({
       "@": resolve(__dirname, "./src"),
       "@shared": resolve(__dirname, "../shared"),
     },
+    extensions: [".ts", ".tsx", ".js", ".jsx", ".json"],
   },
   test: {
     globals: true,

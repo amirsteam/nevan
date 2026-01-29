@@ -13,7 +13,7 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 
 // Use machine's local IP for development on real devices/emulators
 const getBaseUrl = (): string => {
-  const LOCAL_IP = "192.168.1.3";
+  const LOCAL_IP = "192.168.1.2";
 
   // @ts-ignore - __DEV__ is a React Native global
   if (!__DEV__) {

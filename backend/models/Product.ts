@@ -1,15 +1,9 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
+import { PRODUCT_SIZES } from "../../shared/types";
 
-const VALID_SIZES = [
-  "Small Size (0-1 yrs)",
-  "Medium Size (1-4 yrs)",
-  "Large Size (4-6 yrs)",
-  "XL Size (6-8 yrs)",
-  "XXL Size (8-10 yrs)",
-  "Standard Size",
-  "One Size",
-];
+// Re-export for backward compatibility
+export const VALID_SIZES = PRODUCT_SIZES;
 
 export interface IVariant {
   _id: Types.ObjectId;

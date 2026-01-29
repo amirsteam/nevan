@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Nevan Handicraft",
+    "slug": "nevan-handicraft",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nevanhandicraft.app"
     },
     "android": {
       "package": "com.nevanhandicraft.app",
@@ -27,7 +28,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#FF9999",
+          "sounds": [],
+          "androidMode": "default",
+          "androidCollapsedTitle": "Nevan Handicraft"
+        }
+      ]
     ],
     "extra": {
       "eas": {

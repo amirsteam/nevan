@@ -1,16 +1,13 @@
-import React from "react";
+import React, { JSX } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Home, ShoppingCart, User } from "lucide-react-native";
 
 import HomeNavigator from "./HomeNavigator";
+import ProfileNavigator from "./ProfileNavigator";
 import CartScreen from "../screens/cart/CartScreen";
-import ProfileScreen from "../screens/profile/ProfileScreen";
+import type { TabParamList } from "./types";
 
-export type TabParamList = {
-  HomeTab: undefined;
-  Cart: undefined;
-  Profile: undefined;
-};
+export type { TabParamList };
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
@@ -46,9 +43,10 @@ const TabNavigator = (): JSX.Element => {
         }}
       />
       <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
+        name="ProfileTab"
+        component={ProfileNavigator}
         options={{
+          title: "Profile",
           tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
         }}
       />

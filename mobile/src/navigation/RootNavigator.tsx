@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, JSX } from "react";
 import { createStackNavigator } from "@react-navigation/stack";
 import { View, ActivityIndicator } from "react-native";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
@@ -6,50 +6,56 @@ import { checkAuth } from "../store/authSlice";
 
 import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterScreen from "../screens/auth/RegisterScreen";
+import ForgotPasswordScreen from "../screens/auth/ForgotPasswordScreen";
+import VerifyOTPScreen from "../screens/auth/VerifyOTPScreen";
+import ResetPasswordScreen from "../screens/auth/ResetPasswordScreen";
 import TabNavigator from "./TabNavigator";
 import CheckoutScreen from "../screens/checkout/CheckoutScreen";
 import PaymentScreen from "../screens/checkout/PaymentScreen";
+import type {
+  RootStackParamList,
+  AuthStackParamList,
+  AppStackParamList,
+} from "./types";
 
-export type RootStackParamList = {
-  App: undefined;
-  Auth: undefined;
-  Main: undefined;
-  Login: undefined;
-  Register: undefined;
-  Checkout: undefined;
-  Payment: { orderId: string };
-};
+export type { RootStackParamList, AuthStackParamList, AppStackParamList };
 
-const Stack = createStackNavigator<RootStackParamList>();
+const RootStack = createStackNavigator<RootStackParamList>();
+const AuthStackNav = createStackNavigator<AuthStackParamList>();
+const AppStackNav = createStackNavigator<AppStackParamList>();
 
 const AuthStack = (): JSX.Element => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Login" component={LoginScreen} />
-    <Stack.Screen name="Register" component={RegisterScreen} />
-  </Stack.Navigator>
+  <AuthStackNav.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStackNav.Screen name="Login" component={LoginScreen} />
+    <AuthStackNav.Screen name="Register" component={RegisterScreen} />
+    <AuthStackNav.Screen
+      name="ForgotPassword"
+      component={ForgotPasswordScreen}
+    />
+    <AuthStackNav.Screen name="VerifyOTP" component={VerifyOTPScreen} />
+    <AuthStackNav.Screen name="ResetPassword" component={ResetPasswordScreen} />
+  </AuthStackNav.Navigator>
 );
 
 const AppStack = (): JSX.Element => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Main" component={TabNavigator} />
-    <Stack.Screen
+  <AppStackNav.Navigator screenOptions={{ headerShown: false }}>
+    <AppStackNav.Screen name="Main" component={TabNavigator} />
+    <AppStackNav.Screen
       name="Checkout"
       component={CheckoutScreen}
       options={{ headerShown: true, title: "Checkout" }}
     />
-    <Stack.Screen
+    <AppStackNav.Screen
       name="Payment"
       component={PaymentScreen}
       options={{ headerShown: true, title: "Payment" }}
     />
-  </Stack.Navigator>
+  </AppStackNav.Navigator>
 );
 
 const RootNavigator = (): JSX.Element => {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, checked, loading } = useAppSelector(
-    (state) => state.auth,
-  );
+  const { checked, loading } = useAppSelector((state) => state.auth);
 
   useEffect(() => {
     dispatch(checkAuth());
@@ -64,10 +70,10 @@ const RootNavigator = (): JSX.Element => {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="App" component={AppStack} />
-      <Stack.Screen name="Auth" component={AuthStack} />
-    </Stack.Navigator>
+    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Screen name="App" component={AppStack} />
+      <RootStack.Screen name="Auth" component={AuthStack} />
+    </RootStack.Navigator>
   );
 };
 

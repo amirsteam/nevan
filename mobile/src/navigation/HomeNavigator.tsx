@@ -1,17 +1,13 @@
-import React from "react";
+import React, { JSX } from "react";
 import { createStackNavigator } from "@react-navigation/stack";
 
 import HomeScreen from "../screens/home/HomeScreen";
 import ProductListScreen from "../screens/product/ProductListScreen";
 import ProductDetailScreen from "../screens/product/ProductDetailScreen";
 import SearchScreen from "../screens/product/SearchScreen";
+import type { HomeStackParamList } from "./types";
 
-export type HomeStackParamList = {
-  HomeScreen: undefined;
-  ProductList: { categorySlug?: string; categoryName?: string };
-  ProductDetail: { slug: string };
-  Search: undefined;
-};
+export type { HomeStackParamList };
 
 const Stack = createStackNavigator<HomeStackParamList>();
 
@@ -31,7 +27,7 @@ const HomeNavigator = (): JSX.Element => {
       <Stack.Screen
         name="ProductDetail"
         component={ProductDetailScreen}
-        options={{ title: "Product Details", headerBackTitleVisible: false }}
+        options={{ title: "Product Details" }}
       />
       <Stack.Screen
         name="Search"
