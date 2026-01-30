@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,74 @@ import {
 import type { CartScreenProps } from "../../navigation/types";
 import type { ICartItem } from "@shared/types";
 
+// Memoized CartItem component to prevent unnecessary re-renders
+interface CartItemProps {
+  item: ICartItem;
+  onUpdateQuantity: (
+    itemId: string,
+    currentQuantity: number,
+    change: number,
+  ) => void;
+  onRemove: (itemId: string) => void;
+}
+
+const CartItem: React.FC<CartItemProps> = React.memo(
+  ({ item, onUpdateQuantity, onRemove }) => {
+    // Use variant image if available, otherwise use product's first image
+    const variantImageUrl = item.variant?.image;
+    const productImageUrl =
+      item.product.images?.[0]?.url ||
+      (item.product.images?.[0] as unknown as string);
+
+    const imageSource = variantImageUrl
+      ? { uri: variantImageUrl }
+      : productImageUrl
+        ? { uri: productImageUrl }
+        : { uri: "https://via.placeholder.com/100" };
+
+    // Use currentPrice (includes variant price) or fallback to product price
+    const displayPrice = item.currentPrice ?? item.product.price;
+
+    return (
+      <View style={styles.cartItem}>
+        <Image source={imageSource} style={styles.image} />
+        <View style={styles.details}>
+          <Text style={styles.name} numberOfLines={2}>
+            {item.product.name}
+          </Text>
+          {item.variant && (
+            <Text style={styles.variantInfo}>
+              {item.variant.size} - {item.variant.color}
+            </Text>
+          )}
+          <Text style={styles.price}>Rs. {displayPrice}</Text>
+
+          <View style={styles.actions}>
+            <View style={styles.quantityControl}>
+              <TouchableOpacity
+                style={styles.qtyButton}
+                onPress={() => onUpdateQuantity(item._id, item.quantity, -1)}
+              >
+                <Minus size={16} color="#333" />
+              </TouchableOpacity>
+              <Text style={styles.quantity}>{item.quantity}</Text>
+              <TouchableOpacity
+                style={styles.qtyButton}
+                onPress={() => onUpdateQuantity(item._id, item.quantity, 1)}
+              >
+                <Plus size={16} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => onRemove(item._id)}>
+              <Trash2 size={20} color="red" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  },
+);
+
 const CartScreen: React.FC<CartScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
   const { items, subtotal, itemCount, loading } = useAppSelector(
@@ -31,72 +99,39 @@ const CartScreen: React.FC<CartScreenProps> = ({ navigation }) => {
     dispatch(fetchCart());
   }, [dispatch]);
 
-  const handleUpdateQuantity = (
-    itemId: string,
-    currentQuantity: number,
-    change: number,
-  ): void => {
-    const newQuantity = currentQuantity + change;
-    if (newQuantity < 1) return;
-    dispatch(updateCartItem({ itemId, quantity: newQuantity }));
-  };
+  const handleUpdateQuantity = useCallback(
+    (itemId: string, currentQuantity: number, change: number): void => {
+      const newQuantity = currentQuantity + change;
+      if (newQuantity < 1) return;
+      dispatch(updateCartItem({ itemId, quantity: newQuantity }));
+    },
+    [dispatch],
+  );
 
-  const handleRemove = (itemId: string): void => {
-    Alert.alert("Remove Item", "Are you sure you want to remove this item?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => dispatch(removeFromCart(itemId)),
-      },
-    ]);
-  };
+  const handleRemove = useCallback(
+    (itemId: string): void => {
+      Alert.alert("Remove Item", "Are you sure you want to remove this item?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => dispatch(removeFromCart(itemId)),
+        },
+      ]);
+    },
+    [dispatch],
+  );
 
-  const renderItem: ListRenderItem<ICartItem> = ({ item }) => {
-    const imageSource =
-      item.product.images && item.product.images.length > 0
-        ? {
-            uri:
-              item.product.images[0].url ||
-              (item.product.images[0] as unknown as string),
-          }
-        : { uri: "https://via.placeholder.com/100" };
-
-    return (
-      <View style={styles.cartItem}>
-        <Image source={imageSource} style={styles.image} />
-        <View style={styles.details}>
-          <Text style={styles.name} numberOfLines={2}>
-            {item.product.name}
-          </Text>
-          <Text style={styles.price}>Rs. {item.product.price}</Text>
-
-          <View style={styles.actions}>
-            <View style={styles.quantityControl}>
-              <TouchableOpacity
-                style={styles.qtyButton}
-                onPress={() =>
-                  handleUpdateQuantity(item._id, item.quantity, -1)
-                }
-              >
-                <Minus size={16} color="#333" />
-              </TouchableOpacity>
-              <Text style={styles.quantity}>{item.quantity}</Text>
-              <TouchableOpacity
-                style={styles.qtyButton}
-                onPress={() => handleUpdateQuantity(item._id, item.quantity, 1)}
-              >
-                <Plus size={16} color="#333" />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity onPress={() => handleRemove(item._id)}>
-              <Trash2 size={20} color="red" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  };
+  const renderItem: ListRenderItem<ICartItem> = useCallback(
+    ({ item }) => (
+      <CartItem
+        item={item}
+        onUpdateQuantity={handleUpdateQuantity}
+        onRemove={handleRemove}
+      />
+    ),
+    [handleUpdateQuantity, handleRemove],
+  );
 
   if (loading && items.length === 0) {
     return (
@@ -237,6 +272,11 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 4,
     lineHeight: 22,
+  },
+  variantInfo: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 2,
   },
   price: {
     fontSize: 15,

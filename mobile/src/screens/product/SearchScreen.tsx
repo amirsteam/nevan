@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -20,24 +20,34 @@ const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<IProduct[]>([]);
   const [loading, setLoading] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSearch = async (text: string): Promise<void> => {
+  const handleSearch = useCallback((text: string): void => {
     setQuery(text);
+
+    // Clear previous timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
     if (text.length < 2) {
       setResults([]);
       return;
     }
 
-    try {
-      setLoading(true);
-      const response = await productsAPI.searchProducts(text);
-      setResults(response.data.products || []);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Debounce API call by 300ms
+    timeoutRef.current = setTimeout(async () => {
+      try {
+        setLoading(true);
+        const response = await productsAPI.searchProducts(text);
+        setResults(response.data.products || []);
+      } catch (error) {
+        if (__DEV__) console.error("Search error:", error);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+  }, []);
 
   const clearSearch = (): void => {
     setQuery("");

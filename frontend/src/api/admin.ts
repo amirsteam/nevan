@@ -13,7 +13,7 @@ import type {
   IDashboardStats,
   IAnalytics,
   OrderStatus,
-} from "@shared/types";
+} from "../types";
 
 // Types
 interface ProductQueryParams {

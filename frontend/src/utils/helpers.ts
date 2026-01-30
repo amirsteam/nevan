@@ -3,7 +3,7 @@
  * Common helper functions for the frontend
  */
 
-import type { OrderStatus, PaymentStatus } from "@shared/types";
+import type { OrderStatus, PaymentStatus } from "../types";
 
 /**
  * Format price in NPR

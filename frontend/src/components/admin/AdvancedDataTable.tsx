@@ -104,6 +104,7 @@ export function AdvancedDataTable<T extends object>({
 
   // UI State
   const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
 
   // Add row actions column if provided
   const tableColumns = useMemo(() => {
@@ -356,25 +357,43 @@ export function AdvancedDataTable<T extends object>({
 
           {/* Export */}
           {enableExport && (
-            <div className="relative group">
-              <button className="btn btn-secondary flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowExportDropdown(!showExportDropdown)}
+                className="btn btn-secondary flex items-center gap-2"
+              >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">Export</span>
               </button>
-              <div className="absolute right-0 mt-2 w-40 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-1 hidden group-hover:block">
-                <button
-                  onClick={() => handleExport("csv")}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
-                >
-                  Export as CSV
-                </button>
-                <button
-                  onClick={() => handleExport("json")}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
-                >
-                  Export as JSON
-                </button>
-              </div>
+              {showExportDropdown && (
+                <>
+                  {/* Backdrop to close dropdown when clicking outside */}
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowExportDropdown(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-40 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-1">
+                    <button
+                      onClick={() => {
+                        handleExport("csv");
+                        setShowExportDropdown(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
+                    >
+                      Export as CSV
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleExport("json");
+                        setShowExportDropdown(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
+                    >
+                      Export as JSON
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

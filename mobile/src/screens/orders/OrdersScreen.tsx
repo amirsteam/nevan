@@ -42,10 +42,6 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ navigation }) => {
   const { data, isLoading, isFetching, refetch, isError, error } =
     useGetMyOrdersQuery();
 
-  console.log("OrdersScreen data:", JSON.stringify(data, null, 2));
-  console.log("OrdersScreen error:", error);
-  console.log("OrdersScreen isLoading:", isLoading, "isFetching:", isFetching);
-
   const orders = data?.orders || [];
 
   const renderOrder = ({ item }: { item: IOrder }) => (
@@ -79,7 +75,9 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ navigation }) => {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Total:</Text>
-          <Text style={styles.detailValue}>Rs. {item.total?.toFixed(2)}</Text>
+          <Text style={styles.detailValue}>
+            Rs. {(item.total ?? item.pricing?.total ?? 0).toFixed(2)}
+          </Text>
         </View>
       </View>
 
@@ -87,13 +85,27 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ navigation }) => {
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) + "20" },
+            {
+              backgroundColor:
+                getStatusColor(item.status || item.orderStatus || "pending") +
+                "20",
+            },
           ]}
         >
           <Text
-            style={[styles.statusText, { color: getStatusColor(item.status) }]}
+            style={[
+              styles.statusText,
+              {
+                color: getStatusColor(
+                  item.status || item.orderStatus || "pending",
+                ),
+              },
+            ]}
           >
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            {(item.status || item.orderStatus || "pending")
+              .charAt(0)
+              .toUpperCase() +
+              (item.status || item.orderStatus || "pending").slice(1)}
           </Text>
         </View>
         <View
@@ -101,7 +113,9 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ navigation }) => {
             styles.paymentBadge,
             {
               backgroundColor:
-                item.payment?.status === "paid" ? "#4CAF5020" : "#FFA50020",
+                (item.payment?.status || item.paymentStatus) === "paid"
+                  ? "#4CAF5020"
+                  : "#FFA50020",
             },
           ]}
         >
@@ -109,11 +123,16 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ navigation }) => {
             style={[
               styles.paymentText,
               {
-                color: item.payment?.status === "paid" ? "#4CAF50" : "#FFA500",
+                color:
+                  (item.payment?.status || item.paymentStatus) === "paid"
+                    ? "#4CAF50"
+                    : "#FFA500",
               },
             ]}
           >
-            {item.payment?.status === "paid" ? "Paid" : "Pending"}
+            {(item.payment?.status || item.paymentStatus) === "paid"
+              ? "Paid"
+              : "Pending"}
           </Text>
         </View>
       </View>

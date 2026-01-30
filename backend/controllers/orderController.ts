@@ -5,6 +5,39 @@
 import { Request, Response } from "express";
 import * as orderService from "../services/orderService";
 import asyncHandler from "../utils/asyncHandler";
+import Order from "../models/Order";
+
+/**
+ * Maps order document to include flattened fields for frontend compatibility
+ */
+const mapOrderForResponse = (order: any) => ({
+  _id: order._id,
+  orderNumber: order.orderNumber,
+  user: order.user,
+  items: order.items,
+  shippingAddress: order.shippingAddress,
+  // Flattened fields for frontend
+  orderStatus: order.status,
+  paymentMethod: order.payment?.method,
+  paymentStatus: order.payment?.status,
+  total: order.pricing?.total,
+  subtotal: order.pricing?.subtotal,
+  shippingCost: order.pricing?.shippingCost,
+  discount: order.pricing?.discount,
+  // Keep original nested fields too
+  status: order.status,
+  payment: order.payment,
+  pricing: order.pricing,
+  statusHistory: order.statusHistory,
+  notes: order.notes,
+  customerNotes: order.customerNotes,
+  deliveredAt: order.deliveredAt,
+  cancelledAt: order.cancelledAt,
+  cancellationReason: order.cancellationReason,
+  canBeCancelled: order.canBeCancelled,
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt,
+});
 
 /**
  * @desc    Create order from cart
@@ -21,7 +54,7 @@ const createOrder = asyncHandler(async (req: Request, res: Response) => {
     res.status(201).json({
       status: "success",
       message: "Order placed successfully",
-      data: { order },
+      data: { order: mapOrderForResponse(order) },
     });
   }
 });
@@ -42,7 +75,7 @@ const getMyOrders = asyncHandler(async (req: Request, res: Response) => {
       status: "success",
       results: orders.length,
       pagination,
-      data: { orders },
+      data: { orders: orders.map(mapOrderForResponse) },
     });
   }
 });
@@ -63,7 +96,7 @@ const getOrder = asyncHandler(async (req: Request, res: Response) => {
 
     res.status(200).json({
       status: "success",
-      data: { order },
+      data: { order: mapOrderForResponse(order) },
     });
   }
 });
@@ -85,7 +118,7 @@ const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
     res.status(200).json({
       status: "success",
       message: "Order cancelled successfully",
-      data: { order },
+      data: { order: mapOrderForResponse(order) },
     });
   }
 });
@@ -96,13 +129,40 @@ const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private/Admin
  */
 const getAllOrders = asyncHandler(async (req: Request, res: Response) => {
+  // Get orders with pagination
   const { orders, pagination } = await orderService.getAllOrders(req.query);
+
+  // Get status counts for stats cards (run in parallel with orders query would be better in service)
+  const statusCounts = await Order.aggregate([
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Transform to object format
+  const stats = {
+    pending: 0,
+    confirmed: 0,
+    processing: 0,
+    shipped: 0,
+    delivered: 0,
+    cancelled: 0,
+  };
+  statusCounts.forEach((item) => {
+    if (item._id in stats) {
+      stats[item._id as keyof typeof stats] = item.count;
+    }
+  });
 
   res.status(200).json({
     status: "success",
     results: orders.length,
     pagination,
-    data: { orders },
+    stats, // Add stats to response
+    data: { orders: orders.map(mapOrderForResponse) },
   });
 });
 
@@ -124,7 +184,7 @@ const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {
     res.status(200).json({
       status: "success",
       message: `Order status updated to ${status}`,
-      data: { order },
+      data: { order: mapOrderForResponse(order) },
     });
   }
 });

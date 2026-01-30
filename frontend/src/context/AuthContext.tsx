@@ -8,11 +8,12 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   ReactNode,
 } from "react";
 import { authAPI } from "../api";
 import toast from "react-hot-toast";
-import type { IUser, IRegisterData } from "@shared/types";
+import type { IUser, IRegisterData } from "../types";
 
 // Types
 interface AuthContextType {
@@ -156,16 +157,32 @@ export const AuthProvider = ({
     setUser((prev) => (prev ? { ...prev, ...updates } : null));
   }, []);
 
-  const value: AuthContextType = {
-    user,
-    loading,
-    isAuthenticated,
-    isAdmin: user?.role === "admin",
-    register,
-    login,
-    logout,
-    updateUser,
-  };
+  // Memoize isAdmin to avoid recalculation
+  const isAdmin = useMemo(() => user?.role === "admin", [user?.role]);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      loading,
+      isAuthenticated,
+      isAdmin,
+      register,
+      login,
+      logout,
+      updateUser,
+    }),
+    [
+      user,
+      loading,
+      isAuthenticated,
+      isAdmin,
+      register,
+      login,
+      logout,
+      updateUser,
+    ],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

@@ -151,81 +151,11 @@ const Register = () => {
     );
   };
 
-  // Input field component with validation
-  const InputField = ({
-    name,
-    label,
-    type = "text",
-    icon: Icon,
-    placeholder,
-    required = false,
-    showToggle = false,
-  }) => {
+  // Helper function to get field state classes
+  const getFieldState = (name) => {
     const hasError = touched[name] && errors[name];
     const isValid = touched[name] && !errors[name] && formData[name];
-    const isPassword = name === "password" || name === "confirmPassword";
-    const showPasswordState =
-      name === "password" ? showPassword : showConfirmPassword;
-    const togglePassword =
-      name === "password" ? setShowPassword : setShowConfirmPassword;
-
-    return (
-      <div>
-        <label className="block text-sm font-medium mb-2">
-          {label}
-          {required && (
-            <span className="text-[var(--color-error)] ml-1">*</span>
-          )}
-        </label>
-        <div className="relative">
-          <div
-            className={`input-group ${hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
-          >
-            <Icon
-              className={`input-icon w-4 h-4 ${hasError ? "text-[var(--color-error)]" : isValid ? "text-green-500" : ""}`}
-            />
-            <input
-              type={
-                isPassword && showToggle
-                  ? showPasswordState
-                    ? "text"
-                    : "password"
-                  : type
-              }
-              name={name}
-              value={formData[name]}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              placeholder={placeholder}
-              className="input pr-10"
-              required={required}
-            />
-            {isPassword && showToggle && (
-              <button
-                type="button"
-                onClick={() => togglePassword(!showPasswordState)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              >
-                {showPasswordState ? (
-                  <EyeOff className="w-4 h-4" />
-                ) : (
-                  <Eye className="w-4 h-4" />
-                )}
-              </button>
-            )}
-            {!isPassword && isValid && (
-              <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
-            )}
-          </div>
-        </div>
-        {hasError && (
-          <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
-            <AlertCircle className="w-3 h-3" />
-            {errors[name]}
-          </p>
-        )}
-      </div>
-    );
+    return { hasError, isValid };
   };
 
   return (
@@ -247,40 +177,150 @@ const Register = () => {
             </div>
           )}
 
-          <InputField
-            name="name"
-            label="Full Name"
-            icon={User}
-            placeholder="Anjana Shrestha"
-            required
-          />
+          {/* Full Name Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Full Name<span className="text-[var(--color-error)] ml-1">*</span>
+            </label>
+            <div className="relative">
+              <div
+                className={`input-group ${getFieldState("name").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("name").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
+              >
+                <User
+                  className={`input-icon w-4 h-4 ${getFieldState("name").hasError ? "text-[var(--color-error)]" : getFieldState("name").isValid ? "text-green-500" : ""}`}
+                />
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="Anjana Shrestha"
+                  className="input pr-10"
+                  required
+                />
+                {getFieldState("name").isValid && (
+                  <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+                )}
+              </div>
+            </div>
+            {getFieldState("name").hasError && (
+              <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.name}
+              </p>
+            )}
+          </div>
 
-          <InputField
-            name="email"
-            label="Email"
-            type="email"
-            icon={Mail}
-            placeholder="you@example.com"
-            required
-          />
+          {/* Email Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Email<span className="text-[var(--color-error)] ml-1">*</span>
+            </label>
+            <div className="relative">
+              <div
+                className={`input-group ${getFieldState("email").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("email").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
+              >
+                <Mail
+                  className={`input-icon w-4 h-4 ${getFieldState("email").hasError ? "text-[var(--color-error)]" : getFieldState("email").isValid ? "text-green-500" : ""}`}
+                />
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="you@example.com"
+                  className="input pr-10"
+                  required
+                />
+                {getFieldState("email").isValid && (
+                  <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+                )}
+              </div>
+            </div>
+            {getFieldState("email").hasError && (
+              <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.email}
+              </p>
+            )}
+          </div>
 
-          <InputField
-            name="phone"
-            label="Phone"
-            type="tel"
-            icon={Phone}
-            placeholder="+977 98XXXXXXXX"
-          />
+          {/* Phone Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Phone</label>
+            <div className="relative">
+              <div
+                className={`input-group ${getFieldState("phone").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("phone").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
+              >
+                <Phone
+                  className={`input-icon w-4 h-4 ${getFieldState("phone").hasError ? "text-[var(--color-error)]" : getFieldState("phone").isValid ? "text-green-500" : ""}`}
+                />
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="+977 98XXXXXXXX"
+                  className="input pr-10"
+                />
+                {getFieldState("phone").isValid && (
+                  <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+                )}
+              </div>
+            </div>
+            {getFieldState("phone").hasError && (
+              <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.phone}
+              </p>
+            )}
+          </div>
 
-          <InputField
-            name="password"
-            label="Password"
-            type="password"
-            icon={Lock}
-            placeholder="••••••••"
-            required
-            showToggle
-          />
+          {/* Password Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Password<span className="text-[var(--color-error)] ml-1">*</span>
+            </label>
+            <div className="relative">
+              <div
+                className={`input-group ${getFieldState("password").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("password").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
+              >
+                <Lock
+                  className={`input-icon w-4 h-4 ${getFieldState("password").hasError ? "text-[var(--color-error)]" : getFieldState("password").isValid ? "text-green-500" : ""}`}
+                />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="••••••••"
+                  className="input pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            {getFieldState("password").hasError && (
+              <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.password}
+              </p>
+            )}
+          </div>
 
           {/* Password strength indicator */}
           {formData.password && (
@@ -305,15 +345,49 @@ const Register = () => {
             </div>
           )}
 
-          <InputField
-            name="confirmPassword"
-            label="Confirm Password"
-            type="password"
-            icon={Lock}
-            placeholder="••••••••"
-            required
-            showToggle
-          />
+          {/* Confirm Password Field */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Confirm Password
+              <span className="text-[var(--color-error)] ml-1">*</span>
+            </label>
+            <div className="relative">
+              <div
+                className={`input-group ${getFieldState("confirmPassword").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("confirmPassword").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
+              >
+                <Lock
+                  className={`input-icon w-4 h-4 ${getFieldState("confirmPassword").hasError ? "text-[var(--color-error)]" : getFieldState("confirmPassword").isValid ? "text-green-500" : ""}`}
+                />
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="••••••••"
+                  className="input pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            {getFieldState("confirmPassword").hasError && (
+              <p className="flex items-center gap-1 text-xs text-[var(--color-error)] mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.confirmPassword}
+              </p>
+            )}
+          </div>
 
           <button
             type="submit"

@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef } from "react";
+import React, { useEffect, useCallback, useRef, useState } from "react";
 import {
   NavigationContainer,
   NavigationContainerRef,
@@ -9,11 +9,14 @@ import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import store from "./src/store";
 import RootNavigator from "./src/navigation/RootNavigator";
+import linking from "./src/navigation/linking";
+import { ToastProvider, NetworkStatus, SplashScreen } from "./src/components";
 import { useNotifications, getNotificationData } from "./src/hooks";
 import type { RootStackParamList } from "./src/navigation/types";
 
 // Inner app component that uses hooks
-function AppContent(): JSX.Element {
+function AppContent(): React.ReactElement {
+  const [showSplash, setShowSplash] = useState(true);
   const navigationRef =
     useRef<NavigationContainerRef<RootStackParamList>>(null);
 
@@ -80,18 +83,27 @@ function AppContent(): JSX.Element {
   }, [expoPushToken]);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <StatusBar style="auto" />
+      <NetworkStatus />
       <RootNavigator />
+      {showSplash && (
+        <SplashScreen
+          duration={2500}
+          onAnimationComplete={() => setShowSplash(false)}
+        />
+      )}
     </NavigationContainer>
   );
 }
 
-export default function App(): JSX.Element {
+export default function App(): React.ReactElement {
   return (
     <Provider store={store}>
       <SafeAreaProvider>
-        <AppContent />
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </SafeAreaProvider>
     </Provider>
   );

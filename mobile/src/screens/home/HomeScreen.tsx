@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import {
 } from "../../store/api";
 import ProductCard from "../../components/ProductCard";
 import type { HomeScreenProps } from "../../navigation/types";
-import type { ICategory } from "@shared/types";
+import type { ICategory, IProduct } from "@shared/types";
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   // RTK Query hooks with automatic caching
@@ -38,33 +38,58 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const featuredProducts = featuredData?.products || [];
   const loading = categoriesLoading || productsLoading;
 
-  const handleRefresh = (): void => {
+  const handleRefresh = useCallback((): void => {
     refetchCategories();
     refetchProducts();
-  };
+  }, [refetchCategories, refetchProducts]);
 
-  const renderCategory: ListRenderItem<ICategory> = ({ item }) => (
-    <TouchableOpacity
-      style={styles.categoryItem}
-      onPress={() =>
-        navigation.navigate("ProductList", { categorySlug: item.slug })
-      }
-    >
-      <View style={styles.categoryIcon}>
-        {item.image?.url ? (
-          <Image
-            source={{ uri: item.image.url }}
-            style={styles.categoryImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <Text style={styles.categoryInitial}>{item.name.charAt(0)}</Text>
-        )}
-      </View>
-      <Text style={styles.categoryName} numberOfLines={1}>
-        {item.name}
-      </Text>
-    </TouchableOpacity>
+  const handleProductPress = useCallback(
+    (slug: string) => {
+      navigation.navigate("ProductDetail", { slug });
+    },
+    [navigation],
+  );
+
+  const handleCategoryPress = useCallback(
+    (categorySlug: string) => {
+      navigation.navigate("ProductList", { categorySlug });
+    },
+    [navigation],
+  );
+
+  const renderCategory: ListRenderItem<ICategory> = useCallback(
+    ({ item }) => (
+      <TouchableOpacity
+        style={styles.categoryItem}
+        onPress={() => handleCategoryPress(item.slug)}
+      >
+        <View style={styles.categoryIcon}>
+          {item.image?.url ? (
+            <Image
+              source={{ uri: item.image.url }}
+              style={styles.categoryImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <Text style={styles.categoryInitial}>{item.name.charAt(0)}</Text>
+          )}
+        </View>
+        <Text style={styles.categoryName} numberOfLines={1}>
+          {item.name}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [handleCategoryPress],
+  );
+
+  const renderProduct: ListRenderItem<IProduct> = useCallback(
+    ({ item }) => (
+      <ProductCard
+        product={item}
+        onPress={() => handleProductPress(item.slug)}
+      />
+    ),
+    [handleProductPress],
   );
 
   if (loading) {
@@ -118,17 +143,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         {/* Featured Products */}
         <View style={[styles.section, { flex: 1 }]}>
           <Text style={styles.sectionTitle}>Featured Products</Text>
-          <View style={styles.productsGrid}>
-            {featuredProducts.map((product) => (
-              <ProductCard
-                key={product._id}
-                product={product}
-                onPress={() =>
-                  navigation.navigate("ProductDetail", { slug: product.slug })
-                }
-              />
-            ))}
-          </View>
+          <FlatList
+            data={featuredProducts}
+            renderItem={renderProduct}
+            keyExtractor={(item) => item._id}
+            numColumns={2}
+            columnWrapperStyle={styles.productsGrid}
+            scrollEnabled={false}
+            contentContainerStyle={styles.productsList}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -242,10 +265,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   productsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
     paddingHorizontal: 16,
+  },
+  productsList: {
+    paddingHorizontal: 0,
   },
 });
 

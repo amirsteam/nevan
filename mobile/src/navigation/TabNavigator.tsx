@@ -1,17 +1,41 @@
 import React, { JSX } from "react";
+import { View, Platform } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Home, ShoppingCart, User } from "lucide-react-native";
 
 import HomeNavigator from "./HomeNavigator";
 import ProfileNavigator from "./ProfileNavigator";
 import CartScreen from "../screens/cart/CartScreen";
+import Badge from "../components/Badge";
+import { useAppSelector } from "../store/hooks";
 import type { TabParamList } from "./types";
 
 export type { TabParamList };
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
+// Cart icon with badge
+const CartTabIcon: React.FC<{ color: string; size: number }> = ({
+  color,
+  size,
+}) => {
+  const { itemCount } = useAppSelector((state) => state.cart);
+
+  return (
+    <Badge count={itemCount} size="small" variant="primary">
+      <ShoppingCart color={color} size={size} />
+    </Badge>
+  );
+};
+
 const TabNavigator = (): JSX.Element => {
+  const insets = useSafeAreaInsets();
+  // Add safe area bottom padding to prevent overlap with system navigation bar
+  const tabBarHeight =
+    60 +
+    (Platform.OS === "android" ? Math.max(insets.bottom, 10) : insets.bottom);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -19,9 +43,14 @@ const TabNavigator = (): JSX.Element => {
         tabBarActiveTintColor: "#000",
         tabBarInactiveTintColor: "#888",
         tabBarStyle: {
-          paddingVertical: 5,
+          paddingTop: 5,
+          paddingBottom:
+            Platform.OS === "android"
+              ? Math.max(insets.bottom, 10)
+              : insets.bottom,
           borderTopWidth: 1,
           borderTopColor: "#f0f0f0",
+          height: tabBarHeight,
         },
       }}
     >
@@ -38,7 +67,7 @@ const TabNavigator = (): JSX.Element => {
         component={CartScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <ShoppingCart color={color} size={size} />
+            <CartTabIcon color={color} size={size} />
           ),
         }}
       />

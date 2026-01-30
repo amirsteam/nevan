@@ -151,17 +151,40 @@ const createOrder = async (
     ],
   });
 
-  // Reduce stock
-  for (const item of (cart as any).items) {
-    const product = await Product.findById(item.product._id || item.product);
-    if (product) {
-      await (product as any).reduceStock([
-        {
-          variantId: item.variantId || null,
-          quantity: item.quantity,
+  // Reduce stock using bulkWrite for better performance (avoids N+1 queries)
+  const stockUpdates = (cart as any).items.map((item: any) => {
+    const productId = item.product._id || item.product;
+    if (item.variantId) {
+      // Update variant stock
+      return {
+        updateOne: {
+          filter: { _id: productId, "variants._id": item.variantId },
+          update: {
+            $inc: {
+              "variants.$.stock": -item.quantity,
+              soldCount: item.quantity,
+            },
+          },
         },
-      ]);
+      };
+    } else {
+      // Update base product stock
+      return {
+        updateOne: {
+          filter: { _id: productId },
+          update: {
+            $inc: {
+              stock: -item.quantity,
+              soldCount: item.quantity,
+            },
+          },
+        },
+      };
     }
+  });
+
+  if (stockUpdates.length > 0) {
+    await Product.bulkWrite(stockUpdates);
   }
 
   // Clear cart only for COD (immediate checkout)
@@ -269,25 +292,39 @@ const cancelOrder = async (
 
   await (order as any).updateOrderStatus("cancelled", userId, reason);
 
-  // Restore stock
-  for (const item of (order as any).items) {
-    const product = await Product.findById(item.product);
-    if (product) {
-      // Restore stock based on variantId
-      if (item.variantId) {
-        const variant = (product as any).variants.id(item.variantId);
-        if (variant) {
-          variant.stock += item.quantity;
-        }
-      } else {
-        (product as any).stock += item.quantity;
-      }
-      (product as any).soldCount = Math.max(
-        0,
-        (product as any).soldCount - item.quantity,
-      );
-      await product.save();
+  // Restore stock using bulkWrite for better performance (avoids N+1 queries)
+  const stockRestoreUpdates = (order as any).items.map((item: any) => {
+    if (item.variantId) {
+      // Restore variant stock
+      return {
+        updateOne: {
+          filter: { _id: item.product, "variants._id": item.variantId },
+          update: {
+            $inc: {
+              "variants.$.stock": item.quantity,
+              soldCount: -item.quantity,
+            },
+          },
+        },
+      };
+    } else {
+      // Restore base product stock
+      return {
+        updateOne: {
+          filter: { _id: item.product },
+          update: {
+            $inc: {
+              stock: item.quantity,
+              soldCount: -item.quantity,
+            },
+          },
+        },
+      };
     }
+  });
+
+  if (stockRestoreUpdates.length > 0) {
+    await Product.bulkWrite(stockRestoreUpdates);
   }
 
   return order;

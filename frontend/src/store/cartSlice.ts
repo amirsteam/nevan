@@ -4,7 +4,7 @@
  */
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { cartAPI } from "../api";
-import type { ICart, ICartItem } from "@shared/types";
+import type { ICart, ICartItem } from "../types";
 import type { RootState } from "./index";
 
 // Types

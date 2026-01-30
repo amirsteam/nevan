@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   Alert,
   RefreshControl,
 } from "react-native";
@@ -18,8 +18,6 @@ import { addToCart } from "../../store/cartSlice";
 import type { ProductDetailScreenProps } from "../../navigation/types";
 import type { IProductVariant } from "@shared/types";
 
-const { width } = Dimensions.get("window");
-
 const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   route,
   navigation,
@@ -27,6 +25,7 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   const { slug } = route.params;
   const dispatch = useAppDispatch();
   const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { width } = useWindowDimensions();
 
   // RTK Query hook with automatic caching
   const {
@@ -42,9 +41,43 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   const [selectedColor, setSelectedColor] = useState("");
   const [activeImage, setActiveImage] = useState<string | null>(null);
 
-  // Derived state for current variant
-  const currentVariant = product?.variants?.find(
-    (v) => v.size === selectedSize && v.color === selectedColor,
+  // Memoized derived state for current variant
+  const currentVariant = useMemo(
+    () =>
+      product?.variants?.find(
+        (v) => v.size === selectedSize && v.color === selectedColor,
+      ),
+    [product?.variants, selectedSize, selectedColor],
+  );
+
+  // Memoized derived lists for UI - MUST be before any early returns!
+  const uniqueSizes = useMemo(
+    () =>
+      product?.variants
+        ? [...new Set(product.variants.map((v) => v.size))]
+        : [],
+    [product?.variants],
+  );
+
+  const availableColors = useMemo(
+    () =>
+      product?.variants
+        ? [
+            ...new Set(
+              product.variants
+                .filter((v) => v.size === selectedSize)
+                .map((v) => v.color),
+            ),
+          ]
+        : [],
+    [product?.variants, selectedSize],
+  );
+
+  const isOutOfStock = useMemo(
+    () =>
+      currentVariant?.stock === 0 ||
+      (!product?.variants?.length && product?.stock === 0),
+    [currentVariant?.stock, product?.variants?.length, product?.stock],
   );
 
   // Initialize variants when product loads
@@ -204,24 +237,6 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
 
   if (!product) return null;
 
-  // Derived Lists for UI
-  const uniqueSizes = product.variants
-    ? [...new Set(product.variants.map((v) => v.size))]
-    : [];
-
-  const availableColors = product.variants
-    ? [
-        ...new Set(
-          product.variants
-            .filter((v) => v.size === selectedSize)
-            .map((v) => v.color),
-        ),
-      ]
-    : [];
-
-  const isOutOfStock =
-    currentVariant?.stock === 0 ||
-    (!product.variants?.length && product.stock === 0);
   const needsSelection =
     product.variants?.length && product.variants.length > 0 && !currentVariant;
 
@@ -240,7 +255,7 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
               product.images?.[0]?.url ||
               "https://via.placeholder.com/300",
           }}
-          style={styles.image}
+          style={[styles.image, { width }]}
           resizeMode="cover"
         />
         <View style={styles.infoContainer}>
@@ -346,7 +361,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   image: {
-    width: width,
     height: 350,
     backgroundColor: "#FAFAFA",
   },

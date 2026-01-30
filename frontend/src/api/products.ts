@@ -8,7 +8,7 @@ import type {
   IProduct,
   ICategory,
   IProductsResponse,
-} from "@shared/types";
+} from "../types";
 
 export interface ProductQueryParams {
   page?: number;

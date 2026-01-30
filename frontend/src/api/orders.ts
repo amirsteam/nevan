@@ -10,7 +10,7 @@ import type {
   IPaymentMethod,
   IPaymentInitiateResponse,
   PaymentMethod,
-} from "@shared/types";
+} from "../types";
 
 interface OrderQueryParams {
   page?: number;

@@ -39,6 +39,8 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedPayment, setSelectedPayment] = useState("cod");
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [pendingOrderId, setPendingOrderId] = useState(null);
 
   // Flag to prevent empty cart redirect after successful order
   const orderPlacedRef = useRef(false);
@@ -155,12 +157,10 @@ const Checkout = () => {
       const paymentData = paymentRes.data;
 
       if (selectedPayment === "cod") {
-        // Mark order as placed BEFORE resetting cart to prevent redirect
-        orderPlacedRef.current = true;
-
-        // Reset cart and navigate to success page
-        dispatch(resetCart());
-        navigate(`/order-success?orderId=${orderId}`);
+        // Show QR modal before completing order
+        setPendingOrderId(orderId);
+        setShowQRModal(true);
+        setLoading(false);
       } else if (selectedPayment === "esewa") {
         // Handle eSewa form submission
         // Backend returns redirectUrl (e.g. https://rc-epay.esewa.com.np/api/epay/main/v2/form)
@@ -350,32 +350,30 @@ const Checkout = () => {
               <h2 className="text-lg font-semibold">Payment Method</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {paymentMethods.map((method) => (
-                <button
-                  key={method.id}
-                  type="button"
-                  onClick={() => setSelectedPayment(method.id)}
-                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${
-                    selectedPayment === method.id
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/10 text-[var(--color-primary)]"
-                      : "border-[var(--color-border)] hover:border-[var(--color-primary)]/50"
-                  }`}
-                >
-                  {method.id === "esewa" ? (
-                    <div className="w-12 h-8 bg-green-500 rounded flex items-center justify-center text-white font-bold text-xs">
-                      eSewa
-                    </div>
-                  ) : method.id === "khalti" ? (
-                    <div className="w-12 h-8 bg-purple-700 rounded flex items-center justify-center text-white font-bold text-xs">
-                      Khalti
-                    </div>
-                  ) : (
-                    <Banknote className="w-8 h-8" />
-                  )}
-                  <span className="font-medium">{method.name}</span>
-                </button>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {paymentMethods
+                .filter((method) => method.id !== "khalti")
+                .map((method) => (
+                  <button
+                    key={method.id}
+                    type="button"
+                    onClick={() => setSelectedPayment(method.id)}
+                    className={`p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${
+                      selectedPayment === method.id
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/10 text-[var(--color-primary)]"
+                        : "border-[var(--color-border)] hover:border-[var(--color-primary)]/50"
+                    }`}
+                  >
+                    {method.id === "esewa" ? (
+                      <div className="w-12 h-8 bg-green-500 rounded flex items-center justify-center text-white font-bold text-xs">
+                        eSewa
+                      </div>
+                    ) : (
+                      <Banknote className="w-8 h-8" />
+                    )}
+                    <span className="font-medium">{method.name}</span>
+                  </button>
+                ))}
             </div>
 
             <div className="mt-4 p-4 bg-[var(--color-bg)] rounded-lg text-sm text-[var(--color-text-muted)]">
@@ -383,7 +381,7 @@ const Checkout = () => {
                 <ShieldCheck className="w-4 h-4" />
                 {selectedPayment === "cod"
                   ? "Pay with cash upon delivery. No extra charges."
-                  : `You will be redirected to ${selectedPayment === "esewa" ? "eSewa" : "Khalti"} to complete your payment securely.`}
+                  : "You will be redirected to eSewa to complete your payment securely."}
               </p>
             </div>
           </div>
@@ -398,7 +396,11 @@ const Checkout = () => {
               {cart.items.map((item) => (
                 <div key={item._id} className="flex gap-3 text-sm">
                   <img
-                    src={item.product?.images?.[0]?.url || "/placeholder.jpg"}
+                    src={
+                      item.variant?.image ||
+                      item.product?.images?.[0]?.url ||
+                      "/placeholder.jpg"
+                    }
                     alt={item.product?.name}
                     className="w-12 h-12 rounded object-cover"
                   />
@@ -408,13 +410,17 @@ const Checkout = () => {
                     </p>
                     <p className="text-[var(--color-text-muted)] text-xs">
                       Qty: {item.quantity}
+                      {item.variant &&
+                        ` • ${item.variant.size} - ${item.variant.color}`}
                       {item.selectedVariants
                         ?.map((v) => `, ${v.optionValue}`)
                         .join("")}
                     </p>
                   </div>
                   <p className="font-medium whitespace-nowrap">
-                    {formatPrice(item.price * item.quantity)}
+                    {formatPrice(
+                      (item.currentPrice || item.price) * item.quantity,
+                    )}
                   </p>
                 </div>
               ))}
@@ -459,6 +465,64 @@ const Checkout = () => {
           </div>
         </div>
       </div>
+
+      {/* eSewa QR Modal for COD */}
+      {showQRModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 relative">
+            <button
+              onClick={() => {
+                setShowQRModal(false);
+                // Complete the COD order after closing modal
+                orderPlacedRef.current = true;
+                dispatch(resetCart());
+                navigate(`/order-success?orderId=${pendingOrderId}`);
+              }}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              <span className="text-xl text-gray-600">&times;</span>
+            </button>
+
+            <h3 className="text-xl font-bold text-center mb-4">
+              Pay via eSewa
+            </h3>
+
+            <div className="flex justify-center mb-4">
+              <img
+                src="/esewaQR.png"
+                alt="eSewa QR Code"
+                className="max-w-[250px] w-full h-auto rounded-lg border"
+              />
+            </div>
+
+            <p className="text-center text-gray-700 text-sm leading-relaxed">
+              Please scan the QR code to pay and share the payment details to
+              WhatsApp number{" "}
+              <a
+                href="https://wa.me/9779844575932"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 font-semibold hover:underline"
+              >
+                +977 9844575932
+              </a>
+              . Thank you!
+            </p>
+
+            <button
+              onClick={() => {
+                setShowQRModal(false);
+                orderPlacedRef.current = true;
+                dispatch(resetCart());
+                navigate(`/order-success?orderId=${pendingOrderId}`);
+              }}
+              className="btn btn-primary w-full mt-6 py-3"
+            >
+              Close & Continue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

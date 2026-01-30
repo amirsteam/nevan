@@ -2,7 +2,7 @@
  * Product Detail Page
  * Single product view with images, details, variants, and add to cart
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { productsAPI } from "../api";
@@ -50,6 +50,30 @@ const ProductDetail = () => {
   // Derived state for current variant
   const currentVariant = product?.variants?.find(
     (v) => v.size === selectedSize && v.color === selectedColor,
+  );
+
+  // Memoize unique sizes for rendering (must be before early returns)
+  const uniqueSizes = useMemo(
+    () =>
+      product?.variants
+        ? [...new Set(product.variants.map((v) => v.size))]
+        : [],
+    [product?.variants],
+  );
+
+  // Memoize available colors for selected size (must be before early returns)
+  const availableColors = useMemo(
+    () =>
+      product?.variants
+        ? [
+            ...new Set(
+              product.variants
+                .filter((v) => v.size === selectedSize)
+                .map((v) => v.color),
+            ),
+          ]
+        : [],
+    [product?.variants, selectedSize],
   );
 
   // Initialize logic
@@ -168,22 +192,31 @@ const ProductDetail = () => {
   };
 
   // Helper function to actually add to cart (called directly or after login)
-  const executeAddToCart = async () => {
+  const executeAddToCart = async (usePendingData = false) => {
     try {
-      await dispatch(
-        addToCart({
-          productId: product._id,
-          quantity,
-          variantId: currentVariant?._id,
-          variantDetails: currentVariant
-            ? {
-                size: currentVariant.size,
-                color: currentVariant.color,
-                image: currentVariant.image,
-              }
-            : null,
-        }),
-      ).unwrap();
+      // When called after login, use pending item data if available
+      const cartData =
+        usePendingData && pendingItem
+          ? {
+              productId: pendingItem.productId,
+              quantity: pendingItem.quantity,
+              variantId: pendingItem.variantId || null,
+              variantDetails: pendingItem.variantDetails || null,
+            }
+          : {
+              productId: product._id,
+              quantity,
+              variantId: currentVariant?._id || null,
+              variantDetails: currentVariant
+                ? {
+                    size: currentVariant.size,
+                    color: currentVariant.color,
+                    image: currentVariant.image,
+                  }
+                : null,
+            };
+
+      await dispatch(addToCart(cartData)).unwrap();
       toast.success("Added to cart!");
       clearPendingItem();
     } catch (error) {
@@ -209,7 +242,7 @@ const ProductDetail = () => {
   useEffect(() => {
     if (shouldAddToCartRef.current && isAuthenticated && product) {
       shouldAddToCartRef.current = false;
-      executeAddToCart();
+      executeAddToCart(true); // Use pending item data
     }
   }, [isAuthenticated, product]);
 
@@ -293,7 +326,7 @@ const ProductDetail = () => {
       title: product.name,
       text:
         product.shortDescription ||
-        `Check out ${product.name} at BivanHandicraft!`,
+        `Check out ${product.name} at NevanHandicraft!`,
       url: window.location.href,
     };
 
@@ -348,22 +381,6 @@ const ProductDetail = () => {
 
   const displayPrice = calculateDisplayPrice();
   const discount = calculateDiscount(product.comparePrice, displayPrice);
-
-  // Get unique sizes for rendering
-  const uniqueSizes = product.variants
-    ? [...new Set(product.variants.map((v) => v.size))]
-    : [];
-
-  // Get available colors for selected size
-  const availableColors = product.variants
-    ? [
-        ...new Set(
-          product.variants
-            .filter((v) => v.size === selectedSize)
-            .map((v) => v.color),
-        ),
-      ]
-    : [];
 
   return (
     <div className="container-app py-8">

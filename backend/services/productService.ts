@@ -9,6 +9,7 @@ import Cart from "../models/Cart";
 import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
+import { cache, CACHE_KEYS } from "../utils/cache";
 
 interface ProductsOptions {
   page?: number;
@@ -174,10 +175,21 @@ const getProductBySlug = async (slugOrId: string): Promise<IProduct> => {
 };
 
 /**
- * Get featured products
+ * Get featured products with caching
  */
 const getFeaturedProducts = async (limit: number = 8): Promise<IProduct[]> => {
-  return (Product as any).getFeatured(limit);
+  // Check cache first
+  const cacheKey = CACHE_KEYS.FEATURED_PRODUCTS(limit);
+  const cached = cache.get<IProduct[]>(cacheKey);
+  if (cached) return cached;
+
+  // Fetch from database
+  const products = await (Product as any).getFeatured(limit);
+
+  // Cache for 5 minutes
+  cache.set(cacheKey, products, 300);
+
+  return products;
 };
 
 /**
@@ -259,14 +271,18 @@ const deleteProduct = async (
   // Clean up cart items referencing this product
   await cleanupCartsForProduct(productId);
 
-  // Delete images from Cloudinary
-  for (const image of (product as any).images) {
-    if (image.publicId) {
-      await deleteImage(image.publicId);
-    }
-  }
+  // Delete images from Cloudinary in parallel for better performance
+  const imageDeletions = (product as any).images
+    .filter((image: any) => image.publicId)
+    .map((image: any) => deleteImage(image.publicId));
+
+  await Promise.all(imageDeletions);
 
   await product.deleteOne();
+
+  // Invalidate featured products cache
+  cache.deletePattern("featured_products_");
+
   return { message: "Product deleted successfully" };
 };
 

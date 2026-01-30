@@ -216,9 +216,117 @@ export type PaymentScreenProps = CompositeScreenProps<
   StackScreenProps<RootStackParamList>
 >;
 
+// ==================== Admin Tab Navigator ====================
+export type AdminTabParamList = {
+  AdminDashboard: undefined;
+  AdminOrdersTab: NavigatorScreenParams<AdminOrdersStackParamList>;
+  AdminProductsTab: NavigatorScreenParams<AdminProductsStackParamList>;
+  AdminCategoriesTab: NavigatorScreenParams<AdminCategoriesStackParamList>;
+  AdminUsersTab: undefined;
+  AdminProfileTab: NavigatorScreenParams<ProfileStackParamList>;
+};
+
+// ==================== Admin Orders Stack ====================
+export type AdminOrdersStackParamList = {
+  AdminOrdersList: undefined;
+  AdminOrderDetail: { orderId: string };
+};
+
+// ==================== Admin Products Stack ====================
+export type AdminProductsStackParamList = {
+  AdminProductsList: undefined;
+  AdminProductDetail: { productId: string };
+  AdminProductEdit: { productId?: string }; // undefined for create
+};
+
+// ==================== Admin Categories Stack ====================
+export type AdminCategoriesStackParamList = {
+  AdminCategoriesList: undefined;
+  AdminCategoryEdit: { categoryId?: string }; // undefined for create
+};
+
+// ==================== Admin Screen Props ====================
+
+// Admin Dashboard
+export type AdminDashboardScreenProps = CompositeScreenProps<
+  BottomTabScreenProps<AdminTabParamList, "AdminDashboard">,
+  StackScreenProps<RootStackParamList>
+>;
+
+// Admin Orders
+export type AdminOrdersListScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminOrdersStackParamList, "AdminOrdersList">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+export type AdminOrderDetailScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminOrdersStackParamList, "AdminOrderDetail">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+// Admin Products
+export type AdminProductsListScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminProductsStackParamList, "AdminProductsList">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+export type AdminProductDetailScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminProductsStackParamList, "AdminProductDetail">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+export type AdminProductEditScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminProductsStackParamList, "AdminProductEdit">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+// Admin Users
+export type AdminUsersScreenProps = CompositeScreenProps<
+  BottomTabScreenProps<AdminTabParamList, "AdminUsersTab">,
+  StackScreenProps<RootStackParamList>
+>;
+
+// Admin Categories
+export type AdminCategoriesScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminCategoriesStackParamList, "AdminCategoriesList">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+export type AdminCategoryEditScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminCategoriesStackParamList, "AdminCategoryEdit">,
+  CompositeScreenProps<
+    BottomTabScreenProps<AdminTabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
 // ==================== Navigation Props (for useNavigation) ====================
 export type RootNavigationProp = StackNavigationProp<RootStackParamList>;
 export type HomeStackNavigationProp = StackNavigationProp<HomeStackParamList>;
 export type AppStackNavigationProp = StackNavigationProp<AppStackParamList>;
 export type ProfileStackNavigationProp =
   StackNavigationProp<ProfileStackParamList>;
+export type AdminOrdersStackNavigationProp =
+  StackNavigationProp<AdminOrdersStackParamList>;
+export type AdminProductsStackNavigationProp =
+  StackNavigationProp<AdminProductsStackParamList>;
+export type AdminCategoriesStackNavigationProp =
+  StackNavigationProp<AdminCategoriesStackParamList>;

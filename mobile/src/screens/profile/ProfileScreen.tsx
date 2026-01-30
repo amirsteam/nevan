@@ -71,7 +71,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <View style={styles.guestIconContainer}>
             <User size={48} color="#666" />
           </View>
-          <Text style={styles.guestTitle}>Connect with Bivan</Text>
+          <Text style={styles.guestTitle}>Connect with Nevan</Text>
           <Text style={styles.guestSubtitle}>
             Sign in to view your orders, wishlist and more.
           </Text>

@@ -63,6 +63,28 @@ const WishlistScreen: React.FC<WishlistScreenProps> = ({ navigation }) => {
   };
 
   const handleAddToCart = async (product: IProduct) => {
+    // If product has variants, navigate to product detail for selection
+    if (product.variants && product.variants.length > 0) {
+      Alert.alert(
+        "Select Options",
+        "This product has size/color options. Please select your preference.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "View Product",
+            onPress: () => handleProductPress(product.slug),
+          },
+        ],
+      );
+      return;
+    }
+
+    // Check stock for non-variant products
+    if (product.stock < 1) {
+      Alert.alert("Out of Stock", "This item is currently out of stock");
+      return;
+    }
+
     try {
       await addToCart({
         productId: product._id,
@@ -210,11 +232,19 @@ const WishlistScreen: React.FC<WishlistScreenProps> = ({ navigation }) => {
             style={[
               styles.cartButton,
               item.stock <= 0 && styles.cartButtonDisabled,
+              item.variants && item.variants.length > 0 && styles.variantButton,
             ]}
             onPress={() => handleAddToCart(item)}
             disabled={item.stock <= 0}
           >
-            <ShoppingCart size={18} color={item.stock > 0 ? "#fff" : "#999"} />
+            {item.variants && item.variants.length > 0 ? (
+              <Text style={styles.variantButtonText}>Select</Text>
+            ) : (
+              <ShoppingCart
+                size={18}
+                color={item.stock > 0 ? "#fff" : "#999"}
+              />
+            )}
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -340,6 +370,16 @@ const styles = StyleSheet.create({
   },
   cartButtonDisabled: {
     backgroundColor: "#E0E0E0",
+  },
+  variantButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  variantButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   emptyContainer: {
     flex: 1,

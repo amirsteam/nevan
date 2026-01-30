@@ -7,7 +7,6 @@ import User from "../models/User";
 import Product from "../models/Product";
 import AppError from "../utils/AppError";
 import asyncHandler from "../utils/asyncHandler";
-import type { IProduct } from "@shared/types";
 
 // Get user's wishlist
 export const getWishlist: RequestHandler = asyncHandler(

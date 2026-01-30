@@ -20,7 +20,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import type { IOrder, IUser, OrderStatus, PaymentStatus } from "@shared/types";
+import type { IOrder, IUser, OrderStatus, PaymentStatus } from "../../types";
 
 // Status configuration
 const statusConfig: Record<
@@ -103,18 +103,16 @@ const AdminOrdersPage = () => {
         totalItems: paginationData?.total || ordersData.length,
       }));
 
-      // Calculate stats from current page
-      const newStats = ordersData.reduce(
-        (acc: typeof stats, order: IOrder) => {
-          const status = order.orderStatus;
-          if (status in acc) {
-            acc[status as keyof typeof acc]++;
-          }
-          return acc;
-        },
-        { pending: 0, processing: 0, shipped: 0, delivered: 0 },
-      );
-      setStats(newStats);
+      // Use stats from backend response (accurate counts across all orders)
+      const backendStats = (response.data as any).stats;
+      if (backendStats) {
+        setStats({
+          pending: backendStats.pending || 0,
+          processing: backendStats.processing || 0,
+          shipped: backendStats.shipped || 0,
+          delivered: backendStats.delivered || 0,
+        });
+      }
     } catch (error) {
       console.error("Failed to fetch orders:", error);
       toast.error("Failed to load orders");
@@ -166,31 +164,61 @@ const AdminOrdersPage = () => {
         "Order #",
         "Customer",
         "Email",
-        "Items",
+        "Phone",
+        "Products",
+        "Quantities",
+        "Item Count",
+        "Subtotal",
+        "Shipping",
         "Total",
         "Payment Method",
         "Payment Status",
         "Order Status",
+        "Shipping Address",
+        "City",
         "Date",
       ];
       const rows = data.map((order) => {
         const userInfo = getUserInfo(order.user);
+        // Get product names and quantities
+        const productNames =
+          order.items?.map((item) => item.name).join("; ") || "";
+        const quantities =
+          order.items
+            ?.map((item) => `${item.name}: ${item.quantity}`)
+            .join("; ") || "";
+        const address = order.shippingAddress;
+        const fullAddress = address
+          ? `${address.street || ""}, ${address.city || ""}`
+          : "";
+
         return [
           order.orderNumber,
           userInfo.name,
           userInfo.email,
+          address?.phone || "",
+          productNames,
+          quantities,
           order.items?.length || 0,
-          order.total || 0,
-          order.paymentMethod?.toUpperCase() || "",
-          order.paymentStatus || "",
-          order.orderStatus || "",
+          order.subtotal ?? order.pricing?.subtotal ?? 0,
+          order.shippingCost ?? order.pricing?.shippingCost ?? 0,
+          order.total ?? order.pricing?.total ?? 0,
+          order.paymentMethod?.toUpperCase() ||
+            order.payment?.method?.toUpperCase() ||
+            "",
+          order.paymentStatus || order.payment?.status || "",
+          order.orderStatus || order.status || "",
+          fullAddress,
+          address?.city || "",
           new Date(order.createdAt).toLocaleDateString(),
         ];
       });
 
       const csvContent = [
         headers.join(","),
-        ...rows.map((row) => row.map((v) => `"${v}"`).join(",")),
+        ...rows.map((row) =>
+          row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
+        ),
       ].join("\n");
 
       const blob = new Blob([csvContent], { type: "text/csv" });
@@ -268,7 +296,8 @@ const AdminOrdersPage = () => {
         enableColumnFilter: false,
         size: 100,
       }),
-      columnHelper.accessor("total", {
+      columnHelper.accessor((row) => row.total ?? row.pricing?.total ?? 0, {
+        id: "total",
         header: "Total",
         cell: (info) => (
           <span className="font-semibold">

@@ -42,7 +42,7 @@ const faqs: FAQ[] = [
     id: "2",
     question: "What payment methods do you accept?",
     answer:
-      "We accept Cash on Delivery (COD), eSewa, and Khalti digital wallets. All online payments are secure and encrypted.",
+      "We accept Cash on Delivery (COD) and eSewa digital wallet. All online payments are secure and encrypted.",
   },
   {
     id: "3",
@@ -107,7 +107,7 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
   };
 
   const handleEmail = () => {
-    const email = "support@bivanhandicraft.com";
+    const email = "support@nevanhandicraft.com";
     const subject = "Support Request";
     Linking.openURL(`mailto:${email}?subject=${subject}`).catch(() => {
       Alert.alert("Error", "Unable to open email client");
@@ -145,7 +145,7 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
       id: "email",
       icon: <Mail size={22} color="#2196F3" />,
       title: "Email Support",
-      subtitle: "support@bivanhandicraft.com",
+      subtitle: "support@nevanhandicraft.com",
       action: handleEmail,
     },
     {

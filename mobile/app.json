@@ -1,12 +1,13 @@
 {
   "expo": {
     "name": "Nevan Handicraft",
-    "slug": "nevan-handicraft",
+    "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "nevanhandicraft",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,7 +15,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nevanhandicraft.app"
+      "bundleIdentifier": "com.nevanhandicraft.app",
+      "associatedDomains": [
+        "applinks:nevanhandicraft.com.np",
+        "applinks:www.nevanhandicraft.com.np"
+      ]
     },
     "android": {
       "package": "com.nevanhandicraft.app",
@@ -22,7 +27,26 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "nevanhandicraft.com.np",
+              "pathPrefix": "/product"
+            },
+            {
+              "scheme": "https",
+              "host": "www.nevanhandicraft.com.np",
+              "pathPrefix": "/product"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

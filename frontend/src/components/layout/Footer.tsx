@@ -152,11 +152,6 @@ const Footer = (): React.ReactElement => {
               alt="eSewa"
               className="h-8 w-auto object-contain opacity-80"
             />
-            <img
-              src="/khalti.png"
-              alt="Khalti"
-              className="h-8 w-auto object-contain opacity-80"
-            />
             <span className="text-sm text-[var(--color-text-muted)]">
               Cash on Delivery
             </span>

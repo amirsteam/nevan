@@ -3,7 +3,7 @@
  * API calls for cart operations
  */
 import api from "./axios";
-import type { IApiResponse, ICart } from "@shared/types";
+import type { IApiResponse, ICart } from "../types";
 
 interface VariantDetails {
   size: string;

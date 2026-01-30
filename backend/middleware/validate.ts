@@ -11,7 +11,7 @@ import {
   ValidationChain,
 } from "express-validator";
 import AppError from "../utils/AppError";
-import { PRODUCT_SIZES } from "../../shared/types";
+import { PRODUCT_SIZES } from "../utils/constants";
 
 interface ValidationError {
   field: string;

@@ -10,6 +10,7 @@ import ForgotPasswordScreen from "../screens/auth/ForgotPasswordScreen";
 import VerifyOTPScreen from "../screens/auth/VerifyOTPScreen";
 import ResetPasswordScreen from "../screens/auth/ResetPasswordScreen";
 import TabNavigator from "./TabNavigator";
+import AdminTabNavigator from "./AdminTabNavigator";
 import CheckoutScreen from "../screens/checkout/CheckoutScreen";
 import PaymentScreen from "../screens/checkout/PaymentScreen";
 import type {
@@ -37,7 +38,8 @@ const AuthStack = (): JSX.Element => (
   </AuthStackNav.Navigator>
 );
 
-const AppStack = (): JSX.Element => (
+// Customer App Stack - regular shopping experience
+const CustomerAppStack = (): JSX.Element => (
   <AppStackNav.Navigator screenOptions={{ headerShown: false }}>
     <AppStackNav.Screen name="Main" component={TabNavigator} />
     <AppStackNav.Screen
@@ -53,9 +55,18 @@ const AppStack = (): JSX.Element => (
   </AppStackNav.Navigator>
 );
 
+// Admin App Stack - admin dashboard experience
+const AdminAppStack = (): JSX.Element => (
+  <AppStackNav.Navigator screenOptions={{ headerShown: false }}>
+    <AppStackNav.Screen name="Main" component={AdminTabNavigator} />
+  </AppStackNav.Navigator>
+);
+
 const RootNavigator = (): JSX.Element => {
   const dispatch = useAppDispatch();
-  const { checked, loading } = useAppSelector((state) => state.auth);
+  const { checked, loading, user, isAuthenticated } = useAppSelector(
+    (state) => state.auth,
+  );
 
   useEffect(() => {
     dispatch(checkAuth());
@@ -69,9 +80,15 @@ const RootNavigator = (): JSX.Element => {
     );
   }
 
+  // Determine if user is admin
+  const isAdmin = isAuthenticated && user?.role === "admin";
+
   return (
     <RootStack.Navigator screenOptions={{ headerShown: false }}>
-      <RootStack.Screen name="App" component={AppStack} />
+      <RootStack.Screen
+        name="App"
+        component={isAdmin ? AdminAppStack : CustomerAppStack}
+      />
       <RootStack.Screen name="Auth" component={AuthStack} />
     </RootStack.Navigator>
   );

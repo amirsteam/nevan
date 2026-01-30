@@ -8,7 +8,7 @@ import type {
   IApiResponse,
   IRegisterData,
   IAuthResponse,
-} from "@shared/types";
+} from "../types";
 
 export const authAPI = {
   register: async (

@@ -87,5 +87,10 @@ userSchema.methods.createPasswordResetToken = function (): string {
   return otp;
 };
 
+// Add indexes for frequently queried fields
+userSchema.index({ email: 1 }); // Fast email lookups (login, registration check)
+userSchema.index({ isActive: 1 }); // Filter active users
+userSchema.index({ resetPasswordToken: 1, resetPasswordExpires: 1 }); // Password reset queries
+
 const User = mongoose.model<IUser>("User", userSchema);
 export default User;

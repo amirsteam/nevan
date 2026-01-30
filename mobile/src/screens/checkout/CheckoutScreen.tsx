@@ -10,6 +10,9 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Image,
+  Linking,
 } from "react-native";
 import {
   SafeAreaView,
@@ -21,7 +24,7 @@ import { resetCart } from "../../store/cartSlice";
 import { ordersAPI, paymentsAPI } from "../../api/orders";
 import type { CheckoutScreenProps } from "../../navigation/types";
 
-type PaymentMethod = "cod" | "esewa" | "khalti";
+type PaymentMethod = "cod" | "esewa";
 
 interface ShippingAddress {
   name: string;
@@ -31,6 +34,9 @@ interface ShippingAddress {
   province: string;
   phone: string;
 }
+
+// eSewa QR image
+const esewaQRImage = require("../../../assets/esewaQR.png");
 
 const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
   const dispatch = useAppDispatch();
@@ -48,6 +54,8 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
   const [loading, setLoading] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
 
   const handleChange = (key: keyof ShippingAddress, value: string): void => {
     setShipping((prev) => ({ ...prev, [key]: value }));
@@ -96,14 +104,11 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
         (paymentRes as unknown as Record<string, unknown>).data || paymentRes;
 
       if (paymentMethod === "cod") {
-        dispatch(resetCart());
-        Alert.alert("Success", "Order placed successfully!", [
-          {
-            text: "OK",
-            onPress: () => navigation.goBack(),
-          },
-        ]);
-      } else if (paymentMethod === "esewa" || paymentMethod === "khalti") {
+        // Show QR modal before completing order
+        setPendingOrderId(orderId);
+        setShowQRModal(true);
+        setLoading(false);
+      } else if (paymentMethod === "esewa") {
         // Navigate to Payment WebView
         navigation.navigate("Payment", {
           orderId,
@@ -219,22 +224,6 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
                   eSewa
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.paymentOption,
-                  paymentMethod === "khalti" && styles.selectedOption,
-                ]}
-                onPress={() => setPaymentMethod("khalti")}
-              >
-                <Text
-                  style={[
-                    styles.paymentText,
-                    paymentMethod === "khalti" && styles.selectedText,
-                  ]}
-                >
-                  Khalti
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -272,6 +261,61 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* eSewa QR Modal for COD */}
+      <Modal
+        visible={showQRModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowQRModal(false);
+          if (pendingOrderId) {
+            dispatch(resetCart());
+            Alert.alert("Success", "Order placed successfully!", [
+              { text: "OK", onPress: () => navigation.goBack() },
+            ]);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Pay via eSewa</Text>
+
+            <Image
+              source={esewaQRImage}
+              style={styles.qrImage}
+              resizeMode="contain"
+            />
+
+            <Text style={styles.modalMessage}>
+              Please scan the QR code to pay and share the payment details to
+              WhatsApp number{" "}
+              <Text
+                style={styles.whatsappLink}
+                onPress={() => Linking.openURL("https://wa.me/9779844575932")}
+              >
+                +977 9844575932
+              </Text>
+              . Thank you!
+            </Text>
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowQRModal(false);
+                if (pendingOrderId) {
+                  dispatch(resetCart());
+                  Alert.alert("Success", "Order placed successfully!", [
+                    { text: "OK", onPress: () => navigation.goBack() },
+                  ]);
+                }
+              }}
+            >
+              <Text style={styles.closeButtonText}>Close & Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -398,6 +442,58 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 18,
     letterSpacing: 0.5,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 16,
+  },
+  qrImage: {
+    width: 220,
+    height: 220,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  whatsappLink: {
+    color: "#25D366",
+    fontWeight: "600",
+  },
+  closeButton: {
+    backgroundColor: "#FF9999",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 25,
+    marginTop: 20,
+    width: "100%",
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+    textAlign: "center",
   },
 });
 

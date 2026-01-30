@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -22,117 +22,126 @@ interface ProductCardProps {
   showWishlist?: boolean;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({
-  product,
-  onPress,
-  showWishlist = true,
-}) => {
-  const { isAuthenticated } = useAppSelector((state) => state.auth);
-  const { data: wishlist } = useGetWishlistQuery(undefined, {
-    skip: !isAuthenticated || !showWishlist,
-  });
+const ProductCard: React.FC<ProductCardProps> = React.memo(
+  ({ product, onPress, showWishlist = true }) => {
+    const { isAuthenticated } = useAppSelector((state) => state.auth);
+    const { data: wishlist } = useGetWishlistQuery(undefined, {
+      skip: !isAuthenticated || !showWishlist,
+    });
 
-  const [addToWishlist, { isLoading: isAdding }] = useAddToWishlistMutation();
-  const [removeFromWishlist, { isLoading: isRemoving }] =
-    useRemoveFromWishlistMutation();
+    const [addToWishlist, { isLoading: isAdding }] = useAddToWishlistMutation();
+    const [removeFromWishlist, { isLoading: isRemoving }] =
+      useRemoveFromWishlistMutation();
 
-  const isInWishlist = wishlist?.some((item) => item._id === product._id);
-  const isWishlistLoading = isAdding || isRemoving;
+    const isInWishlist = wishlist?.some((item) => item._id === product._id);
+    const isWishlistLoading = isAdding || isRemoving;
 
-  const handleWishlistPress = useCallback(async () => {
-    if (!isAuthenticated) {
-      Alert.alert(
-        "Sign In Required",
-        "Please sign in to save items to your wishlist.",
-      );
-      return;
-    }
-
-    try {
-      if (isInWishlist) {
-        await removeFromWishlist(product._id).unwrap();
-      } else {
-        await addToWishlist(product._id).unwrap();
+    const handleWishlistPress = useCallback(async () => {
+      if (!isAuthenticated) {
+        Alert.alert(
+          "Sign In Required",
+          "Please sign in to save items to your wishlist.",
+        );
+        return;
       }
-    } catch (error) {
-      Alert.alert("Error", "Failed to update wishlist");
-    }
-  }, [
-    isAuthenticated,
-    isInWishlist,
-    product._id,
-    addToWishlist,
-    removeFromWishlist,
-  ]);
 
-  // Helper to handle image source
-  const imageSource =
-    product.images && product.images.length > 0
-      ? {
-          uri:
-            product.images[0].url || (product.images[0] as unknown as string),
+      try {
+        if (isInWishlist) {
+          await removeFromWishlist(product._id).unwrap();
+        } else {
+          await addToWishlist(product._id).unwrap();
         }
-      : { uri: "https://via.placeholder.com/150" };
+      } catch (error) {
+        Alert.alert("Error", "Failed to update wishlist");
+      }
+    }, [
+      isAuthenticated,
+      isInWishlist,
+      product._id,
+      addToWishlist,
+      removeFromWishlist,
+    ]);
 
-  // Calculate discount if available
-  const hasDiscount =
-    product.variants?.[0]?.comparePrice &&
-    product.variants[0].comparePrice > product.price;
-  const discountPercent = hasDiscount
-    ? Math.round(
-        ((product.variants![0].comparePrice! - product.price) /
-          product.variants![0].comparePrice!) *
-          100,
-      )
-    : 0;
+    // Helper to handle image source
+    const imageSource = useMemo(
+      () =>
+        product.images && product.images.length > 0
+          ? {
+              uri:
+                product.images[0].url ||
+                (product.images[0] as unknown as string),
+            }
+          : { uri: "https://via.placeholder.com/150" },
+      [product.images],
+    );
 
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
-      <View style={styles.imageContainer}>
-        <Image source={imageSource} style={styles.image} resizeMode="cover" />
-        {hasDiscount && (
-          <View style={styles.discountBadge}>
-            <Text style={styles.discountText}>-{discountPercent}%</Text>
-          </View>
-        )}
-        {showWishlist && (
-          <TouchableOpacity
-            style={[
-              styles.wishlistButton,
-              isInWishlist && styles.wishlistButtonActive,
-            ]}
-            onPress={handleWishlistPress}
-            disabled={isWishlistLoading}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Heart
-              size={18}
-              color={isInWishlist ? "#fff" : "#666"}
-              fill={isInWishlist ? "#F44336" : "none"}
-              strokeWidth={isInWishlist ? 0 : 2}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-      <View style={styles.details}>
-        <Text style={styles.name} numberOfLines={2}>
-          {product.name}
-        </Text>
-        <View style={styles.priceRow}>
-          <Text style={styles.price}>Rs. {product.price}</Text>
+    // Calculate discount if available (memoized)
+    const { hasDiscount, discountPercent } = useMemo(() => {
+      const has =
+        product.variants?.[0]?.comparePrice &&
+        product.variants[0].comparePrice > product.price;
+      const percent = has
+        ? Math.round(
+            ((product.variants![0].comparePrice! - product.price) /
+              product.variants![0].comparePrice!) *
+              100,
+          )
+        : 0;
+      return { hasDiscount: has, discountPercent: percent };
+    }, [product.price, product.variants]);
+
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={onPress}
+        activeOpacity={0.9}
+      >
+        <View style={styles.imageContainer}>
+          <Image source={imageSource} style={styles.image} resizeMode="cover" />
           {hasDiscount && (
-            <Text style={styles.comparePrice}>
-              Rs. {product.variants![0].comparePrice}
-            </Text>
+            <View style={styles.discountBadge}>
+              <Text style={styles.discountText}>-{discountPercent}%</Text>
+            </View>
+          )}
+          {showWishlist && (
+            <TouchableOpacity
+              style={[
+                styles.wishlistButton,
+                isInWishlist && styles.wishlistButtonActive,
+              ]}
+              onPress={handleWishlistPress}
+              disabled={isWishlistLoading}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Heart
+                size={18}
+                color={isInWishlist ? "#fff" : "#666"}
+                fill={isInWishlist ? "#F44336" : "none"}
+                strokeWidth={isInWishlist ? 0 : 2}
+              />
+            </TouchableOpacity>
           )}
         </View>
-        {product.stock !== undefined && product.stock <= 0 && (
-          <Text style={styles.outOfStock}>Out of Stock</Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-};
+        <View style={styles.details}>
+          <Text style={styles.name} numberOfLines={2}>
+            {product.name}
+          </Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>Rs. {product.price}</Text>
+            {hasDiscount && (
+              <Text style={styles.comparePrice}>
+                Rs. {product.variants![0].comparePrice}
+              </Text>
+            )}
+          </View>
+          {product.stock !== undefined && product.stock <= 0 && (
+            <Text style={styles.outOfStock}>Out of Stock</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  },
+);
 
 const styles = StyleSheet.create({
   card: {

@@ -102,7 +102,8 @@ const OrderDetailScreen: React.FC<OrderDetailScreenProps> = ({
     );
   }
 
-  const canCancel = ["pending", "processing"].includes(order.status);
+  const orderStatus = order.status || order.orderStatus || "pending";
+  const canCancel = ["pending", "processing"].includes(orderStatus);
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
@@ -117,13 +118,13 @@ const OrderDetailScreen: React.FC<OrderDetailScreenProps> = ({
           <View
             style={[
               styles.statusIconContainer,
-              { backgroundColor: getStatusColor(order.status) + "20" },
+              { backgroundColor: getStatusColor(orderStatus) + "20" },
             ]}
           >
-            <Package size={32} color={getStatusColor(order.status)} />
+            <Package size={32} color={getStatusColor(orderStatus)} />
           </View>
           <Text style={styles.statusTitle}>
-            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+            {orderStatus.charAt(0).toUpperCase() + orderStatus.slice(1)}
           </Text>
           <Text style={styles.orderNumber}>
             Order #{order.orderNumber || order._id.slice(-8).toUpperCase()}
@@ -200,14 +201,18 @@ const OrderDetailScreen: React.FC<OrderDetailScreenProps> = ({
             <View style={styles.infoRow}>
               <CreditCard size={18} color="#666" />
               <Text style={styles.infoText}>
-                {order.payment?.method?.toUpperCase() || "N/A"}
+                {(
+                  order.paymentMethod ||
+                  order.payment?.method ||
+                  "N/A"
+                ).toUpperCase()}
               </Text>
               <View
                 style={[
                   styles.paymentBadge,
                   {
                     backgroundColor:
-                      order.payment?.status === "paid"
+                      (order.paymentStatus || order.payment?.status) === "paid"
                         ? "#4CAF5020"
                         : "#FFA50020",
                   },
@@ -218,13 +223,16 @@ const OrderDetailScreen: React.FC<OrderDetailScreenProps> = ({
                     styles.paymentBadgeText,
                     {
                       color:
-                        order.payment?.status === "paid"
+                        (order.paymentStatus || order.payment?.status) ===
+                        "paid"
                           ? "#4CAF50"
                           : "#FFA500",
                     },
                   ]}
                 >
-                  {order.payment?.status === "paid" ? "Paid" : "Pending"}
+                  {(order.paymentStatus || order.payment?.status) === "paid"
+                    ? "Paid"
+                    : "Pending"}
                 </Text>
               </View>
             </View>
@@ -238,27 +246,34 @@ const OrderDetailScreen: React.FC<OrderDetailScreenProps> = ({
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
               <Text style={styles.summaryValue}>
-                Rs. {order.subtotal?.toFixed(2)}
+                Rs.{" "}
+                {(order.subtotal ?? order.pricing?.subtotal ?? 0).toFixed(2)}
               </Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Shipping</Text>
               <Text style={styles.summaryValue}>
-                Rs. {order.shippingCost?.toFixed(2) || "0.00"}
+                Rs.{" "}
+                {(
+                  order.shippingCost ??
+                  order.pricing?.shippingCost ??
+                  0
+                ).toFixed(2)}
               </Text>
             </View>
-            {order.discount > 0 && (
+            {(order.discount || order.pricing?.discount || 0) > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Discount</Text>
                 <Text style={[styles.summaryValue, { color: "#4CAF50" }]}>
-                  -Rs. {order.discount?.toFixed(2)}
+                  -Rs.{" "}
+                  {(order.discount || order.pricing?.discount || 0).toFixed(2)}
                 </Text>
               </View>
             )}
             <View style={[styles.summaryRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>
-                Rs. {order.total?.toFixed(2)}
+                Rs. {(order.total ?? order.pricing?.total ?? 0).toFixed(2)}
               </Text>
             </View>
           </View>

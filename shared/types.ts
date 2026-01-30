@@ -88,6 +88,10 @@ export interface ICategory {
   slug: string;
   description?: string;
   image?: IImage;
+  parent?: ICategory | string | null;
+  order?: number;
+  isActive?: boolean;
+  subcategories?: ICategory[];
 }
 
 // ============================================
@@ -100,6 +104,7 @@ export interface IProductVariant {
   color: string;
   sku?: string;
   price: number;
+  comparePrice?: number;
   stock: number;
   image?: string; // URL string, not IImage object
 }
@@ -114,9 +119,13 @@ export interface IProduct {
   category: string | ICategory;
   images: IImage[];
   stock: number;
-  ratings?: number;
+  ratings?: {
+    average: number;
+    count: number;
+  };
   numReviews?: number;
   isFeatured?: boolean;
+  isActive?: boolean;
   variants?: IProductVariant[];
   createdAt?: string;
   updatedAt?: string;
@@ -146,6 +155,12 @@ export interface ICartItem {
     size: string;
     color: string;
   };
+  // Computed fields from backend
+  currentPrice?: number;
+  variant?: IProductVariant | null;
+  itemTotal?: number;
+  priceAtAdd?: number;
+  priceChanged?: boolean;
 }
 
 export interface ICart {
@@ -183,13 +198,17 @@ export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";
 export type PaymentMethod = "cod" | "esewa" | "khalti";
 
 export interface IShippingAddress {
-  fullName: string;
+  fullName?: string;
+  name?: string;
   phone: string;
   street: string;
   city: string;
-  state: string;
+  state?: string;
+  district?: string;
+  province?: number;
   postalCode?: string;
-  country: string;
+  country?: string;
+  landmark?: string;
 }
 
 export interface IOrderItem {
@@ -203,6 +222,11 @@ export interface IOrderItem {
     size: string;
     color: string;
   };
+  variantDetails?: {
+    size: string;
+    color: string;
+  };
+  subtotal?: number;
 }
 
 export interface IOrder {
@@ -211,24 +235,48 @@ export interface IOrder {
   user: string | IUser;
   items: IOrderItem[];
   shippingAddress: IShippingAddress;
+  // Flat fields (for mobile compatibility)
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
   subtotal: number;
   shippingCost: number;
   total: number;
+  // Nested fields (backend structure)
+  status?: OrderStatus;
+  payment?: {
+    method: PaymentMethod;
+    status: PaymentStatus;
+    transactionId?: string;
+    paidAt?: string;
+  };
+  pricing?: {
+    subtotal: number;
+    shippingCost: number;
+    discount: number;
+    tax: number;
+    total: number;
+  };
+  discount?: number;
   note?: string;
+  notes?: string;
+  customerNotes?: string;
   statusHistory?: {
     status: OrderStatus;
     note?: string;
-    timestamp: string;
+    timestamp?: string;
+    changedAt?: string;
   }[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ICreateOrderData {
-  shippingAddress: IShippingAddress;
+  shippingAddress: Partial<IShippingAddress> & {
+    phone: string;
+    street: string;
+    city: string;
+  };
   paymentMethod: PaymentMethod;
   note?: string;
 }

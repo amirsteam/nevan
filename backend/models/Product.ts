@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
-import { PRODUCT_SIZES } from "../../shared/types";
+import { PRODUCT_SIZES } from "../utils/constants";
 
 // Re-export for backward compatibility
 export const VALID_SIZES = PRODUCT_SIZES;

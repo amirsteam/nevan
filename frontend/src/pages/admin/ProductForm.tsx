@@ -7,13 +7,8 @@ import { adminAPI } from "../../api";
 import { ImageUploader, type ImageUploaderImage } from "../../components/admin";
 import { Plus, Trash2, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
-import {
-  PRODUCT_SIZES,
-  type IProduct,
-  type ICategory,
-  type IProductVariant,
-  type IImage,
-} from "../../../../shared/types";
+import { PRODUCT_SIZES } from "../../utils/constants";
+import type { IProduct, ICategory, IProductVariant, IImage } from "../../types";
 
 // ============================================
 // Type Definitions
@@ -273,6 +268,21 @@ const ProductForm: React.FC<ProductFormProps> = ({
     index: number,
     file: File,
   ): Promise<void> => {
+    // Client-side file size validation (10MB limit)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error(
+        `File too large. Maximum size is 10MB. Your file: ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+      );
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are allowed");
+      return;
+    }
+
     const previewUrl = URL.createObjectURL(file);
 
     setVariants((prev) => {
@@ -326,7 +336,29 @@ const ProductForm: React.FC<ProductFormProps> = ({
 
   // Handle new image upload
   const handleImageUpload = (files: File[]): void => {
-    const previews: NewImage[] = files.map((file) => ({
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    const validFiles: File[] = [];
+    const invalidFiles: string[] = [];
+
+    files.forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        invalidFiles.push(`${file.name}: Not an image file`);
+      } else if (file.size > MAX_FILE_SIZE) {
+        invalidFiles.push(
+          `${file.name}: Too large (${(file.size / (1024 * 1024)).toFixed(1)}MB > 10MB)`,
+        );
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (invalidFiles.length > 0) {
+      toast.error(`Some files were skipped:\n${invalidFiles.join("\n")}`);
+    }
+
+    if (validFiles.length === 0) return;
+
+    const previews: NewImage[] = validFiles.map((file) => ({
       id: `new-${Date.now()}-${Math.random()}`,
       file,
       preview: URL.createObjectURL(file),
