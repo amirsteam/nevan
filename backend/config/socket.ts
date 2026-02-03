@@ -4,6 +4,9 @@
  */
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { Redis } from "ioredis";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 import { verifyAccessToken } from "../utils/tokenUtils";
 import User from "../models/User";
 import ChatRoom from "../models/ChatRoom";
@@ -15,8 +18,14 @@ interface AuthenticatedSocket extends Socket {
     userRole: "customer" | "admin";
 }
 
-// In-memory connection tracking
+// In-memory connection tracking (Fallback / Local only)
 const userConnections = new Map<string, Set<string>>(); // userId -> Set of socketIds
+
+// Rate Limiter: 10 messages per second per user
+const rateLimiter = new RateLimiterMemory({
+    points: 10,
+    duration: 1,
+});
 
 /**
  * Initialize Socket.IO server with the HTTP server
@@ -32,6 +41,21 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
         },
         path: "/socket.io",
     });
+
+    // Redis Adapter Setup
+    if (process.env.REDIS_URL) {
+        try {
+            const pubClient = new Redis(process.env.REDIS_URL);
+            const subClient = pubClient.duplicate();
+
+            io.adapter(createAdapter(pubClient, subClient));
+            console.log("✅ Redis Adapter initialized for Socket.IO");
+        } catch (error) {
+            console.error("❌ Failed to initialize Redis Adapter:", error);
+        }
+    } else {
+        console.log("⚠️ No REDIS_URL found. Using default in-memory adapter (Single Instance Mode).");
+    }
 
     // Chat namespace with authentication
     const chatNamespace = io.of("/chat");
@@ -72,11 +96,14 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
     });
 
     // Handle connections
-    chatNamespace.on("connection", (socket: Socket) => {
+    chatNamespace.on("connection", async (socket: Socket) => {
         const authSocket = socket as AuthenticatedSocket;
         const { userId, userRole } = authSocket;
 
-        // Track connection
+        // Track connection via Rooms (Scalable)
+        await socket.join(`user:${userId}`);
+
+        // Track connection via Map (Legacy/Local stats)
         if (!userConnections.has(userId)) {
             userConnections.set(userId, new Set());
         }
@@ -157,6 +184,13 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
             try {
                 const { roomId, content } = data;
 
+                // Rate Limiting Check
+                try {
+                    await rateLimiter.consume(userId); // Consume 1 point by userId
+                } catch (rejRes) {
+                    return callback?.({ success: false, error: "Rate limit exceeded. Please slow down." });
+                }
+
                 // Validate message
                 if (!content || typeof content !== "string") {
                     return callback?.({ success: false, error: "Message content required" });
@@ -191,8 +225,15 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     content: content.trim(),
                 });
 
-                // Update room's last message timestamp
+                // Update room's last message timestamp and unread counts
                 room.lastMessageAt = new Date();
+
+                // Increment unread count for the recipient
+                if (userRole === "customer") {
+                    room.unreadCountAdmin = (room.unreadCountAdmin || 0) + 1;
+                } else {
+                    room.unreadCountCustomer = (room.unreadCountCustomer || 0) + 1;
+                }
 
                 // Auto-assign admin if they respond to unassigned room
                 if (userRole === "admin" && !room.adminId) {
@@ -208,6 +249,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     senderId: message.senderId.toString(),
                     senderRole: message.senderRole,
                     content: message.content,
+                    status: message.status,
                     createdAt: message.createdAt,
                 };
 
@@ -230,6 +272,74 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
             }
         });
 
+        // ==================== TYPING INDICATORS ====================
+        socket.on("typing", (data) => {
+            const { roomId } = data;
+            socket.to(`room:${roomId}`).emit("typing", {
+                roomId,
+                userId,
+                userRole
+            });
+        });
+
+        socket.on("stop-typing", (data) => {
+            const { roomId } = data;
+            socket.to(`room:${roomId}`).emit("stop-typing", {
+                roomId,
+                userId
+            });
+        });
+
+        // ==================== MESSAGE READ ====================
+        socket.on("message-read", async (data) => {
+            try {
+                const { roomId, messageIds } = data; // Expecting array of message IDs
+
+                if (!roomId) return;
+
+                const roomName = `room:${roomId}`;
+
+                // Update messages in DB
+                if (messageIds && Array.isArray(messageIds) && messageIds.length > 0) {
+                    await Message.updateMany(
+                        {
+                            _id: { $in: messageIds },
+                            roomId: roomId,
+                            senderId: { $ne: userId } // Only mark others' messages as read
+                        },
+                        {
+                            $set: {
+                                status: "read",
+                                readAt: new Date()
+                            }
+                        }
+                    );
+                }
+
+                // Reset unread count for this user in the room
+                const room = await ChatRoom.findById(roomId);
+                if (room) {
+                    if (userRole === "customer") {
+                        room.unreadCountCustomer = 0;
+                    } else {
+                        room.unreadCountAdmin = 0;
+                    }
+                    await room.save();
+                }
+
+                // Broadcast read receipt
+                socket.to(roomName).emit("message-read", {
+                    roomId,
+                    userId,
+                    userRole,
+                    readAt: new Date()
+                });
+
+            } catch (error: any) {
+                console.error("message-read error:", error.message);
+            }
+        });
+
         // ==================== GET ROOMS (Admin only) ====================
         socket.on("get-rooms", async (callback) => {
             try {
@@ -241,7 +351,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 const rooms = await ChatRoom.find({ status: "open" })
                     .populate("customerId", "name email")
                     .populate("adminId", "name")
-                    .sort({ lastMessageAt: -1 })
+                    .sort({ lastMessageAt: -1 }) // Sort by most recent activity
                     .lean();
 
                 callback?.({ success: true, rooms });

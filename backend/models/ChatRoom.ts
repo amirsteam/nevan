@@ -9,6 +9,8 @@ export interface IChatRoom extends Document {
     customerId: Types.ObjectId;
     adminId?: Types.ObjectId;
     status: "open" | "closed";
+    unreadCountCustomer: number;
+    unreadCountAdmin: number;
     lastMessageAt?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -20,6 +22,7 @@ const chatRoomSchema = new Schema<IChatRoom>(
             type: Schema.Types.ObjectId,
             ref: "User",
             required: true,
+            // index: true, // Removed redundant index covered by compound index below
         },
         adminId: {
             type: Schema.Types.ObjectId,
@@ -29,6 +32,14 @@ const chatRoomSchema = new Schema<IChatRoom>(
             type: String,
             enum: ["open", "closed"],
             default: "open",
+        },
+        unreadCountCustomer: {
+            type: Number,
+            default: 0,
+        },
+        unreadCountAdmin: {
+            type: Number,
+            default: 0,
         },
         lastMessageAt: {
             type: Date,

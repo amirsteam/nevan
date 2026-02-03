@@ -11,6 +11,8 @@ export interface ChatMessage {
     senderId: string;
     senderRole: "customer" | "admin";
     content: string;
+    attachments?: { type: "image"; url: string }[];
+    status: "sent" | "delivered" | "read";
     createdAt: string;
 }
 
@@ -22,6 +24,8 @@ interface ChatState {
     connectionStatus: "disconnected" | "connecting" | "connected" | "error";
     isLoading: boolean;
     error: string | null;
+    unreadCount: number;
+    typingUsers: string[]; // List of user IDs currently typing
 }
 
 const initialState: ChatState = {
@@ -31,6 +35,8 @@ const initialState: ChatState = {
     connectionStatus: "disconnected",
     isLoading: false,
     error: null,
+    unreadCount: 0,
+    typingUsers: [],
 };
 
 const chatSlice = createSlice({
@@ -92,6 +98,36 @@ const chatSlice = createSlice({
             state.connectionStatus = "disconnected";
             state.isLoading = false;
             state.error = null;
+            state.unreadCount = 0;
+            state.typingUsers = [];
+        },
+
+        // Update message status (e.g., mark as read)
+        updateMessageStatus: (state, action: PayloadAction<{ messageId: string; status: "sent" | "delivered" | "read" }>) => {
+            const msg = state.messages.find(m => m._id === action.payload.messageId);
+            if (msg) {
+                msg.status = action.payload.status;
+            }
+        },
+
+        // Update unread count
+        setUnreadCount: (state, action: PayloadAction<number>) => {
+            state.unreadCount = action.payload;
+        },
+
+        incrementUnreadCount: (state) => {
+            state.unreadCount += 1;
+        },
+
+        // Typing indicators
+        setTypingUser: (state, action: PayloadAction<{ userId: string; isTyping: boolean }>) => {
+            if (action.payload.isTyping) {
+                if (!state.typingUsers.includes(action.payload.userId)) {
+                    state.typingUsers.push(action.payload.userId);
+                }
+            } else {
+                state.typingUsers = state.typingUsers.filter(id => id !== action.payload.userId);
+            }
         },
     },
 });
@@ -106,6 +142,10 @@ export const {
     setIsLoading,
     setError,
     clearChat,
+    updateMessageStatus,
+    setUnreadCount,
+    incrementUnreadCount,
+    setTypingUser,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

@@ -7,11 +7,7 @@ import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import MessageBubble from "./MessageBubble";
 
-interface MessageListProps {
-    currentUserId: string | null;
-}
-
-const MessageList = ({ currentUserId }: MessageListProps) => {
+const MessageList = () => {
     const { messages, isLoading } = useSelector(
         (state: RootState) => state.chat
     );
@@ -48,9 +44,10 @@ const MessageList = ({ currentUserId }: MessageListProps) => {
                 <MessageBubble
                     key={message._id}
                     content={message.content}
-                    isOwn={message.senderId === currentUserId}
+                    isOwn={message.senderRole === "customer"}
                     timestamp={message.createdAt}
                     senderRole={message.senderRole}
+                    attachments={message.attachments}
                 />
             ))}
             <div ref={messagesEndRef} />

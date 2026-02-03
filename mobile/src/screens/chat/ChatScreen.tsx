@@ -14,10 +14,13 @@ import {
     StyleSheet,
     ActivityIndicator,
     SafeAreaView,
+    Image,
+    Alert, // Added Alert for error handling
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { useFocusEffect } from "@react-navigation/native";
-import { Send, RefreshCw } from "lucide-react-native";
+import { Send, RefreshCw, Check, CheckCheck, Image as ImageIcon } from "lucide-react-native"; // Added ImageIcon
+import * as ImagePicker from 'expo-image-picker'; // Added ImagePicker
 import { RootState, AppDispatch } from "../../store";
 import {
     setActiveRoomId,
@@ -39,6 +42,10 @@ const ChatScreen = () => {
     const [isSending, setIsSending] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const flatListRef = useRef<FlatList>(null);
+
+    // Phase 2: Typing state
+    const [typingText, setTypingText] = useState<string>("");
+    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Get current user ID
     useEffect(() => {
@@ -100,8 +107,27 @@ const ChatScreen = () => {
 
         socket.on("new-message", (message: ChatMessage) => {
             dispatch(addMessage(message));
+            // Mark as read immediately if we are in the screen
+            if (message.senderId !== currentUserId) {
+                socket.emit("message-read", { roomId: message.roomId, messageIds: [message._id] });
+            }
         });
-    }, [dispatch]);
+
+        // Typing events
+        socket.on("typing", (data: { userId: string; userRole: string }) => {
+            if (data.userId !== currentUserId) {
+                setTypingText("Support is typing...");
+            }
+        });
+
+        socket.on("stop-typing", () => {
+            setTypingText("");
+        });
+
+        // Message read receipt (optional update logic here)
+        socket.on("message-read", () => { });
+
+    }, [dispatch, currentUserId]);
 
     // Connect on focus, disconnect on blur
     useFocusEffect(
@@ -114,6 +140,9 @@ const ChatScreen = () => {
                 socketService.off("disconnect");
                 socketService.off("chat-history");
                 socketService.off("new-message");
+                socketService.off("typing");
+                socketService.off("stop-typing");
+                socketService.off("message-read");
                 socketService.disconnect();
             };
         }, [initializeChat])
@@ -128,6 +157,90 @@ const ChatScreen = () => {
         }
     }, [messages]);
 
+    // Handle Image Pick
+    const handlePickImage = async () => {
+        try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.8,
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0 && activeRoomId) {
+                const asset = result.assets[0];
+
+                // Upload
+                const formData = new FormData();
+                const uriParts = asset.uri.split('.');
+                const fileType = uriParts[uriParts.length - 1];
+
+                formData.append('image', {
+                    uri: asset.uri,
+                    name: `photo.${fileType}`,
+                    type: `image/${fileType}`,
+                } as any);
+
+                dispatch(setIsLoading(true));
+
+                // TODO: abstract to service
+                const token = await getItem('accessToken');
+                // Use explicit IP for Android emulator/EXPO device if needed, but assuming socketService URL is correct
+                // We'll use the same base URL logic if possible, or hardcode for now based on env
+                const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.3:5000/api/v1'}/chat/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'multipart/form-data',
+                    },
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    socketService.emit(
+                        "send-message",
+                        {
+                            roomId: activeRoomId,
+                            content: "Sent an image",
+                            attachments: [{ type: 'image', url: data.url }]
+                        },
+                        (res: { success: boolean; error?: string }) => {
+                            if (!res.success) {
+                                console.error("Failed to send image msg:", res.error);
+                                Alert.alert("Error", "Failed to send image");
+                            }
+                        }
+                    );
+                } else {
+                    Alert.alert("Upload Failed", data.message || "Unknown error");
+                }
+                dispatch(setIsLoading(false));
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to pick/upload image");
+            dispatch(setIsLoading(false));
+        }
+    };
+
+    // Handle Input Change
+    const handleInputChange = (text: string) => {
+        setInputMessage(text);
+
+        if (!activeRoomId) return;
+        const socket = socketService.getSocket();
+
+        // Emit typing
+        socket?.emit("typing", { roomId: activeRoomId });
+
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+        typingTimeoutRef.current = setTimeout(() => {
+            socket?.emit("stop-typing", { roomId: activeRoomId });
+        }, 2000);
+    };
+
     // Handle sending message
     const handleSendMessage = () => {
         const trimmedMessage = inputMessage.trim();
@@ -135,6 +248,9 @@ const ChatScreen = () => {
         if (!trimmedMessage || !activeRoomId || isSending) return;
 
         setIsSending(true);
+        // Stop typing immediately
+        socketService.getSocket()?.emit("stop-typing", { roomId: activeRoomId });
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
         socketService.emit(
             "send-message",
@@ -179,9 +295,32 @@ const ChatScreen = () => {
                     <Text style={[styles.messageText, isOwn && styles.ownMessageText]}>
                         {item.content}
                     </Text>
-                    <Text style={[styles.timestamp, isOwn && styles.ownTimestamp]}>
-                        {formattedTime}
-                    </Text>
+                    {item.attachments?.map((att, idx) => (
+                        att.type === 'image' && (
+                            <Image
+                                key={idx}
+                                source={{ uri: att.url }}
+                                style={{ width: 200, height: 150, borderRadius: 8, marginTop: 8 }}
+                                resizeMode="cover"
+                            />
+                        )
+                    ))}
+                    <View style={styles.messageFooter}>
+                        <Text style={[styles.timestamp, isOwn && styles.ownTimestamp]}>
+                            {formattedTime}
+                        </Text>
+                        {isOwn && (
+                            <View style={styles.statusIcon}>
+                                {item.status === "read" ? (
+                                    <CheckCheck size={14} color="#93c5fd" />
+                                ) : item.status === "delivered" ? (
+                                    <CheckCheck size={14} color="rgba(255,255,255,0.7)" />
+                                ) : (
+                                    <Check size={14} color="rgba(255,255,255,0.7)" />
+                                )}
+                            </View>
+                        )}
+                    </View>
                 </View>
             </View>
         );
@@ -249,17 +388,31 @@ const ChatScreen = () => {
                     />
                 )}
 
+                {/* Typing Indicator */}
+                {typingText ? (
+                    <View style={styles.typingContainer}>
+                        <Text style={styles.typingText}>{typingText}</Text>
+                    </View>
+                ) : null}
+
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
                         value={inputMessage}
-                        onChangeText={setInputMessage}
+                        onChangeText={handleInputChange}
                         placeholder="Type a message..."
                         placeholderTextColor="#9ca3af"
                         multiline
                         maxLength={2000}
                         editable={connectionStatus === "connected"}
                     />
+                    <TouchableOpacity
+                        onPress={handlePickImage}
+                        disabled={connectionStatus !== "connected"}
+                        style={styles.attachButton}
+                    >
+                        <ImageIcon size={24} color="#6b7280" />
+                    </TouchableOpacity>
                     <TouchableOpacity
                         onPress={handleSendMessage}
                         disabled={
@@ -376,14 +529,22 @@ const styles = StyleSheet.create({
     ownMessageText: {
         color: "#fff",
     },
+    messageFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        marginTop: 4,
+        gap: 4
+    },
     timestamp: {
         fontSize: 11,
         color: "#9ca3af",
-        marginTop: 4,
-        alignSelf: "flex-end",
     },
     ownTimestamp: {
         color: "rgba(255, 255, 255, 0.7)",
+    },
+    statusIcon: {
+        marginLeft: 2,
     },
     inputContainer: {
         flexDirection: "row",
@@ -411,9 +572,24 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginLeft: 8,
     },
+    attachButton: {
+        justifyContent: "center",
+        alignItems: "center",
+        marginLeft: 8,
+        padding: 4,
+    },
     sendButtonDisabled: {
         opacity: 0.5,
     },
+    typingContainer: {
+        paddingHorizontal: 16,
+        paddingVertical: 4,
+    },
+    typingText: {
+        fontSize: 12,
+        color: "#6b7280",
+        fontStyle: "italic",
+    }
 });
 
 export default ChatScreen;

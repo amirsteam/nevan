@@ -69,6 +69,21 @@ const categoryStorage = new CloudinaryStorage({
   } as any,
 });
 
+/**
+ * Storage configuration for chat images
+ */
+const chatStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "bivanhandicraft/chat",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [
+      { width: 1000, height: 1000, crop: "limit" },
+      { quality: "auto", fetch_format: "auto" },
+    ],
+  } as any,
+});
+
 // Multer upload instances
 const uploadProductImages = multer({
   storage: productStorage,
@@ -90,6 +105,17 @@ const uploadAvatar = multer({
 const uploadCategoryImage = multer({
   storage: categoryStorage,
   limits: { fileSize: 3 * 1024 * 1024 }, // 3MB limit
+});
+
+const uploadChatImage = multer({
+  storage: chatStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req: any, file: any, cb: any) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed"), false);
+    }
+    cb(null, true);
+  },
 });
 
 /**
@@ -135,6 +161,7 @@ export {
   uploadProductImages,
   uploadAvatar,
   uploadCategoryImage,
+  uploadChatImage,
   deleteImage,
   getOptimizedUrl,
 };

@@ -10,6 +10,13 @@ export interface IMessage extends Document {
     senderId: Types.ObjectId;
     senderRole: "customer" | "admin";
     content: string;
+    attachments?: {
+        type: "image";
+        url: string;
+    }[];
+    status: "sent" | "delivered" | "read";
+    deliveredAt?: Date;
+    readAt?: Date;
     createdAt: Date;
 }
 
@@ -35,6 +42,23 @@ const messageSchema = new Schema<IMessage>(
             required: true,
             maxlength: 2000,
             trim: true,
+        },
+        attachments: [
+            {
+                type: { type: String, enum: ["image"], required: true },
+                url: { type: String, required: true },
+            },
+        ],
+        status: {
+            type: String,
+            enum: ["sent", "delivered", "read"],
+            default: "sent",
+        },
+        deliveredAt: {
+            type: Date,
+        },
+        readAt: {
+            type: Date,
         },
     },
     { timestamps: true }

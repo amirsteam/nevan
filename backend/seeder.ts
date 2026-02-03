@@ -1,29 +1,33 @@
 /**
- * Database Seeder
+ * Database Seeder (TypeScript)
  * Seeds the database with sample data for development/testing
  *
  * Usage:
- *   node seeder.js --import   # Import sample data
- *   node seeder.js --destroy  # Delete all data
+ *   npm run seed -- --import   # Import sample data
+ *   npm run seed -- --destroy  # Delete all data
  */
-require('dotenv').config();
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+import dotenv from 'dotenv';
+dotenv.config();
+
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs'; // Using bcryptjs for broader compatibility in scripts
+import User from './models/User';
+import Category from './models/Category';
+import Product from './models/Product';
+import Cart from './models/Cart';
+import Order from './models/Order';
+import Payment from './models/Payment';
+import Review from './models/Review';
 
 // Connect to Database first
 const run = async () => {
     try {
+        if (!process.env.MONGODB_URI) {
+            throw new Error("MONGODB_URI environment variable is not defined");
+        }
+
         await mongoose.connect(process.env.MONGODB_URI);
         console.log('✅ MongoDB Connected');
-
-        // Import models after connection
-        const User = require('./models/User');
-        const Category = require('./models/Category');
-        const Product = require('./models/Product');
-        const Cart = require('./models/Cart');
-        const Order = require('./models/Order');
-        const Payment = require('./models/Payment');
-        const Review = require('./models/Review');
 
         const arg = process.argv[2];
 
@@ -80,7 +84,7 @@ const run = async () => {
 
             // Get category IDs
             const categories = await Category.find({});
-            const catMap = {};
+            const catMap: { [key: string]: any } = {};
             categories.forEach(c => { catMap[c.name] = c._id; });
 
             // Create products
@@ -208,12 +212,12 @@ const run = async () => {
         } else {
             console.log('\n📦 BivanHandicraft Database Seeder\n');
             console.log('Usage:');
-            console.log('  node seeder.js --import   Import sample data');
-            console.log('  node seeder.js --destroy  Delete all data\n');
+            console.log('  npm run seed -- --import   Import sample data');
+            console.log('  npm run seed -- --destroy  Delete all data\n');
         }
 
         process.exit(0);
-    } catch (error) {
+    } catch (error: any) {
         console.error('❌ Error:', error.message);
         console.error(error);
         process.exit(1);
