@@ -4,10 +4,12 @@
  */
 import { configureStore } from "@reduxjs/toolkit";
 import cartReducer from "./cartSlice";
+import chatReducer from "./chatSlice";
 
 export const store = configureStore({
   reducer: {
     cart: cartReducer,
+    chat: chatReducer,
   },
   devTools: import.meta.env.DEV,
 });

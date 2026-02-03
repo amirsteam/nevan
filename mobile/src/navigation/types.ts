@@ -64,6 +64,7 @@ export type ProfileStackParamList = {
   PaymentMethods: undefined;
   Preferences: undefined;
   HelpSupport: undefined;
+  Chat: undefined;
 };
 
 // ==================== Home Stack ====================

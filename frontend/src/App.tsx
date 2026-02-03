@@ -9,6 +9,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { PendingCartProvider } from "./context/PendingCartContext";
 import { store } from "./store";
 import router from "./routes";
+import { ChatWidget } from "./components/chat";
 
 function App(): React.ReactElement {
   return (
@@ -39,6 +40,8 @@ function App(): React.ReactElement {
               },
             }}
           />
+          {/* Floating Chat Widget - shows for logged-in users */}
+          <ChatWidget />
         </PendingCartProvider>
       </AuthProvider>
     </Provider>

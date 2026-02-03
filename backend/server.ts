@@ -1,12 +1,14 @@
 /**
  * Server Entry Point
- * Starts the Express server and connects to MongoDB
+ * Starts the Express server with Socket.IO and connects to MongoDB
  */
 import dotenv from 'dotenv';
 dotenv.config();
 
+import http from 'http';
 import app from './app';
 import connectDB from './config/db';
+import { initializeSocket } from './config/socket';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err: Error) => {
@@ -19,9 +21,15 @@ process.on('uncaughtException', (err: Error) => {
 // Connect to database
 connectDB();
 
+// Create HTTP server (required for Socket.IO)
+const httpServer = http.createServer(app);
+
+// Initialize Socket.IO
+const io = initializeSocket(httpServer);
+
 // Start server
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
@@ -31,6 +39,7 @@ const server = app.listen(PORT, () => {
 ║   Port: ${PORT}                                            ║
 ║   URL: http://0.0.0.0:${PORT}                            ║
 ║   API: http://192.168.1.3:${PORT}/api/v1                 ║
+║   Socket.IO: /chat namespace enabled                      ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
@@ -40,7 +49,7 @@ const server = app.listen(PORT, () => {
 process.on('unhandledRejection', (err: any) => {
     console.error('UNHANDLED REJECTION! 💥 Shutting down...');
     console.error(err.name, err.message);
-    server.close(() => {
+    httpServer.close(() => {
         process.exit(1);
     });
 });
@@ -48,7 +57,7 @@ process.on('unhandledRejection', (err: any) => {
 // Graceful shutdown on SIGTERM
 process.on('SIGTERM', () => {
     console.log('👋 SIGTERM RECEIVED. Shutting down gracefully');
-    server.close(() => {
+    httpServer.close(() => {
         console.log('💥 Process terminated!');
     });
 });

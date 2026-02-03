@@ -2,6 +2,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
 import cartReducer from "./cartSlice";
 import ordersReducer from "./ordersSlice";
+import chatReducer from "./chatSlice";
 import { baseApi } from "./api/baseApi";
 
 export const store = configureStore({
@@ -9,6 +10,7 @@ export const store = configureStore({
     auth: authReducer,
     cart: cartReducer,
     orders: ordersReducer,
+    chat: chatReducer,
     // RTK Query reducer
     [baseApi.reducerPath]: baseApi.reducer,
   },
