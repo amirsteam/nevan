@@ -10,15 +10,20 @@ import type {
 } from "@reduxjs/toolkit/query";
 import { Platform } from "react-native";
 import { getItem, setItem, deleteItem } from "../../utils/storage";
+import { NGROK_URL, LOCAL_IP } from "../../utils/config";
 import type { RootState } from "../index";
 
 // Get base URL based on environment
+// For tunnel mode, set NGROK_URL in src/utils/config.ts
 const getBaseUrl = (): string => {
-  const LOCAL_IP = "192.168.1.2";
-
   // @ts-ignore - __DEV__ is a React Native global
   if (!__DEV__) {
     return "https://backend.nevanhandicraft.com.np/api/v1";
+  }
+
+  // Use ngrok URL if configured (set in config.ts)
+  if (NGROK_URL) {
+    return `${NGROK_URL}/api/v1`;
   }
 
   if (Platform.OS === "web") return "http://localhost:5000/api/v1";

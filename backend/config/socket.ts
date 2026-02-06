@@ -12,6 +12,7 @@ import { verifyAccessToken } from "../utils/tokenUtils";
 import User from "../models/User";
 import ChatRoom from "../models/ChatRoom";
 import Message, { IMessage } from "../models/Message";
+import { sendPushNotification } from "../services/pushNotificationService";
 
 // Extended socket interface with user data
 interface AuthenticatedSocket extends Socket {
@@ -337,6 +338,46 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     success: true,
                     message: messageData,
                 });
+
+                // Send push notification if recipient is offline
+                try {
+                    // Determine the recipient
+                    const recipientId = userRole === "customer" 
+                        ? room.adminId?.toString() 
+                        : room.customerId.toString();
+                    
+                    if (recipientId) {
+                        const isRecipientOnline = await isUserOnline(recipientId);
+                        
+                        if (!isRecipientOnline) {
+                            // Get sender name for notification
+                            const sender = await User.findById(userId).select("name");
+                            const senderName = sender?.name || (userRole === "admin" ? "Support" : "Customer");
+                            
+                            await sendPushNotification(
+                                recipientId,
+                                `New message from ${senderName}`,
+                                sanitizedContent.length > 100 
+                                    ? sanitizedContent.substring(0, 97) + "..." 
+                                    : sanitizedContent,
+                                {
+                                    type: "chat_message",
+                                    roomId: roomId.toString(),
+                                    senderId: userId,
+                                    senderRole: userRole,
+                                },
+                                {
+                                    channelId: "chat",
+                                    sound: "default",
+                                }
+                            );
+                            console.log(`📱 Push notification sent to offline user ${recipientId}`);
+                        }
+                    }
+                } catch (pushError) {
+                    // Don't fail message send if push notification fails
+                    console.error("Failed to send push notification:", pushError);
+                }
 
                 console.log(
                     `💬 Message sent in room ${roomId}: "${content.substring(0, 50)}..."`

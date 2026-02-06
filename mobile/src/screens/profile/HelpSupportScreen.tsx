@@ -133,7 +133,18 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
     });
   };
 
+  const handleSupportChat = () => {
+    navigation.navigate("Chat");
+  };
+
   const contactOptions: ContactOption[] = [
+    {
+      id: "chat",
+      icon: <MessageCircle size={22} color="#6366F1" />,
+      title: "Support Chat",
+      subtitle: "Chat with our team",
+      action: handleSupportChat,
+    },
     {
       id: "phone",
       icon: <Phone size={22} color="#4CAF50" />,

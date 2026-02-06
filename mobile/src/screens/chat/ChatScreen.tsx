@@ -405,23 +405,27 @@ const ChatScreen = () => {
                 ) : null}
 
                 <View style={styles.inputContainer}>
-                    <TextInput
-                        style={styles.input}
-                        value={inputMessage}
-                        onChangeText={handleInputChange}
-                        placeholder="Type a message..."
-                        placeholderTextColor="#9ca3af"
-                        multiline
-                        maxLength={2000}
-                        editable={connectionStatus === "connected"}
-                    />
-                    <TouchableOpacity
-                        onPress={handlePickImage}
-                        disabled={connectionStatus !== "connected"}
-                        style={styles.attachButton}
-                    >
-                        <ImageIcon size={24} color="#6b7280" />
-                    </TouchableOpacity>
+                    <View style={styles.inputWrapper}>
+                        <TextInput
+                            style={styles.input}
+                            value={inputMessage}
+                            onChangeText={handleInputChange}
+                            placeholder="Type a message..."
+                            placeholderTextColor="#9ca3af"
+                            multiline
+                            maxLength={2000}
+                            editable={connectionStatus === "connected"}
+                            selectionColor="#6366f1"
+                            textAlignVertical="center"
+                        />
+                        <TouchableOpacity
+                            onPress={handlePickImage}
+                            disabled={connectionStatus !== "connected"}
+                            style={styles.attachButton}
+                        >
+                            <ImageIcon size={20} color="#6b7280" />
+                        </TouchableOpacity>
+                    </View>
                     <TouchableOpacity
                         onPress={handleSendMessage}
                         disabled={
@@ -561,16 +565,25 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: "#e5e7eb",
         alignItems: "flex-end",
+        backgroundColor: "#fff",
+    },
+    inputWrapper: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#f9fafb",
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: "#e5e7eb",
+        paddingHorizontal: 12,
+        minHeight: 44,
     },
     input: {
         flex: 1,
-        backgroundColor: "#f3f4f6",
-        borderRadius: 24,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
         fontSize: 15,
         maxHeight: 100,
-        color: "#1f2937",
+        color: "#111827",
+        paddingVertical: 8,
     },
     sendButton: {
         backgroundColor: "#6366f1",
@@ -580,12 +593,17 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         marginLeft: 8,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+        elevation: 3,
     },
     attachButton: {
         justifyContent: "center",
         alignItems: "center",
         marginLeft: 8,
-        padding: 4,
+        paddingVertical: 6,
     },
     sendButtonDisabled: {
         opacity: 0.5,

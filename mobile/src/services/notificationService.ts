@@ -20,9 +20,12 @@ Notifications.setNotificationHandler({
 });
 
 export interface NotificationData {
-  type?: "order_update" | "promotion" | "back_in_stock" | "general";
+  type?: "order_update" | "promotion" | "back_in_stock" | "chat_message" | "general";
   orderId?: string;
   productSlug?: string;
+  roomId?: string;
+  senderId?: string;
+  senderRole?: "customer" | "admin";
   [key: string]: unknown;
 }
 
@@ -157,6 +160,14 @@ async function setupAndroidChannel(): Promise<void> {
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#FF9999",
+    sound: "default",
+  });
+
+  await Notifications.setNotificationChannelAsync("chat", {
+    name: "Chat Messages",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 100, 100, 100],
+    lightColor: "#6366F1",
     sound: "default",
   });
 

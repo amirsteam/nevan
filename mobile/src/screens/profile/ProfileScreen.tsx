@@ -14,6 +14,7 @@ import {
   CreditCard,
   Settings,
   HelpCircle,
+  MessageCircle,
   LogOut,
   ChevronRight,
   User,
@@ -143,6 +144,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             title="Preferences"
             subtitle="Notifications, language"
             onPress={() => navigation.navigate("Preferences")}
+          />
+
+          <MenuItem
+            icon={<MessageCircle size={22} color="#333" />}
+            title="Support Chat"
+            subtitle="Chat with customer support"
+            onPress={() => navigation.navigate("Chat")}
           />
 
           <MenuItem

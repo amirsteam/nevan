@@ -5,6 +5,7 @@ import axios, {
 } from "axios";
 import { getItem, setItem, deleteItem } from "../utils/storage";
 import { Platform } from "react-native";
+import { NGROK_URL, LOCAL_IP } from "../utils/config";
 
 // Extend InternalAxiosRequestConfig to include _retry property
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -12,12 +13,16 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 }
 
 // Use machine's local IP for development on real devices/emulators
+// For tunnel mode, set NGROK_URL in src/utils/config.ts
 const getBaseUrl = (): string => {
-  const LOCAL_IP = "192.168.1.2";
-
   // @ts-ignore - __DEV__ is a React Native global
   if (!__DEV__) {
     return "https://backend.nevanhandicraft.com.np/api/v1";
+  }
+
+  // Use ngrok URL if configured (set in config.ts)
+  if (NGROK_URL) {
+    return `${NGROK_URL}/api/v1`;
   }
 
   if (Platform.OS === "web") return "http://localhost:5000/api/v1";

@@ -14,8 +14,8 @@ import { errorHandler, notFound } from "./middleware/errorHandler";
 // Create Express app
 const app: Express = express();
 
-// Trust proxy for production (behind reverse proxy/load balancer)
-if (process.env.NODE_ENV === "production") {
+// Trust proxy when behind reverse proxy/load balancer (ngrok, prod, etc.)
+if (process.env.NODE_ENV === "production" || process.env.TRUST_PROXY === "true") {
   app.set("trust proxy", 1);
 }
 
