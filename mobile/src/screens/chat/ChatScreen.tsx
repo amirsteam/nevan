@@ -15,12 +15,12 @@ import {
     ActivityIndicator,
     SafeAreaView,
     Image,
-    Alert, // Added Alert for error handling
+    Alert,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { useFocusEffect } from "@react-navigation/native";
-import { Send, RefreshCw, Check, CheckCheck, Image as ImageIcon } from "lucide-react-native"; // Added ImageIcon
-import * as ImagePicker from 'expo-image-picker'; // Added ImagePicker
+import { Send, RefreshCw, Check, CheckCheck, Image as ImageIcon } from "lucide-react-native";
+import * as ImagePicker from 'expo-image-picker';
 import { RootState, AppDispatch } from "../../store";
 import {
     setActiveRoomId,
@@ -32,6 +32,7 @@ import {
 } from "../../store/chatSlice";
 import socketService from "../../services/socketService";
 import { getItem } from "../../utils/storage";
+import { getApiUrl } from "../../utils/config";
 
 const ChatScreen = () => {
     const dispatch = useDispatch<AppDispatch>();
@@ -42,16 +43,19 @@ const ChatScreen = () => {
     const [isSending, setIsSending] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const flatListRef = useRef<FlatList>(null);
+    // Use ref to avoid stale closure in socket callbacks
+    const currentUserIdRef = useRef<string | null>(null);
 
     // Phase 2: Typing state
     const [typingText, setTypingText] = useState<string>("");
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Get current user ID
+    // Get current user ID before socket initialization
     useEffect(() => {
         const getUserId = async () => {
             const userId = await getItem("userId");
             setCurrentUserId(userId);
+            currentUserIdRef.current = userId;
         };
         getUserId();
     }, []);
@@ -108,7 +112,8 @@ const ChatScreen = () => {
         socket.on("new-message", (message: ChatMessage) => {
             dispatch(addMessage(message));
             // Mark as read immediately if we are in the screen
-            if (message.senderId !== currentUserId) {
+            // Use ref to avoid stale closure issue
+            if (currentUserIdRef.current && message.senderId !== currentUserIdRef.current) {
                 socket.emit("message-read", { roomId: message.roomId, messageIds: [message._id] });
             }
         });
@@ -182,11 +187,10 @@ const ChatScreen = () => {
 
                 dispatch(setIsLoading(true));
 
-                // TODO: abstract to service
+                // Use shared config for consistent URL across socket and REST API
                 const token = await getItem('accessToken');
-                // Use explicit IP for Android emulator/EXPO device if needed, but assuming socketService URL is correct
-                // We'll use the same base URL logic if possible, or hardcode for now based on env
-                const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.3:5000/api/v1'}/chat/upload`, {
+                const apiUrl = getApiUrl();
+                const response = await fetch(`${apiUrl}/chat/upload`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,

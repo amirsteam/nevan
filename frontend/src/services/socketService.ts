@@ -1,8 +1,9 @@
 /**
  * Socket Service
- * Manages WebSocket connection for real-time chat
+ * Manages WebSocket connection for real-time chat with automatic token refresh
  */
 import { io, Socket } from "socket.io-client";
+import axios from "axios";
 
 // Get API URL from env, strip /api/v1 suffix if present
 const getSocketUrl = (): string => {
@@ -11,12 +12,51 @@ const getSocketUrl = (): string => {
     return apiUrl.replace(/\/api\/v1\/?$/, "");
 };
 
+const getApiUrl = (): string => {
+    return (import.meta as any).env.VITE_API_URL || "http://localhost:5000/api/v1";
+};
+
 class SocketService {
     private socket: Socket | null = null;
     private namespace = "/chat";
+    private refreshAttempts = 0;
+    private maxRefreshAttempts = 3;
+
+    /**
+     * Attempt to refresh the access token
+     */
+    private async refreshToken(): Promise<string | null> {
+        try {
+            const refreshToken = localStorage.getItem("refreshToken");
+            if (!refreshToken) {
+                console.warn("Socket: No refresh token available");
+                return null;
+            }
+
+            const response = await axios.post(`${getApiUrl()}/auth/refresh-token`, {
+                refreshToken,
+            });
+
+            const { accessToken, refreshToken: newRefreshToken } = response.data.data;
+
+            // Store new tokens
+            localStorage.setItem("accessToken", accessToken);
+            localStorage.setItem("refreshToken", newRefreshToken);
+
+            console.log("Socket: Token refreshed successfully");
+            return accessToken;
+        } catch (error) {
+            console.error("Socket: Token refresh failed", error);
+            // Clear tokens on refresh failure
+            localStorage.removeItem("accessToken");
+            localStorage.removeItem("refreshToken");
+            return null;
+        }
+    }
 
     /**
      * Connect to the socket server with JWT authentication
+     * Automatically attempts token refresh on auth errors
      */
     connect(): Socket | null {
         const token = localStorage.getItem("accessToken");
@@ -44,10 +84,35 @@ class SocketService {
 
         this.socket.on("connect", () => {
             console.log("Socket: Connected successfully", this.socket?.id);
+            // Reset refresh attempts on successful connection
+            this.refreshAttempts = 0;
         });
 
-        this.socket.on("connect_error", (error) => {
+        this.socket.on("connect_error", async (error) => {
             console.error("Socket: Connection error", error.message);
+
+            // Check if error is due to invalid/expired token
+            const isAuthError = 
+                error.message.includes("Invalid or expired token") ||
+                error.message.includes("Authentication") ||
+                error.message.includes("jwt");
+
+            if (isAuthError && this.refreshAttempts < this.maxRefreshAttempts) {
+                this.refreshAttempts++;
+                console.log(`Socket: Attempting token refresh (${this.refreshAttempts}/${this.maxRefreshAttempts})`);
+
+                const newToken = await this.refreshToken();
+                if (newToken) {
+                    // Disconnect current socket and reconnect with new token
+                    this.socket?.disconnect();
+                    this.socket = null;
+                    
+                    // Small delay before reconnecting
+                    setTimeout(() => {
+                        this.connect();
+                    }, 500);
+                }
+            }
         });
 
         this.socket.on("disconnect", (reason) => {
@@ -66,6 +131,8 @@ class SocketService {
             this.socket.disconnect();
             this.socket = null;
         }
+        // Reset refresh attempts on manual disconnect
+        this.refreshAttempts = 0;
     }
 
     /**

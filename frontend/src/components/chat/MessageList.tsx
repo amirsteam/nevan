@@ -5,12 +5,14 @@
 import { useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "../../store";
+import { useAuth } from "../../context/AuthContext";
 import MessageBubble from "./MessageBubble";
 
 const MessageList = () => {
     const { messages, isLoading } = useSelector(
         (state: RootState) => state.chat
     );
+    const { user } = useAuth();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom on new messages
@@ -44,7 +46,7 @@ const MessageList = () => {
                 <MessageBubble
                     key={message._id}
                     content={message.content}
-                    isOwn={message.senderRole === "customer"}
+                    isOwn={message.senderId === user?._id}
                     timestamp={message.createdAt}
                     senderRole={message.senderRole}
                     attachments={message.attachments}

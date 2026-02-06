@@ -3,22 +3,8 @@
  * Manages WebSocket connection for real-time chat
  */
 import { io, Socket } from "socket.io-client";
-import { Platform } from "react-native";
 import { getItem } from "../utils/storage";
-
-// Get socket URL based on platform and environment
-const getSocketUrl = (): string => {
-    const LOCAL_IP = "192.168.1.2";
-
-    // @ts-ignore - __DEV__ is a React Native global
-    if (!__DEV__) {
-        return "https://backend.nevanhandicraft.com.np";
-    }
-
-    if (Platform.OS === "web") return "http://localhost:5000";
-    if (Platform.OS === "android") return `http://${LOCAL_IP}:5000`;
-    return `http://${LOCAL_IP}:5000`; // iOS
-};
+import { getSocketUrl } from "../utils/config";
 
 class SocketService {
     private socket: Socket | null = null;

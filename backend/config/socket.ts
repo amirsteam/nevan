@@ -7,6 +7,7 @@ import { Server, Socket } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 import { RateLimiterMemory } from "rate-limiter-flexible";
+import xss from "xss";
 import { verifyAccessToken } from "../utils/tokenUtils";
 import User from "../models/User";
 import ChatRoom from "../models/ChatRoom";
@@ -20,6 +21,44 @@ interface AuthenticatedSocket extends Socket {
 
 // In-memory connection tracking (Fallback / Local only)
 const userConnections = new Map<string, Set<string>>(); // userId -> Set of socketIds
+
+// Redis client for production connection tracking
+let redisClient: Redis | null = null;
+const REDIS_CONNECTION_PREFIX = "socket:connections:";
+
+// Helper functions for connection tracking (works with both Redis and in-memory)
+const addConnection = async (userId: string, socketId: string): Promise<void> => {
+    if (redisClient) {
+        try {
+            await redisClient.sadd(`${REDIS_CONNECTION_PREFIX}${userId}`, socketId);
+        } catch (error) {
+            console.error("Redis addConnection error:", error);
+        }
+    }
+    // Always update local Map for fast local lookups
+    if (!userConnections.has(userId)) {
+        userConnections.set(userId, new Set());
+    }
+    userConnections.get(userId)!.add(socketId);
+};
+
+const removeConnection = async (userId: string, socketId: string): Promise<void> => {
+    if (redisClient) {
+        try {
+            await redisClient.srem(`${REDIS_CONNECTION_PREFIX}${userId}`, socketId);
+        } catch (error) {
+            console.error("Redis removeConnection error:", error);
+        }
+    }
+    // Always update local Map
+    const userSockets = userConnections.get(userId);
+    if (userSockets) {
+        userSockets.delete(socketId);
+        if (userSockets.size === 0) {
+            userConnections.delete(userId);
+        }
+    }
+};
 
 // Rate Limiter: 10 messages per second per user
 const rateLimiter = new RateLimiterMemory({
@@ -48,8 +87,12 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
             const pubClient = new Redis(process.env.REDIS_URL);
             const subClient = pubClient.duplicate();
 
+            // Store redis client for connection tracking
+            redisClient = pubClient;
+
             io.adapter(createAdapter(pubClient, subClient));
             console.log("✅ Redis Adapter initialized for Socket.IO");
+            console.log("✅ Redis connection tracking enabled");
         } catch (error) {
             console.error("❌ Failed to initialize Redis Adapter:", error);
         }
@@ -103,12 +146,8 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
         // Track connection via Rooms (Scalable)
         await socket.join(`user:${userId}`);
 
-        // Track connection via Map (Legacy/Local stats)
-        if (!userConnections.has(userId)) {
-            userConnections.set(userId, new Set());
-        }
-        userConnections.get(userId)!.add(socket.id);
-
+        // Track connection (Redis if available, otherwise in-memory)
+        await addConnection(userId, socket.id);
         console.log(
             `✅ User connected: ${userId} (${userRole}) - Socket: ${socket.id}`
         );
@@ -135,11 +174,25 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 } else if (userRole === "admin") {
                     // Admin: Join a specific room or get unassigned rooms
                     if (data?.roomId) {
-                        room = await ChatRoom.findById(data.roomId);
-                        if (room && !room.adminId) {
-                            // Assign admin to this room
-                            room.adminId = userId as any;
-                            await room.save();
+                        // Use atomic findOneAndUpdate to prevent race condition
+                        // when multiple admins try to join the same unassigned room
+                        room = await ChatRoom.findOneAndUpdate(
+                            {
+                                _id: data.roomId,
+                                $or: [
+                                    { adminId: null },
+                                    { adminId: { $exists: false } },
+                                    { adminId: userId } // Allow if already assigned to this admin
+                                ]
+                            },
+                            { $set: { adminId: userId } },
+                            { new: true }
+                        );
+                        
+                        // If atomic update failed, try to just fetch the room (might be assigned to another admin)
+                        if (!room) {
+                            room = await ChatRoom.findById(data.roomId);
+                        } else {
                             console.log(`👤 Admin ${userId} assigned to room: ${room._id}`);
                         }
                     }
@@ -182,7 +235,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
         // ==================== SEND MESSAGE ====================
         socket.on("send-message", async (data, callback) => {
             try {
-                const { roomId, content } = data;
+                const { roomId, content, attachments } = data;
 
                 // Rate Limiting Check
                 try {
@@ -198,6 +251,23 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
 
                 if (content.length > 2000) {
                     return callback?.({ success: false, error: "Message too long (max 2000 chars)" });
+                }
+
+                // Validate attachments if present
+                let validatedAttachments: { type: "image"; url: string }[] = [];
+                if (attachments && Array.isArray(attachments)) {
+                    validatedAttachments = attachments
+                        .filter((att: any) => 
+                            att && 
+                            att.type === "image" && 
+                            typeof att.url === "string" &&
+                            att.url.startsWith("https://") // Only allow HTTPS URLs
+                        )
+                        .slice(0, 5) // Max 5 attachments per message
+                        .map((att: any) => ({
+                            type: "image" as const,
+                            url: xss(att.url) // Sanitize URL
+                        }));
                 }
 
                 // Verify room exists and user has access
@@ -217,12 +287,16 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     return callback?.({ success: false, error: "Access denied" });
                 }
 
+                // Sanitize content to prevent XSS
+                const sanitizedContent = xss(content.trim());
+
                 // Save message to database
                 const message = await Message.create({
                     roomId: room._id,
                     senderId: userId,
                     senderRole: userRole,
-                    content: content.trim(),
+                    content: sanitizedContent,
+                    ...(validatedAttachments.length > 0 && { attachments: validatedAttachments }),
                 });
 
                 // Update room's last message timestamp and unread counts
@@ -249,6 +323,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     senderId: message.senderId.toString(),
                     senderRole: message.senderRole,
                     content: message.content,
+                    attachments: message.attachments || [],
                     status: message.status,
                     createdAt: message.createdAt,
                 };
@@ -362,15 +437,9 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
         });
 
         // ==================== DISCONNECT ====================
-        socket.on("disconnect", (reason) => {
-            // Remove from connection tracking
-            const userSockets = userConnections.get(userId);
-            if (userSockets) {
-                userSockets.delete(socket.id);
-                if (userSockets.size === 0) {
-                    userConnections.delete(userId);
-                }
-            }
+        socket.on("disconnect", async (reason) => {
+            // Remove from connection tracking (Redis + local)
+            await removeConnection(userId, socket.id);
 
             console.log(
                 `❌ User disconnected: ${userId} - Socket: ${socket.id} - Reason: ${reason}`
@@ -385,14 +454,31 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
 
 /**
  * Check if a user is currently connected
+ * Checks Redis first if available, falls back to local Map
  */
-export const isUserOnline = (userId: string): boolean => {
+export const isUserOnline = async (userId: string): Promise<boolean> => {
+    if (redisClient) {
+        try {
+            const count = await redisClient.scard(`${REDIS_CONNECTION_PREFIX}${userId}`);
+            return count > 0;
+        } catch (error) {
+            console.error("Redis isUserOnline error:", error);
+        }
+    }
     return userConnections.has(userId) && userConnections.get(userId)!.size > 0;
 };
 
 /**
  * Get all socket IDs for a user
+ * Checks Redis first if available, falls back to local Map
  */
-export const getUserSockets = (userId: string): string[] => {
+export const getUserSockets = async (userId: string): Promise<string[]> => {
+    if (redisClient) {
+        try {
+            return await redisClient.smembers(`${REDIS_CONNECTION_PREFIX}${userId}`);
+        } catch (error) {
+            console.error("Redis getUserSockets error:", error);
+        }
+    }
     return Array.from(userConnections.get(userId) || []);
 };

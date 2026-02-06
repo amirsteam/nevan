@@ -7,6 +7,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { X, Send, RefreshCw, ChevronLeft, User, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { RootState, AppDispatch } from "../../store";
+import api from "../../api/axios";
 import {
     setIsOpen,
     setActiveRoomId,
@@ -35,6 +36,7 @@ const ChatWindow = () => {
     const { user } = useAuth();
     const [typingText, setTypingText] = useState<string>("");
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const isInitializedRef = useRef(false);
 
     // Missing state variables
     const [inputMessage, setInputMessage] = useState("");
@@ -183,9 +185,14 @@ const ChatWindow = () => {
 
     // Connect on mount
     useEffect(() => {
+        // Prevent duplicate initialization
+        if (isInitializedRef.current) return;
+        isInitializedRef.current = true;
+        
         initializeChat();
 
         return () => {
+            isInitializedRef.current = false;
             socketService.off("connect");
             socketService.off("connect_error");
             socketService.off("disconnect");
@@ -196,7 +203,7 @@ const ChatWindow = () => {
             socketService.off("message-read");
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         };
-    }, [initializeChat]);
+    }, []); // Empty dependency array - initialize once on mount
 
     // Handle sending message
     const handleSendMessage = (e: React.FormEvent) => {
@@ -353,18 +360,14 @@ const ChatWindow = () => {
                                     formData.append('image', file);
 
                                     try {
-                                        dispatch(setIsLoading(true)); // Reusing global loading or local? Better local
+                                        dispatch(setIsLoading(true));
 
-                                        // TODO: Move to service
-                                        const token = localStorage.getItem('accessToken');
-                                        const res = await fetch(`${(import.meta as any).env.VITE_API_URL || 'http://localhost:5000/api/v1'}/chat/upload`, {
-                                            method: 'POST',
+                                        // Use axios instance with interceptors
+                                        const { data } = await api.post('/chat/upload', formData, {
                                             headers: {
-                                                'Authorization': `Bearer ${token}`
+                                                'Content-Type': 'multipart/form-data',
                                             },
-                                            body: formData
                                         });
-                                        const data = await res.json();
 
                                         if (data.success) {
                                             // Send message with attachment
