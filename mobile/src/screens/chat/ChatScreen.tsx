@@ -33,6 +33,7 @@ import {
 import socketService from "../../services/socketService";
 import { getItem } from "../../utils/storage";
 import { getApiUrl } from "../../utils/config";
+import { playTypingSoundDebounced, playMessageSound } from "../../utils/soundUtils";
 
 const ChatScreen = () => {
     const dispatch = useDispatch<AppDispatch>();
@@ -115,6 +116,8 @@ const ChatScreen = () => {
             // Use ref to avoid stale closure issue
             if (currentUserIdRef.current && message.senderId !== currentUserIdRef.current) {
                 socket.emit("message-read", { roomId: message.roomId, messageIds: [message._id] });
+                // Play sound/haptic for incoming message
+                playMessageSound();
             }
         });
 
@@ -122,6 +125,8 @@ const ChatScreen = () => {
         socket.on("typing", (data: { userId: string; userRole: string }) => {
             if (data.userId !== currentUserId) {
                 setTypingText("Support is typing...");
+                // Play typing sound/haptic with debounce
+                playTypingSoundDebounced();
             }
         });
 
@@ -194,7 +199,7 @@ const ChatScreen = () => {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'multipart/form-data',
+                        // Do NOT set Content-Type for FormData - let fetch set it with boundary
                     },
                     body: formData,
                 });

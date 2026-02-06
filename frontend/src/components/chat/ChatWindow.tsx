@@ -19,6 +19,7 @@ import {
 } from "../../store/chatSlice";
 import socketService from "../../services/socketService";
 import MessageList from "./MessageList";
+import { playTypingSoundDebounced, playMessageSound } from "../../utils/soundUtils";
 
 interface ChatRoom {
     _id: string;
@@ -37,12 +38,19 @@ const ChatWindow = () => {
     const [typingText, setTypingText] = useState<string>("");
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isInitializedRef = useRef(false);
+    // Ref to track current activeRoomId to avoid stale closure in socket callbacks
+    const activeRoomIdRef = useRef<string | null>(activeRoomId);
 
     // Missing state variables
     const [inputMessage, setInputMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
     const [adminRooms, setAdminRooms] = useState<ChatRoom[]>([]);
     const [isAdminView, setIsAdminView] = useState(user?.role === "admin");
+    
+    // Keep ref in sync with Redux state
+    useEffect(() => {
+        activeRoomIdRef.current = activeRoomId;
+    }, [activeRoomId]);
 
     // Initialize socket connection
     const initializeChat = useCallback(() => {
@@ -107,15 +115,23 @@ const ChatWindow = () => {
         });
 
         socket.on("new-message", (message: ChatMessage) => {
-            if (user?.role === "admin" && !activeRoomId) {
+            // Use ref to get current activeRoomId (avoids stale closure)
+            const currentRoomId = activeRoomIdRef.current;
+            if (user?.role === "admin" && !currentRoomId) {
+                // Admin not in a room - refresh room list to show new message notification
                 socket.emit("get-rooms", (response: { success: boolean; rooms: ChatRoom[] }) => {
                     if (response.success) setAdminRooms(response.rooms);
                 });
+                // Play sound for new message notification
+                playMessageSound();
             } else {
+                // Always add message when in a room
                 dispatch(addMessage(message));
-                // Mark as read immediately if we are in this room
-                if (activeRoomId === message.roomId) {
+                // Mark as read immediately if we are in this room and message is from other party
+                if (currentRoomId === message.roomId && message.senderId !== user?._id) {
                     socket.emit("message-read", { roomId: message.roomId, messageIds: [message._id] });
+                    // Play sound for incoming message from other party
+                    playMessageSound();
                 }
             }
         });
@@ -123,6 +139,8 @@ const ChatWindow = () => {
         // Typing events
         socket.on("typing", (data: { userId: string; userRole: string }) => {
             setTypingText(`${data.userRole === "admin" ? "Support" : "Customer"} is typing...`);
+            // Play typing sound with debounce
+            playTypingSoundDebounced();
         });
 
         socket.on("stop-typing", () => {
