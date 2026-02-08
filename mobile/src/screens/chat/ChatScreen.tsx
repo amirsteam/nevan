@@ -16,6 +16,7 @@ import {
     SafeAreaView,
     Image,
     Alert,
+    Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { useFocusEffect } from "@react-navigation/native";
@@ -166,6 +167,19 @@ const ChatScreen = () => {
             }, 100);
         }
     }, [messages]);
+
+    // Scroll to bottom when keyboard opens so input stays visible
+    useEffect(() => {
+        const keyboardShow = Keyboard.addListener(
+            Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+            () => {
+                setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+            }
+        );
+        return () => keyboardShow.remove();
+    }, []);
 
     // Handle Image Pick
     const handlePickImage = async () => {
@@ -373,8 +387,8 @@ const ChatScreen = () => {
         <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
                 style={styles.keyboardView}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+                behavior="padding"
+                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
             >
                 {renderStatusBanner()}
 
@@ -394,6 +408,8 @@ const ChatScreen = () => {
                         ]}
                         ListEmptyComponent={renderEmptyState}
                         showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
                     />
                 )}
 

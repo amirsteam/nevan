@@ -9,8 +9,6 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   Alert,
   ActivityIndicator,
@@ -74,13 +72,10 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardView}
-      >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {/* Header */}
           <TouchableOpacity
@@ -148,7 +143,6 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
             </Text>
           </TouchableOpacity>
         </ScrollView>
-      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };

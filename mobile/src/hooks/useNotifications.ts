@@ -83,8 +83,8 @@ export function useNotifications(
         await registerPushToken(expoPushToken);
         previousToken.current = expoPushToken;
       } else if (!isAuthenticated && previousToken.current) {
-        // User logged out - unregister token
-        await unregisterPushToken(previousToken.current);
+        // User logged out - token already unregistered in logout thunk
+        // Just clear the local ref
         previousToken.current = null;
       }
     };

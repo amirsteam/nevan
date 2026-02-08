@@ -1,6 +1,10 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { authAPI } from "../api/auth";
 import { getItem, setItem, deleteItem } from "../utils/storage";
+import {
+  unregisterPushToken,
+  getExpoPushToken,
+} from "../services/notificationService";
 import type { IUser, IRegisterData } from "@shared/types";
 
 // Types
@@ -75,6 +79,12 @@ export const logout = createAsyncThunk<void, void, { rejectValue: string }>(
   "auth/logout",
   async (_, { rejectWithValue }) => {
     try {
+      // Unregister push token BEFORE deleting auth tokens
+      // so the API call can still authenticate
+      const pushToken = await getExpoPushToken();
+      if (pushToken) {
+        await unregisterPushToken(pushToken).catch(() => {});
+      }
       await authAPI.logout();
     } catch (error) {
       console.error("Logout error", error);
