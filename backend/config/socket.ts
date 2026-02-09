@@ -13,6 +13,7 @@ import User from "../models/User";
 import ChatRoom from "../models/ChatRoom";
 import Message, { IMessage } from "../models/Message";
 import { sendPushNotification } from "../services/pushNotificationService";
+import Notification from "../models/Notification";
 
 // Extended socket interface with user data
 interface AuthenticatedSocket extends Socket {
@@ -340,6 +341,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 });
 
                 // Send push notification if recipient is offline
+                // Always persist in-app notification for the bell icon
                 try {
                     // Determine the recipient
                     const recipientId = userRole === "customer" 
@@ -347,36 +349,49 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                         : room.customerId.toString();
                     
                     if (recipientId) {
+                        // Get sender name for notification
+                        const sender = await User.findById(userId).select("name");
+                        const senderName = sender?.name || (userRole === "admin" ? "Support" : "Customer");
+                        const notifTitle = `New message from ${senderName}`;
+                        const notifBody = sanitizedContent.length > 100 
+                            ? sanitizedContent.substring(0, 97) + "..." 
+                            : sanitizedContent;
+                        const notifData = {
+                            type: "chat_message" as const,
+                            roomId: roomId.toString(),
+                            senderId: userId,
+                            senderRole: userRole,
+                        };
+
                         const isRecipientOnline = await isUserOnline(recipientId);
                         
                         if (!isRecipientOnline) {
-                            // Get sender name for notification
-                            const sender = await User.findById(userId).select("name");
-                            const senderName = sender?.name || (userRole === "admin" ? "Support" : "Customer");
-                            
+                            // Offline: send push notification (which also persists to DB)
                             await sendPushNotification(
                                 recipientId,
-                                `New message from ${senderName}`,
-                                sanitizedContent.length > 100 
-                                    ? sanitizedContent.substring(0, 97) + "..." 
-                                    : sanitizedContent,
-                                {
-                                    type: "chat_message",
-                                    roomId: roomId.toString(),
-                                    senderId: userId,
-                                    senderRole: userRole,
-                                },
+                                notifTitle,
+                                notifBody,
+                                notifData,
                                 {
                                     channelId: "chat",
                                     sound: "default",
                                 }
                             );
                             console.log(`📱 Push notification sent to offline user ${recipientId}`);
+                        } else {
+                            // Online: just persist to DB (no push needed, they see it in real-time)
+                            await Notification.create({
+                                userId: recipientId,
+                                type: "chat_message",
+                                title: notifTitle,
+                                body: notifBody,
+                                data: notifData,
+                            });
                         }
                     }
                 } catch (pushError) {
-                    // Don't fail message send if push notification fails
-                    console.error("Failed to send push notification:", pushError);
+                    // Don't fail message send if notification fails
+                    console.error("Failed to send notification:", pushError);
                 }
 
                 console.log(

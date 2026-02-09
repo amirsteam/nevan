@@ -104,6 +104,8 @@ export const tagTypes = [
   "Orders",
   "User",
   "Wishlist",
+  "Notifications",
+  "NotificationCount",
 ] as const;
 
 // Create the base API

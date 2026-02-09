@@ -14,6 +14,7 @@ import PaymentMethodsScreen from "../screens/profile/PaymentMethodsScreen";
 import PreferencesScreen from "../screens/profile/PreferencesScreen";
 import HelpSupportScreen from "../screens/profile/HelpSupportScreen";
 import { ChatScreen } from "../screens/chat";
+import NotificationsScreen from "../screens/notifications/NotificationsScreen";
 import type { ProfileStackParamList } from "./types";
 
 const Stack = createStackNavigator<ProfileStackParamList>();
@@ -80,6 +81,11 @@ const ProfileNavigator = (): JSX.Element => {
         name="Chat"
         component={ChatScreen}
         options={{ title: "Support Chat" }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: "Notifications" }}
       />
     </Stack.Navigator>
   );

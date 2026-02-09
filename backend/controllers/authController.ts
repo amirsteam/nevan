@@ -131,6 +131,29 @@ const registerPushToken = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
+  // Validate token format (Expo push tokens)
+  if (
+    typeof token !== "string" ||
+    !token.startsWith("ExponentPushToken[") ||
+    !token.endsWith("]") ||
+    token.length > 100
+  ) {
+    res.status(400).json({
+      status: "error",
+      message: "Invalid push token format",
+    });
+    return;
+  }
+
+  // Validate platform
+  if (!["ios", "android", "web"].includes(platform)) {
+    res.status(400).json({
+      status: "error",
+      message: "Platform must be ios, android, or web",
+    });
+    return;
+  }
+
   if (req.user) {
     await authService.registerPushToken(
       (req.user as any)._id,

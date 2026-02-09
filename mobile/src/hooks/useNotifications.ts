@@ -4,7 +4,8 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as Notifications from "expo-notifications";
-import { useAppSelector } from "../store/hooks";
+import { useAppSelector, useAppDispatch } from "../store/hooks";
+import { baseApi } from "../store/api";
 import {
   initializePushNotifications,
   registerPushToken,
@@ -39,6 +40,7 @@ export function useNotifications(
   const [error, setError] = useState<Error | null>(null);
 
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const dispatch = useAppDispatch();
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(
     null,
@@ -99,6 +101,8 @@ export function useNotifications(
       Notifications.addNotificationReceivedListener((notification) => {
         setNotification(notification);
         options.onNotificationReceived?.(notification);
+        // Invalidate notification cache so bell badge updates immediately
+        dispatch(baseApi.util.invalidateTags(["NotificationCount", "Notifications"]));
       });
 
     // Listener for when user taps on notification

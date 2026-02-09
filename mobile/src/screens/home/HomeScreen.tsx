@@ -18,6 +18,7 @@ import {
   useGetFeaturedProductsQuery,
 } from "../../store/api";
 import ProductCard from "../../components/ProductCard";
+import NotificationBell from "../../components/NotificationBell";
 import type { HomeScreenProps } from "../../navigation/types";
 import type { ICategory, IProduct } from "@shared/types";
 
@@ -117,6 +118,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               resizeMode="contain"
             />
             <Text style={styles.headerTitleText}>Nevan Handicraft</Text>
+            <View style={styles.headerSpacer} />
+            <NotificationBell
+              onPress={() =>
+                (navigation as any).navigate("App", {
+                  screen: "Main",
+                  params: {
+                    screen: "ProfileTab",
+                    params: { screen: "Notifications" },
+                  },
+                })
+              }
+            />
           </View>
           <TouchableOpacity
             style={styles.searchBar}
@@ -196,6 +209,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#4A4A4A",
     fontFamily: "System",
+  },
+  headerSpacer: {
+    flex: 1,
   },
   searchBar: {
     flexDirection: "row",

@@ -16,6 +16,7 @@ export { default as PriceDisplay } from "./PriceDisplay";
 export { default as Badge } from "./Badge";
 export { default as NetworkStatus } from "./NetworkStatus";
 export { default as SplashScreen } from "./SplashScreen";
+export { default as NotificationBell } from "./NotificationBell";
 
 // Toast/Snackbar
 export { default as ToastProvider, useToast } from "./Toast";

@@ -39,6 +39,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
                   Orders: "orders",
                   OrderDetail: "order/:orderId",
                   Wishlist: "wishlist",
+                  Chat: "chat",
+                  Notifications: "notifications",
                 },
               },
             },

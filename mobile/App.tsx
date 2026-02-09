@@ -36,8 +36,16 @@ function AppContent(): React.ReactElement {
       switch (data.type) {
         case "order_update":
           if (data.orderId) {
-            // Navigate to order detail (requires implementing OrderDetail screen)
-            console.log("Navigate to order:", data.orderId);
+            navigationRef.current.navigate("App", {
+              screen: "Main",
+              params: {
+                screen: "ProfileTab",
+                params: {
+                  screen: "OrderDetail",
+                  params: { orderId: data.orderId },
+                },
+              },
+            });
           }
           break;
         case "chat_message":
@@ -86,12 +94,18 @@ function AppContent(): React.ReactElement {
     [],
   );
 
+  // Handle foreground notification received
+  const handleNotificationReceived = useCallback(
+    (notif: Notifications.Notification) => {
+      console.log("Notification received:", notif.request.content.title);
+    },
+    [],
+  );
+
   // Initialize notifications
   const { expoPushToken, notification, isLoading } = useNotifications({
     onNotificationResponse: handleNotificationResponse,
-    onNotificationReceived: (notif) => {
-      console.log("Notification received:", notif.request.content.title);
-    },
+    onNotificationReceived: handleNotificationReceived,
   });
 
   useEffect(() => {

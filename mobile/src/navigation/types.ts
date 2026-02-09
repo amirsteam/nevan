@@ -65,6 +65,7 @@ export type ProfileStackParamList = {
   Preferences: undefined;
   HelpSupport: undefined;
   Chat: undefined;
+  Notifications: undefined;
 };
 
 // ==================== Home Stack ====================
@@ -200,6 +201,14 @@ export type PreferencesScreenProps = CompositeScreenProps<
 
 export type HelpSupportScreenProps = CompositeScreenProps<
   StackScreenProps<ProfileStackParamList, "HelpSupport">,
+  CompositeScreenProps<
+    BottomTabScreenProps<TabParamList>,
+    StackScreenProps<RootStackParamList>
+  >
+>;
+
+export type NotificationsScreenProps = CompositeScreenProps<
+  StackScreenProps<ProfileStackParamList, "Notifications">,
   CompositeScreenProps<
     BottomTabScreenProps<TabParamList>,
     StackScreenProps<RootStackParamList>

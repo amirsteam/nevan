@@ -48,3 +48,13 @@ export {
   useCheckWishlistItemQuery,
   useClearWishlistMutation,
 } from "./wishlistApi";
+
+export {
+  notificationsApi,
+  useGetNotificationsQuery,
+  useGetUnreadCountQuery,
+  useMarkAsReadMutation,
+  useMarkAllAsReadMutation,
+  useDeleteNotificationMutation,
+} from "./notificationsApi";
+export type { INotification } from "./notificationsApi";

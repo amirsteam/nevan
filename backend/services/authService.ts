@@ -170,6 +170,7 @@ const changePassword = async (
 
 /**
  * Register push notification token for a user
+ * Limits to 5 tokens per user (oldest removed first)
  */
 const registerPushToken = async (
   userId: string,
@@ -197,6 +198,16 @@ const registerPushToken = async (
       createdAt: new Date(),
     };
   } else {
+    // Enforce max 5 tokens per user — remove oldest if at limit
+    const MAX_TOKENS = 5;
+    if (user.pushTokens.length >= MAX_TOKENS) {
+      // Sort by createdAt ascending and remove the oldest
+      user.pushTokens.sort(
+        (a, b) => (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0),
+      );
+      user.pushTokens.splice(0, user.pushTokens.length - MAX_TOKENS + 1);
+    }
+
     // Add new token
     user.pushTokens.push({
       token,
