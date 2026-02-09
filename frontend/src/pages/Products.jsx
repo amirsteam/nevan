@@ -23,6 +23,8 @@ const Products = () => {
     const currentSort = searchParams.get('sort') || '-createdAt';
     const currentMinPrice = searchParams.get('minPrice') || '';
     const currentMaxPrice = searchParams.get('maxPrice') || '';
+    const currentAge = searchParams.get('age') || '';
+    const currentGender = searchParams.get('gender') || '';
 
     // Fetch products
     useEffect(() => {
@@ -38,6 +40,8 @@ const Products = () => {
                 if (currentSearch) params.search = currentSearch;
                 if (currentMinPrice) params.minPrice = currentMinPrice;
                 if (currentMaxPrice) params.maxPrice = currentMaxPrice;
+                if (currentAge) params.age = currentAge;
+                if (currentGender) params.gender = currentGender;
 
                 const response = await productsAPI.getProducts(params);
                 setProducts(response.data.products);
@@ -49,7 +53,7 @@ const Products = () => {
             }
         };
         fetchProducts();
-    }, [currentPage, currentCategory, currentSearch, currentSort, currentMinPrice, currentMaxPrice]);
+    }, [currentPage, currentCategory, currentSearch, currentSort, currentMinPrice, currentMaxPrice, currentAge, currentGender]);
 
     // Fetch categories
     useEffect(() => {
@@ -82,10 +86,17 @@ const Products = () => {
         setSearchParams({});
     };
 
-    const hasActiveFilters = currentCategory || currentSearch || currentMinPrice || currentMaxPrice;
+    const hasActiveFilters = currentCategory || currentSearch || currentMinPrice || currentMaxPrice || currentAge || currentGender;
 
     return (
         <div className="container-app py-8">
+            {/* Breadcrumb */}
+            <nav className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] mb-6">
+                <Link to="/" className="hover:text-[var(--color-primary)] transition-colors">Home</Link>
+                <span>/</span>
+                <span className="text-[var(--color-text)]">Products</span>
+            </nav>
+
             <div className="flex flex-col lg:flex-row gap-8">
                 {/* Sidebar Filters (Desktop) */}
                 <aside className="hidden lg:block w-64 flex-shrink-0">
@@ -150,6 +161,59 @@ const Products = () => {
                                     onChange={debounce((e) => updateFilters('maxPrice', e.target.value), 500)}
                                     className="input text-sm"
                                 />
+                            </div>
+                        </div>
+
+                        {/* Age Range */}
+                        <div>
+                            <h3 className="font-semibold mb-3">Age Range</h3>
+                            <ul className="space-y-1">
+                                {[
+                                    { value: '', label: 'All Ages' },
+                                    { value: '0-3 Months', label: '0–3 Months' },
+                                    { value: '3-6 Months', label: '3–6 Months' },
+                                    { value: '6-12 Months', label: '6–12 Months' },
+                                    { value: '1-2 Years', label: '1–2 Years' },
+                                    { value: '2-3 Years', label: '2–3 Years' },
+                                ].map((age) => (
+                                    <li key={age.value}>
+                                        <button
+                                            onClick={() => updateFilters('age', age.value)}
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                                currentAge === age.value
+                                                    ? 'bg-[var(--color-primary)] text-white'
+                                                    : 'hover:bg-[var(--color-bg)]'
+                                            }`}
+                                        >
+                                            {age.label}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* Gender */}
+                        <div>
+                            <h3 className="font-semibold mb-3">Gender</h3>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { value: '', label: 'All' },
+                                    { value: 'boy', label: 'Boy' },
+                                    { value: 'girl', label: 'Girl' },
+                                    { value: 'unisex', label: 'Unisex' },
+                                ].map((g) => (
+                                    <button
+                                        key={g.value}
+                                        onClick={() => updateFilters('gender', g.value)}
+                                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                                            currentGender === g.value
+                                                ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
+                                                : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
+                                        }`}
+                                    >
+                                        {g.label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 

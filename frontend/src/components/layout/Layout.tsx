@@ -11,9 +11,15 @@ import ScrollToTop from "./ScrollToTop";
 const Layout = (): React.ReactElement => {
   return (
     <div className="min-h-screen flex flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-[var(--color-primary)] focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
+      >
+        Skip to content
+      </a>
       <ScrollToTop />
       <Header />
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <Outlet />
       </main>
       <Footer />

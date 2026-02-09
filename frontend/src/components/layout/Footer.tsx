@@ -24,8 +24,8 @@ const Footer = (): React.ReactElement => {
               </span>
             </Link>
             <p className="text-sm text-[var(--color-text-muted)] mb-4">
-              Authentic Nepali handicrafts crafted with love and tradition.
-              Bringing the beauty of Nepal to your home.
+              Handmade baby clothing crafted with a mother's love.
+              Soft, safe, and made in Nepal.
             </p>
             <div className="flex gap-3">
               <a

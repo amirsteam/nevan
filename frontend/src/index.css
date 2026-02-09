@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
-/* Custom CSS Variables for NevanHandicraft Theme */
+/* Custom CSS Variables for Nevan Handicraft — Baby Clothing Theme */
 :root {
-  /* Primary - Earthy Brown (Nepali Handicraft vibe) */
-  --color-primary: #8b4513;
-  --color-primary-dark: #6b3410;
-  --color-primary-light: #a0522d;
+  /* Primary - Dusty Rose (soft, nurturing, baby-friendly) */
+  --color-primary: #c1847b;
+  --color-primary-dark: #a06b63;
+  --color-primary-light: #d9a9a3;
 
-  /* Accent - Golden (Premium feel) */
-  --color-accent: #daa520;
-  --color-accent-dark: #b8860b;
-  --color-accent-light: #ffd700;
+  /* Accent - Sage Green (eco-friendly, natural) */
+  --color-accent: #8fae8b;
+  --color-accent-dark: #6e8e6a;
+  --color-accent-light: #b5d4b1;
 
   /* Neutral */
-  --color-bg: #fafaf8;
+  --color-bg: #fdf9f7;
   --color-surface: #ffffff;
-  --color-text: #1f2937;
-  --color-text-muted: #6b7280;
-  --color-border: #e5e7eb;
+  --color-text: #3d3230;
+  --color-text-muted: #8c7e7b;
+  --color-border: #ede5e2;
 
   /* Status */
   --color-success: #10b981;

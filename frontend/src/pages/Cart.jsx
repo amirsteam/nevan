@@ -81,6 +81,13 @@ const Cart = () => {
 
   return (
     <div className="container-app py-8">
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] mb-6">
+        <Link to="/" className="hover:text-[var(--color-primary)] transition-colors">Home</Link>
+        <span>/</span>
+        <span className="text-[var(--color-text)]">Cart</span>
+      </nav>
+
       <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -2,13 +2,15 @@
  * Header Component
  * Main navigation with cart and user menu
  */
-import { useState, FormEvent, ChangeEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, ChangeEvent } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useAuth } from "../../context/AuthContext";
 import { selectCartCount } from "../../store/cartSlice";
+import NotificationBell from "../NotificationBell";
 import {
   ShoppingCart,
+  Heart,
   Menu,
   X,
   Search,
@@ -29,10 +31,37 @@ const Header = (): React.ReactElement => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [userMenuOpen, setUserMenuOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const cartCount = useSelector((state: RootState) => selectCartCount(state));
   const navigate = useNavigate();
+
+  // Close user dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(e.target as Node)
+      ) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Close menus on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setUserMenuOpen(false);
+        setMobileMenuOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, []);
 
   const handleSearch = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
@@ -112,7 +141,21 @@ const Header = (): React.ReactElement => {
           </form>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Wishlist */}
+            {isAuthenticated && (
+              <Link
+                to="/wishlist"
+                className="relative p-2 hover:bg-[var(--color-bg)] rounded-lg hidden sm:flex"
+                title="Wishlist"
+              >
+                <Heart className="w-5 h-5" />
+              </Link>
+            )}
+
+            {/* Notifications */}
+            {isAuthenticated && <NotificationBell />}
+
             {/* Cart */}
             <Link
               to="/cart"
@@ -128,10 +171,12 @@ const Header = (): React.ReactElement => {
 
             {/* User Menu */}
             {isAuthenticated ? (
-              <div className="relative">
+              <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
                   className="flex items-center gap-2 p-2 hover:bg-[var(--color-bg)] rounded-lg"
+                  aria-expanded={userMenuOpen}
+                  aria-haspopup="true"
                 >
                   <div className="w-8 h-8 bg-[var(--color-primary)] rounded-full flex items-center justify-center text-white text-sm font-medium">
                     {user?.name?.charAt(0).toUpperCase()}
@@ -140,7 +185,7 @@ const Header = (): React.ReactElement => {
 
                 {/* Dropdown */}
                 {userMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg py-2">
+                  <div className="absolute right-0 mt-2 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg py-2" role="menu">
                     <div className="px-4 py-2 border-b border-[var(--color-border)]">
                       <p className="font-medium">{user?.name}</p>
                       <p className="text-sm text-[var(--color-text-muted)]">

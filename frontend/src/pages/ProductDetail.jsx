@@ -6,11 +6,15 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { productsAPI } from "../api";
+import { wishlistAPI } from "../api/wishlist";
 import { addToCart, selectCartLoading } from "../store/cartSlice";
 import { useAuth } from "../context/AuthContext";
 import { usePendingCart } from "../context/PendingCartContext";
 import { formatPrice, calculateDiscount } from "../utils/helpers";
+import SizeGuide from "../components/SizeGuide";
+import ReviewForm from "../components/ReviewForm";
 import toast from "react-hot-toast";
+import api from "../api/axios";
 import {
   ChevronLeft,
   ChevronRight,
@@ -23,7 +27,11 @@ import {
   Truck,
   RefreshCw,
   Shield,
+  Ruler,
   Loader2,
+  Droplets,
+  Baby,
+  Leaf,
 } from "lucide-react";
 
 const ProductDetail = () => {
@@ -292,31 +300,35 @@ const ProductDetail = () => {
     await executeAddToCart();
   };
 
-  // Wishlist handler (using localStorage for now - can be replaced with API)
+  // Wishlist handler (using backend API for authenticated users)
   const [isWishlisted, setIsWishlisted] = useState(false);
 
   useEffect(() => {
-    if (product) {
-      const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
-      setIsWishlisted(wishlist.includes(product._id));
+    if (product && isAuthenticated) {
+      wishlistAPI
+        .checkWishlist(product._id)
+        .then((res) => setIsWishlisted(res.data?.isInWishlist || false))
+        .catch(() => setIsWishlisted(false));
     }
-  }, [product]);
+  }, [product, isAuthenticated]);
 
-  const handleWishlist = () => {
-    const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
-
-    if (isWishlisted) {
-      // Remove from wishlist
-      const updated = wishlist.filter((id) => id !== product._id);
-      localStorage.setItem("wishlist", JSON.stringify(updated));
-      setIsWishlisted(false);
-      toast.success("Removed from wishlist");
-    } else {
-      // Add to wishlist
-      wishlist.push(product._id);
-      localStorage.setItem("wishlist", JSON.stringify(wishlist));
-      setIsWishlisted(true);
-      toast.success("Added to wishlist!");
+  const handleWishlist = async () => {
+    if (!isAuthenticated) {
+      toast.error("Please login to use wishlist");
+      return;
+    }
+    try {
+      if (isWishlisted) {
+        await wishlistAPI.removeFromWishlist(product._id);
+        setIsWishlisted(false);
+        toast.success("Removed from wishlist");
+      } else {
+        await wishlistAPI.addToWishlist(product._id);
+        setIsWishlisted(true);
+        toast.success("Added to wishlist!");
+      }
+    } catch {
+      toast.error("Failed to update wishlist");
     }
   };
 
@@ -381,6 +393,52 @@ const ProductDetail = () => {
 
   const displayPrice = calculateDisplayPrice();
   const discount = calculateDiscount(product.comparePrice, displayPrice);
+
+  // Size Guide state
+  const [showSizeGuide, setShowSizeGuide] = useState(false);
+
+  // Reviews state
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+
+  // Related products state
+  const [relatedProducts, setRelatedProducts] = useState([]);
+
+  useEffect(() => {
+    if (product?._id) {
+      setReviewsLoading(true);
+      api
+        .get(`/products/${product._id}/reviews`)
+        .then((res) => setReviews(res.data?.data?.reviews || []))
+        .catch(() => {})
+        .finally(() => setReviewsLoading(false));
+    }
+  }, [product?._id]);
+
+  // Fetch related products (same category, different product)
+  useEffect(() => {
+    if (product?.category) {
+      const catSlug = product.category?.slug || product.category;
+      productsAPI
+        .getProducts({ category: catSlug, limit: 4 })
+        .then((res) => {
+          const related = (res.data?.products || []).filter(
+            (p) => p._id !== product._id
+          );
+          setRelatedProducts(related.slice(0, 4));
+        })
+        .catch(() => {});
+    }
+  }, [product?._id, product?.category]);
+
+  const handleReviewSubmitted = () => {
+    setShowReviewForm(false);
+    // Refresh reviews
+    api
+      .get(`/products/${product._id}/reviews`)
+      .then((res) => setReviews(res.data?.data?.reviews || []));
+  };
 
   return (
     <div className="container-app py-8">
@@ -526,7 +584,16 @@ const ProductDetail = () => {
             <div className="space-y-4">
               {/* Size Selector */}
               <div>
-                <h3 className="font-medium mb-3">Size</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium">Size</h3>
+                  <button
+                    onClick={() => setShowSizeGuide(true)}
+                    className="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+                  >
+                    <Ruler className="w-3.5 h-3.5" />
+                    Size Guide
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {uniqueSizes.map((size) => (
                     <button
@@ -666,29 +733,243 @@ const ProductDetail = () => {
             </button>
           </div>
 
-          {/* Features */}
-          <div className="grid grid-cols-3 gap-4 pt-6 border-t border-[var(--color-border)]">
-            <div className="text-center">
-              <Truck className="w-6 h-6 mx-auto mb-2 text-[var(--color-primary)]" />
+          {/* Baby Trust Features */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-6 border-t border-[var(--color-border)]">
+            <div className="flex items-center gap-2">
+              <Baby className="w-5 h-5 text-[var(--color-primary)]" />
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Baby-Safe
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Leaf className="w-5 h-5 text-green-500" />
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Eco-Friendly
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Truck className="w-5 h-5 text-[var(--color-primary)]" />
               <p className="text-xs text-[var(--color-text-muted)]">
                 Free Shipping
               </p>
             </div>
-            <div className="text-center">
-              <RefreshCw className="w-6 h-6 mx-auto mb-2 text-[var(--color-primary)]" />
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Easy Returns
-              </p>
-            </div>
-            <div className="text-center">
-              <Shield className="w-6 h-6 mx-auto mb-2 text-[var(--color-primary)]" />
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-[var(--color-primary)]" />
               <p className="text-xs text-[var(--color-text-muted)]">
                 Secure Payment
               </p>
             </div>
           </div>
+
+          {/* Material & Care */}
+          <div className="pt-6 border-t border-[var(--color-border)]">
+            <h3 className="font-semibold mb-4">Material & Care</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg)]">
+                <Droplets className="w-5 h-5 text-blue-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Fabric</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {product.material || "100% Soft Cotton"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg)]">
+                <RefreshCw className="w-5 h-5 text-green-500 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Care Instructions</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {product.careInstructions ||
+                      "Machine wash cold, gentle cycle. Tumble dry low."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg)]">
+                <Baby className="w-5 h-5 text-[var(--color-primary)] mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Age Recommendation</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {product.ageRecommendation || "0–36 months"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg)]">
+                <Shield className="w-5 h-5 text-amber-500 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Safety</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Non-toxic dyes, no small parts, baby-safe
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Reviews Section */}
+      <section className="mt-12 pt-8 border-t border-[var(--color-border)]">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-xl font-bold">Customer Reviews</h2>
+            {product.ratings?.count > 0 && (
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star
+                      key={star}
+                      className={`w-4 h-4 ${
+                        star <= product.ratings.average
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-gray-300"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm text-[var(--color-text-muted)]">
+                  {product.ratings.average.toFixed(1)} ({product.ratings.count}{" "}
+                  {product.ratings.count === 1 ? "review" : "reviews"})
+                </span>
+              </div>
+            )}
+          </div>
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowReviewForm((v) => !v)}
+              className="btn btn-secondary text-sm"
+            >
+              {showReviewForm ? "Cancel" : "Write a Review"}
+            </button>
+          )}
+        </div>
+
+        {/* Review Form */}
+        {showReviewForm && isAuthenticated && (
+          <div className="card p-6 mb-8">
+            <ReviewForm
+              productId={product._id}
+              onReviewSubmitted={handleReviewSubmitted}
+            />
+          </div>
+        )}
+
+        {/* Reviews List */}
+        {reviewsLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-[var(--color-primary)]" />
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="text-center py-8 text-[var(--color-text-muted)]">
+            <p>No reviews yet. Be the first to review this product!</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reviews.map((review) => (
+              <div
+                key={review._id}
+                className="card p-5"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">
+                        {review.user?.name || "Anonymous"}
+                      </span>
+                      {review.isVerifiedPurchase && (
+                        <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full">
+                          Verified Purchase
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`w-3.5 h-3.5 ${
+                            star <= review.rating
+                              ? "fill-amber-400 text-amber-400"
+                              : "text-gray-300"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    {new Date(review.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+                {review.title && (
+                  <p className="font-medium text-sm mt-2">{review.title}</p>
+                )}
+                {review.comment && (
+                  <p className="text-sm text-[var(--color-text-muted)] mt-1">
+                    {review.comment}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* You Might Also Like */}
+      {relatedProducts.length > 0 && (
+        <section className="mt-12 pt-8 border-t border-[var(--color-border)]">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold">You Might Also Like</h2>
+            <Link
+              to={`/products?category=${product.category?.slug || ""}`}
+              className="text-sm text-[var(--color-primary)] hover:underline"
+            >
+              View More
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {relatedProducts.map((rp) => (
+              <Link
+                key={rp._id}
+                to={`/products/${rp.slug}`}
+                className="card group"
+              >
+                <div className="relative aspect-square overflow-hidden">
+                  <img
+                    src={rp.images?.[0]?.url || "/placeholder.jpg"}
+                    alt={rp.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  {rp.comparePrice > rp.price && (
+                    <span className="absolute top-2 left-2 bg-[var(--color-error)] text-white text-xs px-2 py-1 rounded">
+                      -{calculateDiscount(rp.comparePrice, rp.price)}%
+                    </span>
+                  )}
+                </div>
+                <div className="p-3">
+                  <h3 className="text-sm font-medium mb-1 line-clamp-2 group-hover:text-[var(--color-primary)]">
+                    {rp.name}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-[var(--color-primary)]">
+                      {formatPrice(rp.price)}
+                    </span>
+                    {rp.comparePrice > rp.price && (
+                      <span className="text-xs text-[var(--color-text-muted)] line-through">
+                        {formatPrice(rp.comparePrice)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Size Guide Modal */}
+      <SizeGuide
+        isOpen={showSizeGuide}
+        onClose={() => setShowSizeGuide(false)}
+        currentSize={selectedSize}
+      />
     </div>
   );
 };

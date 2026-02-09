@@ -94,6 +94,12 @@ const Login = () => {
                     <div>
                         <div className="flex justify-between items-center mb-2">
                             <label className="block text-sm font-medium">Password</label>
+                            <Link
+                                to="/forgot-password"
+                                className="text-xs text-[var(--color-primary)] hover:underline"
+                            >
+                                Forgot Password?
+                            </Link>
                         </div>
                         <div className="input-group">
                             <Lock className={`input-icon w-4 h-4 ${errors.password ? 'text-[var(--color-error)]' : ''}`} />

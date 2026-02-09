@@ -35,10 +35,17 @@ const Categories = () => {
 
     return (
         <div className="container-app py-12">
+            {/* Breadcrumb */}
+            <nav className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] mb-6">
+                <Link to="/" className="hover:text-[var(--color-primary)] transition-colors">Home</Link>
+                <span>/</span>
+                <span className="text-[var(--color-text)]">Categories</span>
+            </nav>
+
             <div className="text-center mb-12">
                 <h1 className="text-3xl md:text-4xl font-bold mb-4">Browse Categories</h1>
                 <p className="text-[var(--color-text-muted)] max-w-2xl mx-auto">
-                    Explore our collection of authentic Nepali handicrafts organized by category
+                    Explore our handmade baby clothing and accessories by category
                 </p>
             </div>
 

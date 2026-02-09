@@ -22,11 +22,18 @@ import Orders from "../pages/Orders";
 import OrderDetail from "../pages/OrderDetail";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
+import ForgotPassword from "../pages/ForgotPassword";
 import Cart from "../pages/Cart";
 import Checkout from "../pages/Checkout";
 import OrderSuccess from "../pages/OrderSuccess";
 import OrderFailed from "../pages/OrderFailed";
-import { Profile, NotFound } from "../pages/placeholders";
+import Profile from "../pages/Profile";
+import Wishlist from "../pages/Wishlist";
+import FAQ from "../pages/FAQ";
+import ShippingInfo from "../pages/ShippingInfo";
+import Returns from "../pages/Returns";
+import Privacy from "../pages/Privacy";
+import { NotFound } from "../pages/placeholders";
 
 // Admin Pages
 import AdminLayout from "../pages/admin/AdminLayout";
@@ -48,8 +55,13 @@ const router = createBrowserRouter([
       { path: "categories", element: <Categories /> },
       { path: "login", element: <Login /> },
       { path: "register", element: <Register /> },
+      { path: "forgot-password", element: <ForgotPassword /> },
       { path: "about", element: <About /> },
       { path: "contact", element: <Contact /> },
+      { path: "faq", element: <FAQ /> },
+      { path: "shipping", element: <ShippingInfo /> },
+      { path: "returns", element: <Returns /> },
+      { path: "privacy", element: <Privacy /> },
 
       // Protected routes
       {
@@ -73,6 +85,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "wishlist",
+        element: (
+          <ProtectedRoute>
+            <Wishlist />
           </ProtectedRoute>
         ),
       },

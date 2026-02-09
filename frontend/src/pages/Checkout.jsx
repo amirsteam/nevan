@@ -17,6 +17,7 @@ import {
   CreditCard,
   Banknote,
   ShieldCheck,
+  Gift,
 } from "lucide-react";
 
 // Province names mapping for Nepal
@@ -54,6 +55,10 @@ const Checkout = () => {
     province: "3", // Default to Bagmati
     phone: "",
   });
+
+  // Gift / order notes
+  const [customerNotes, setCustomerNotes] = useState("");
+  const [isGift, setIsGift] = useState(false);
 
   // Load available payment methods
   useEffect(() => {
@@ -142,6 +147,9 @@ const Checkout = () => {
         },
         paymentMethod: selectedPayment,
         itemsFromCart: true, // Explicitly state we are using cart items
+        customerNotes: isGift
+          ? `🎁 Gift Order: ${customerNotes}`.trim()
+          : customerNotes || undefined,
       };
 
       const orderRes = await ordersAPI.createOrder(orderPayload);
@@ -157,9 +165,10 @@ const Checkout = () => {
       const paymentData = paymentRes.data;
 
       if (selectedPayment === "cod") {
-        // Show QR modal before completing order
-        setPendingOrderId(orderId);
-        setShowQRModal(true);
+        // COD: order is placed, go straight to success
+        orderPlacedRef.current = true;
+        dispatch(resetCart());
+        navigate(`/order-success?orderId=${orderId}`);
         setLoading(false);
       } else if (selectedPayment === "esewa") {
         // Handle eSewa form submission
@@ -343,6 +352,36 @@ const Checkout = () => {
             </form>
           </div>
 
+          {/* Gift Message / Order Notes */}
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Gift className="text-[var(--color-primary)] w-5 h-5" />
+              <h2 className="text-lg font-semibold">Gift Options & Notes</h2>
+            </div>
+
+            <label className="flex items-center gap-3 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isGift}
+                onChange={(e) => setIsGift(e.target.checked)}
+                className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+              />
+              <span className="text-sm font-medium">This order is a gift 🎁</span>
+            </label>
+
+            <textarea
+              value={customerNotes}
+              onChange={(e) => setCustomerNotes(e.target.value)}
+              placeholder={isGift ? "Add a gift message (e.g., Happy Birthday little one! 💛)" : "Any special instructions for your order? (optional)"}
+              rows={3}
+              maxLength={500}
+              className="input w-full resize-none"
+            />
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 text-right">
+              {customerNotes.length}/500
+            </p>
+          </div>
+
           {/* Payment Methods */}
           <div className="card p-6">
             <div className="flex items-center gap-2 mb-4">
@@ -466,14 +505,13 @@ const Checkout = () => {
         </div>
       </div>
 
-      {/* eSewa QR Modal for COD */}
+      {/* eSewa QR Modal (fallback for manual payment) */}
       {showQRModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 relative">
             <button
               onClick={() => {
                 setShowQRModal(false);
-                // Complete the COD order after closing modal
                 orderPlacedRef.current = true;
                 dispatch(resetCart());
                 navigate(`/order-success?orderId=${pendingOrderId}`);
@@ -484,7 +522,7 @@ const Checkout = () => {
             </button>
 
             <h3 className="text-xl font-bold text-center mb-4">
-              Pay via eSewa
+              Complete Payment via eSewa
             </h3>
 
             <div className="flex justify-center mb-4">
