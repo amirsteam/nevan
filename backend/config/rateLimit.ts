@@ -75,3 +75,16 @@ export const chatUploadLimiter = createLimiter({
   limit: 30,
   message: message("Too many images uploaded. Please try again later."),
 });
+
+// Contact form: each message emails the store inbox
+export const contactLimiter = createLimiter({
+  windowMs: 60 * MINUTE,
+  limit: 5,
+  message: message("Too many messages sent from this network. Please try again later or chat with us."),
+});
+
+export const newsletterLimiter = createLimiter({
+  windowMs: 60 * MINUTE,
+  limit: 10,
+  message: message("Too many sign-up attempts. Please try again later."),
+});

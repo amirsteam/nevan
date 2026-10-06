@@ -17,6 +17,22 @@ export interface IRefreshSession {
   createdAt: Date;
 }
 
+// Saved delivery address (address book, max MAX_ADDRESSES)
+export interface IAddress {
+  _id: Types.ObjectId;
+  label?: string;
+  name: string;
+  phone: string;
+  street: string;
+  city: string;
+  district: string;
+  province: number;
+  landmark?: string;
+  isDefault: boolean;
+}
+
+export const MAX_ADDRESSES = 5;
+
 export interface IUser extends Document {
   name: string;
   email: string;
@@ -28,6 +44,7 @@ export interface IUser extends Document {
   lastLogin?: Date;
   pushTokens: IPushToken[];
   wishlist: Types.ObjectId[];
+  addresses: Types.DocumentArray<IAddress & Types.Subdocument>;
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
   resetPasswordAttempts?: number;
@@ -45,6 +62,21 @@ const pushTokenSchema = new Schema<IPushToken>(
   { _id: false },
 );
 
+const addressSchema = new Schema<IAddress>(
+  {
+    label: { type: String, trim: true, maxlength: 30 },
+    name: { type: String, required: true, trim: true, maxlength: 100 },
+    phone: { type: String, required: true, trim: true, maxlength: 20 },
+    street: { type: String, required: true, trim: true, maxlength: 200 },
+    city: { type: String, required: true, trim: true, maxlength: 100 },
+    district: { type: String, required: true, trim: true, maxlength: 100 },
+    province: { type: Number, required: true, min: 1, max: 7 },
+    landmark: { type: String, trim: true, maxlength: 200 },
+    isDefault: { type: Boolean, default: false },
+  },
+  { _id: true },
+);
+
 const userSchema = new Schema<IUser>(
   {
     name: { type: String, required: true },
@@ -55,6 +87,7 @@ const userSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     pushTokens: { type: [pushTokenSchema], default: [] },
     wishlist: [{ type: Schema.Types.ObjectId, ref: "Product" }],
+    addresses: { type: [addressSchema], default: [] },
     refreshSessions: {
       type: [
         new Schema<IRefreshSession>(

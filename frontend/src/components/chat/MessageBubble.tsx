@@ -26,12 +26,12 @@ const MessageBubble = ({
         <div className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-3`}>
             <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2 ${isOwn
-                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-md"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-md"
+                    ? "bg-[var(--color-primary)] text-[var(--color-on-primary)] rounded-br-md"
+                    : "bg-[var(--color-surface-muted)] text-[var(--color-text)] rounded-bl-md"
                     }`}
             >
                 {!isOwn && (
-                    <div className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">
+                    <div className="text-xs font-medium text-[var(--color-primary)] mb-1">
                         {senderLabel}
                     </div>
                 )}
@@ -44,7 +44,7 @@ const MessageBubble = ({
                     ) : null,
                 )}
                 <div
-                    className={`flex items-center justify-end gap-1 text-xs mt-1 ${isOwn ? "text-indigo-200" : "text-gray-400"}`}
+                    className={`flex items-center justify-end gap-1 text-xs mt-1 ${isOwn ? "opacity-80" : "text-[var(--color-text-muted)]"}`}
                 >
                     <span>{formattedTime}</span>
                     {isOwn && (

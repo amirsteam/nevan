@@ -57,25 +57,23 @@ const Breadcrumb = ({
   if (breadcrumbItems.length === 0) return null;
 
   return (
-    <nav
-      aria-label="Breadcrumb"
-      className={`flex items-center gap-1 text-sm text-[var(--color-text-muted)] overflow-x-auto ${className}`}
-    >
+    <nav aria-label="Breadcrumb" className={`text-sm text-[var(--color-text-muted)] ${className}`}>
+      <ol className="flex items-center gap-1 overflow-x-auto whitespace-nowrap">
       {showHome && (
-        <>
+        <li className="flex items-center gap-1">
           <Link
             to="/"
-            className="flex items-center gap-1 hover:text-[var(--color-primary)] transition-colors whitespace-nowrap"
+            className="flex items-center gap-1 hover:text-[var(--color-primary)] transition-colors"
           >
-            <Home className="w-4 h-4" />
-            <span className="hidden sm:inline">Home</span>
+            <Home className="w-4 h-4" aria-hidden="true" />
+            <span className="sr-only sm:not-sr-only">Home</span>
           </Link>
-          <ChevronRight className="w-4 h-4 flex-shrink-0" />
-        </>
+          <ChevronRight className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+        </li>
       )}
 
       {breadcrumbItems.map((item, index) => (
-        <div key={index} className="flex items-center gap-1">
+        <li key={index} className="flex items-center gap-1 min-w-0">
           {item.path ? (
             <Link
               to={item.path}
@@ -84,16 +82,17 @@ const Breadcrumb = ({
               {item.label}
             </Link>
           ) : (
-            <span className="text-[var(--color-text)] font-medium whitespace-nowrap">
+            <span aria-current="page" className="text-[var(--color-text)] font-medium truncate max-w-[16rem]">
               {item.label}
             </span>
           )}
 
           {index < breadcrumbItems.length - 1 && (
-            <ChevronRight className="w-4 h-4 flex-shrink-0" />
+            <ChevronRight className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
           )}
-        </div>
+        </li>
       ))}
+      </ol>
     </nav>
   );
 };

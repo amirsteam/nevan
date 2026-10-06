@@ -70,7 +70,8 @@ describe("Checkout after returning from eSewa (full page load)", () => {
     await act(async () => {
       store.dispatch({ type: "cart/fetchCart/fulfilled", payload: { items: [item], subtotal: 1200, itemCount: 1 } });
     });
-    expect(await screen.findByText("Romper")).toBeInTheDocument();
+    // Listed in both the phone (collapsible) and desktop summaries
+    expect((await screen.findAllByText("Romper")).length).toBeGreaterThan(0);
     expect(toastError).not.toHaveBeenCalled();
   });
 

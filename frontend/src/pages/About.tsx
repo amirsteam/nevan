@@ -11,7 +11,7 @@ const About = () => {
     return (
         <div className="min-h-screen">
             {/* HERO SECTION */}
-            <div className="bg-[var(--color-primary)] text-white py-20 mb-16">
+            <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] py-20 mb-16">
                 <div className="container-app text-center">
                     <h1 className="text-4xl md:text-5xl font-bold mb-4">About Nevan Handicraft</h1>
                     <p className="text-xl md:text-2xl text-white/90 font-light">
@@ -59,7 +59,7 @@ const About = () => {
 
                         <Link 
                             to="/" 
-                            className="inline-flex items-center justify-center px-8 py-3 mt-8 border-2 border-[var(--color-primary)] text-[var(--color-primary)] font-medium rounded-lg hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                            className="inline-flex items-center justify-center px-8 py-3 mt-8 border-2 border-[var(--color-primary)] text-[var(--color-primary)] font-medium rounded-lg hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
                         >
                             Back to Home
                         </Link>
@@ -156,7 +156,7 @@ const About = () => {
                 </div>
 
                 {/* WHY MOMS TRUST US */}
-                <div className="bg-gray-100 rounded-3xl p-12 text-center mb-24 relative overflow-hidden">
+                <div className="bg-[var(--color-surface-muted)] rounded-3xl p-12 text-center mb-24 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-32 h-32 bg-[var(--color-primary)] opacity-5 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
                     <div className="absolute bottom-0 right-0 w-48 h-48 bg-[var(--color-accent)] opacity-5 rounded-full translate-x-1/3 translate-y-1/3"></div>
                     
@@ -171,8 +171,8 @@ const About = () => {
                 {/* THANK YOU SECTION */}
                 <div className="bg-green-50 rounded-3xl p-12 text-center mb-20 border border-green-100">
                     <Heart className="w-12 h-12 text-green-600 mx-auto mb-6" />
-                    <h2 className="text-3xl font-bold mb-6 text-gray-900">Thank You</h2>
-                    <p className="max-w-2xl mx-auto text-lg text-gray-700 mb-8 leading-relaxed">
+                    <h2 className="text-3xl font-bold mb-6 text-[var(--color-text)]">Thank You</h2>
+                    <p className="max-w-2xl mx-auto text-lg text-[var(--color-text)] mb-8 leading-relaxed">
                         To every mom, every family and every supporter — thank you for
                         believing in us, choosing handmade, and helping us grow.
                         <br /><br />

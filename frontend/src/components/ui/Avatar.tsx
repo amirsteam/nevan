@@ -31,24 +31,15 @@ const onlineIndicatorSizes = {
 
 // Generate consistent color from string
 const getColorFromString = (str: string): string => {
+  // Muted brand-family tones; all keep white initials at 4.5:1 or better
   const colors = [
-    "bg-red-500",
-    "bg-orange-500",
-    "bg-amber-500",
-    "bg-yellow-500",
-    "bg-lime-500",
-    "bg-green-500",
-    "bg-emerald-500",
-    "bg-teal-500",
-    "bg-cyan-500",
-    "bg-sky-500",
-    "bg-blue-500",
-    "bg-indigo-500",
-    "bg-violet-500",
-    "bg-purple-500",
-    "bg-fuchsia-500",
-    "bg-pink-500",
-    "bg-rose-500",
+    "bg-[#9e5f57]", // rose
+    "bg-[#4d6b49]", // sage
+    "bg-[#8a5a3c]", // terracotta
+    "bg-[#566887]", // dusty blue
+    "bg-[#7a5677]", // mauve
+    "bg-[#6b5f4b]", // taupe
+    "bg-[#3f6b6b]", // teal
   ];
 
   let hash = 0;

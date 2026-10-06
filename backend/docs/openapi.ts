@@ -89,6 +89,12 @@ const productBody = {
     material: { type: "string" },
     careInstructions: { type: "string" },
     ageRecommendation: { type: "string" },
+    ageGroups: {
+      type: "array",
+      description: "Age bands used by the storefront age filter",
+      items: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] },
+    },
+    gender: { type: "string", enum: ["boy", "girl", "unisex"], nullable: true },
     metaTitle: { type: "string" },
     metaDescription: { type: "string" },
     variants: {
@@ -124,6 +130,7 @@ const openApiSpec = {
     { name: "Payments" },
     { name: "Notifications" },
     { name: "Chat" },
+    { name: "Contact" },
     { name: "Admin" },
     { name: "System" },
   ],
@@ -239,7 +246,39 @@ const openApiSpec = {
         }),
       }, "none"),
     },
-    "/auth/me": { get: op("Auth", "Current user") },
+    "/auth/me": {
+      get: op("Auth", "Current user"),
+      put: op("Auth", "Update name and/or phone", {
+        requestBody: json({
+          type: "object",
+          properties: { name: { type: "string", maxLength: 100 }, phone: { type: "string", example: "9841234567" } },
+        }),
+      }),
+    },
+    "/auth/addresses": {
+      get: op("Auth", "Saved delivery addresses (default first)"),
+      post: op("Auth", "Save an address (max 5; the first becomes the default)", {
+        requestBody: json({
+          ...shippingAddress,
+          properties: {
+            ...shippingAddress.properties,
+            label: { type: "string", maxLength: 30, example: "Home" },
+            landmark: { type: "string" },
+            isDefault: { type: "boolean" },
+          },
+        }),
+      }),
+    },
+    "/auth/addresses/{addressId}": {
+      put: op("Auth", "Edit an address or make it the default", {
+        parameters: [pathParam("addressId")],
+        requestBody: json({
+          type: "object",
+          properties: { ...shippingAddress.properties, label: { type: "string" }, landmark: { type: "string" }, isDefault: { type: "boolean" } },
+        }),
+      }),
+      delete: op("Auth", "Remove an address (another becomes the default)", { parameters: [pathParam("addressId")] }),
+    },
     "/auth/change-password": {
       put: op("Auth", "Change password (ends all sessions)", {
         requestBody: json({
@@ -275,6 +314,8 @@ const openApiSpec = {
           { name: "search", in: "query", schema: { type: "string" } },
           { name: "minPrice", in: "query", schema: { type: "number" } },
           { name: "maxPrice", in: "query", schema: { type: "number" } },
+          { name: "age", in: "query", description: "Age band (products tagged with it)", schema: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] } },
+          { name: "gender", in: "query", description: "boy/girl also include unisex products", schema: { type: "string", enum: ["boy", "girl", "unisex"] } },
           {
             name: "sort",
             in: "query",
@@ -427,6 +468,35 @@ const openApiSpec = {
         }),
       }, "none"),
     },
+    "/reviews/featured": {
+      get: op("Reviews", "Recent approved 4-5 star reviews with a comment (homepage testimonials; reviewer shown as first name + initial)", {
+        parameters: [{ name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 12, default: 3 } }],
+      }, "none"),
+    },
+    "/contact": {
+      post: op("Contact", "Send a contact-form message (stored, and emailed to CONTACT_EMAIL; rate limited)", {
+        requestBody: json({
+          type: "object",
+          required: ["name", "email", "message"],
+          properties: {
+            name: { type: "string", maxLength: 100 },
+            email: { type: "string", format: "email" },
+            phone: { type: "string" },
+            subject: { type: "string", maxLength: 150 },
+            message: { type: "string", minLength: 10, maxLength: 2000 },
+          },
+        }),
+      }, "none"),
+    },
+    "/newsletter/subscribe": {
+      post: op("Contact", "Subscribe to the newsletter (idempotent; rate limited)", {
+        requestBody: json({
+          type: "object",
+          required: ["email"],
+          properties: { email: { type: "string", format: "email" }, source: { type: "string", maxLength: 30 } },
+        }),
+      }, "none"),
+    },
     "/chat/upload": {
       post: op("Chat", "Upload a chat image (signed-in users, or guests with the X-Chat-Guest-Token header). Realtime messaging uses Socket.IO namespace /chat", {
         requestBody: {
@@ -437,7 +507,9 @@ const openApiSpec = {
     },
 
     // ---------------- Admin ----------------
-    "/admin/dashboard": { get: op("Admin", "Store stats, 7-day sales and orders by status", {}, "admin") },
+    "/admin/dashboard": {
+      get: op("Admin", "Store stats, 7-day sales, orders by status, needs-attention counts, low-stock products and 30-day top products", {}, "admin"),
+    },
     "/admin/products": {
       get: op("Admin", "All products incl. inactive", {
         parameters: [
@@ -445,6 +517,7 @@ const openApiSpec = {
           { name: "search", in: "query", schema: { type: "string" } },
           { name: "category", in: "query", schema: { type: "string" } },
           { name: "isActive", in: "query", schema: { type: "boolean" } },
+          { name: "stock", in: "query", description: "low = 1 to LOW_STOCK_THRESHOLD, out = 0", schema: { type: "string", enum: ["low", "out"] } },
         ],
       }, "admin"),
       post: op("Admin", "Create product", { requestBody: json(productBody) }, "admin"),
@@ -489,7 +562,27 @@ const openApiSpec = {
     },
     "/admin/orders": {
       get: op("Admin", "All orders (also returns per-status stats)", {
-        parameters: [...pageParams, { name: "status", in: "query", schema: { type: "string" } }],
+        parameters: [
+          ...pageParams,
+          { name: "status", in: "query", schema: { type: "string", enum: ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"] } },
+          { name: "paymentStatus", in: "query", schema: { type: "string", enum: ["pending", "paid", "failed", "refunded"] } },
+          { name: "paymentMethod", in: "query", schema: { type: "string", enum: ["cod", "esewa", "khalti"] } },
+          { name: "search", in: "query", description: "Order number, recipient name/phone, or customer name/email", schema: { type: "string" } },
+          { name: "refundRequired", in: "query", description: "Cancelled orders that were paid (refund needed)", schema: { type: "boolean" } },
+        ],
+      }, "admin"),
+    },
+    "/admin/orders/bulk-status": {
+      post: op("Admin", "Change the status of up to 100 orders (same rules as a single update; returns updated and failed lists)", {
+        requestBody: json({
+          type: "object",
+          required: ["orderIds", "status"],
+          properties: {
+            orderIds: { type: "array", items: { type: "string" }, maxItems: 100 },
+            status: { type: "string", enum: ["confirmed", "processing", "shipped", "delivered", "cancelled"] },
+            note: { type: "string" },
+          },
+        }),
       }, "admin"),
     },
     "/admin/orders/{id}": { get: op("Admin", "Order by id", { parameters: [pathParam("id")] }, "admin") },
@@ -507,7 +600,14 @@ const openApiSpec = {
       }, "admin"),
     },
     "/admin/users": {
-      get: op("Admin", "Users", { parameters: [...pageParams, { name: "role", in: "query", schema: { type: "string" } }] }, "admin"),
+      get: op("Admin", "Users", {
+        parameters: [
+          ...pageParams,
+          { name: "role", in: "query", schema: { type: "string", enum: ["customer", "admin"] } },
+          { name: "isActive", in: "query", schema: { type: "boolean" } },
+          { name: "search", in: "query", description: "Name, email or phone", schema: { type: "string" } },
+        ],
+      }, "admin"),
     },
     "/admin/users/{id}/status": {
       put: op("Admin", "Activate/deactivate user", {
@@ -520,6 +620,20 @@ const openApiSpec = {
         parameters: [pathParam("id")],
         requestBody: json({ type: "object", required: ["role"], properties: { role: { type: "string", enum: ["customer", "admin"] } } }),
       }, "admin"),
+    },
+    "/admin/contact-messages": {
+      get: op("Admin", "Contact-form messages (newest first, with unreadCount)", {
+        parameters: [...pageParams, { name: "unread", in: "query", schema: { type: "boolean" } }],
+      }, "admin"),
+    },
+    "/admin/contact-messages/{id}": {
+      put: op("Admin", "Mark a contact message read or unread", {
+        parameters: [pathParam("id")],
+        requestBody: json({ type: "object", properties: { isRead: { type: "boolean", default: true } } }, false),
+      }, "admin"),
+    },
+    "/admin/subscribers": {
+      get: op("Admin", "Active newsletter subscribers", { parameters: pageParams }, "admin"),
     },
     "/admin/payments/cod-collected": {
       post: op("Admin", "Mark a COD order as paid", {

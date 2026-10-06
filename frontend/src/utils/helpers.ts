@@ -4,6 +4,7 @@
  */
 
 import type { OrderStatus, PaymentStatus } from "../types";
+import { FREE_SHIPPING_THRESHOLD } from "@shared/store";
 
 /**
  * Format price in NPR
@@ -148,7 +149,7 @@ export const populated = <T extends object>(ref: T | string | null | undefined):
  * Shipping cost in NPR. Mirrors calculateShippingCost in backend/services/orderService.ts,
  * which is what the customer is actually charged — keep the two in sync.
  */
-export const FREE_SHIPPING_THRESHOLD = 5000;
+export { FREE_SHIPPING_THRESHOLD };
 
 export const calculateShippingCost = (
   subtotal: number,

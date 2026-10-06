@@ -16,7 +16,7 @@ const variantClasses = {
   default: "bg-[var(--color-surface)] border border-[var(--color-border)]",
   elevated: "bg-[var(--color-surface)] shadow-lg",
   outlined: "bg-transparent border-2 border-[var(--color-border)]",
-  ghost: "bg-[var(--color-background)]",
+  ghost: "bg-[var(--color-bg)]",
 };
 
 const paddingClasses = {

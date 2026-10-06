@@ -47,7 +47,7 @@ const StatusBadge = ({ status, variant, size = 'md', uppercase = true }: StatusB
         warning: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
         error: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
         info: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-        default: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+        default: 'bg-[var(--color-surface-muted)] text-[var(--color-text)]',
         primary: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]',
     };
 

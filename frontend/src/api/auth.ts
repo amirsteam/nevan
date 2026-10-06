@@ -8,7 +8,11 @@ import type {
   IApiResponse,
   IRegisterData,
   IAuthResponse,
+  ISavedAddress,
+  ISavedAddressInput,
 } from "../types";
+
+type AddressesResponse = IApiResponse<{ addresses: ISavedAddress[]; address?: ISavedAddress }>;
 
 export const authAPI = {
   register: async (
@@ -71,6 +75,31 @@ export const authAPI = {
       otp,
       newPassword,
     });
+    return response.data;
+  },
+
+  updateProfile: async (updates: { name?: string; phone?: string }): Promise<IApiResponse<{ user: IUser }>> => {
+    const response = await api.put("/auth/me", updates);
+    return response.data;
+  },
+
+  getAddresses: async (): Promise<AddressesResponse> => {
+    const response = await api.get("/auth/addresses");
+    return response.data;
+  },
+
+  addAddress: async (address: ISavedAddressInput): Promise<AddressesResponse> => {
+    const response = await api.post("/auth/addresses", address);
+    return response.data;
+  },
+
+  updateAddress: async (id: string, updates: Partial<ISavedAddressInput>): Promise<AddressesResponse> => {
+    const response = await api.put(`/auth/addresses/${id}`, updates);
+    return response.data;
+  },
+
+  deleteAddress: async (id: string): Promise<AddressesResponse> => {
+    const response = await api.delete(`/auth/addresses/${id}`);
     return response.data;
   },
 };

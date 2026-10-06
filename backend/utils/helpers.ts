@@ -98,3 +98,8 @@ export const isValidNepaliPhone = (phone: string): boolean => {
  */
 export const getFrontendUrl = (): string =>
   (process.env.FRONTEND_URL || "http://localhost:5173").split(",")[0].trim().replace(/\/+$/, "");
+
+/**
+ * Escape user input for use inside a RegExp (case-insensitive admin searches)
+ */
+export const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

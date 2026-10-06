@@ -6,7 +6,9 @@
 // Loading & Feedback
 export {
   default as Skeleton,
+  LoadingRegion,
   ProductCardSkeleton,
+  ProductDetailSkeleton,
   ProductGridSkeleton,
   CategoryCardSkeleton,
   OrderItemSkeleton,

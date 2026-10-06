@@ -189,10 +189,10 @@ const ImageUploader = ({
                                             e.stopPropagation();
                                             onSetPrimary(image.id || image._id || "");
                                         }}
-                                        className="p-2 bg-white rounded-full hover:bg-gray-100"
+                                        className="p-2 bg-[var(--color-surface)] rounded-full hover:bg-[var(--color-surface-muted)]"
                                         title="Set as primary"
                                     >
-                                        <Star className="w-4 h-4 text-gray-700" />
+                                        <Star className="w-4 h-4 text-[var(--color-text)]" />
                                     </button>
                                 )}
 
@@ -203,7 +203,7 @@ const ImageUploader = ({
                                             e.stopPropagation();
                                             onDelete(image.id || image._id || "");
                                         }}
-                                        className="p-2 bg-white rounded-full hover:bg-gray-100"
+                                        className="p-2 bg-[var(--color-surface)] rounded-full hover:bg-[var(--color-surface-muted)]"
                                         title="Delete"
                                     >
                                         <X className="w-4 h-4 text-red-600" />

@@ -129,7 +129,7 @@ const Tooltip = ({
               top: coords.y,
             }}
           >
-            <div className="relative bg-gray-900 dark:bg-gray-700 text-white text-sm px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap animate-fadeIn">
+            <div className="relative bg-gray-900 text-white text-sm px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap animate-fadeIn">
               {content}
               {/* Arrow */}
               <div

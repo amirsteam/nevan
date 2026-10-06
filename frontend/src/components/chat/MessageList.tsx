@@ -59,14 +59,14 @@ const MessageList = ({ customerName }: MessageListProps) => {
     if (isLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]"></div>
             </div>
         );
     }
 
     if (messages.length === 0) {
         return (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
+            <div className="flex-1 flex items-center justify-center text-[var(--color-text-muted)]">
                 <div className="text-center">
                     <div className="text-4xl mb-2">💬</div>
                     <p>No messages yet</p>
@@ -83,7 +83,7 @@ const MessageList = ({ customerName }: MessageListProps) => {
                     <button
                         onClick={loadOlder}
                         disabled={loadingOlder}
-                        className="text-xs text-indigo-600 hover:underline disabled:opacity-50"
+                        className="text-xs text-[var(--color-primary)] hover:underline disabled:opacity-50"
                     >
                         {loadingOlder ? "Loading..." : "Load earlier messages"}
                     </button>

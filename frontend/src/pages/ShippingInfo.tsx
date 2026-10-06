@@ -118,7 +118,7 @@ const ShippingInfo = () => {
               },
             ].map((item) => (
               <div key={item.step} className="flex items-start gap-4">
-                <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)] flex items-center justify-center text-sm font-bold flex-shrink-0">
                   {item.step}
                 </div>
                 <div>

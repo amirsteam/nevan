@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import api from "../../api/axios";
 import {
+    clearDraft,
     setIsOpen,
     enterRoom,
     leaveRoom,
@@ -25,6 +26,7 @@ import { getErrorMessage } from "../../utils/helpers";
 import MessageList from "./MessageList";
 import GuestChatStart from "./GuestChatStart";
 import { loadGuestSession } from "../../utils/guestChat";
+import { CONTACT } from "../../config/store";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -61,6 +63,14 @@ const ChatWindow = () => {
     } = useAppSelector((state) => state.chat);
 
     const [inputMessage, setInputMessage] = useState("");
+    const draft = useAppSelector((state) => state.chat.draft);
+
+    // Start the message box with a draft (e.g. "Order #NV-123: " from an order page)
+    useEffect(() => {
+        if (!draft) return;
+        setInputMessage((current) => current || draft);
+        dispatch(clearDraft());
+    }, [draft, dispatch]);
     const [isSending, setIsSending] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,27 +222,27 @@ const ChatWindow = () => {
 
     return (
         <div
-            className="fixed bottom-20 right-4 z-50 w-[calc(100vw-2rem)] max-w-[380px] h-[min(560px,calc(100vh-7rem))] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700"
+            className="fixed z-[60] inset-0 sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[380px] sm:h-[min(560px,calc(100vh-7rem))] bg-[var(--color-surface)] sm:rounded-2xl shadow-[var(--shadow-lg)] flex flex-col overflow-hidden sm:border border-[var(--color-border)] pb-[env(safe-area-inset-bottom)] animate-slideUp"
             role="dialog"
             aria-label="Support chat"
         >
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
+            <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:pt-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                     {isAdmin && activeRoomId && (
-                        <button onClick={handleBackToRooms} className="mr-1 hover:bg-white/20 rounded-full p-1" aria-label="Back to conversations">
+                        <button onClick={handleBackToRooms} className="mr-1 hover:bg-white/15 rounded-full p-1" aria-label="Back to conversations">
                             <ChevronLeft size={20} />
                         </button>
                     )}
-                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center shrink-0" aria-hidden="true">
                         {showInbox ? <User size={18} /> : "💬"}
                     </div>
                     <div className="min-w-0">
                         <h3 className="font-semibold text-sm truncate">
                             {showInbox ? "Conversations" : isAdmin ? customerName || "Customer" : "Support Chat"}
                         </h3>
-                        {needsGuestStart ? (
-                            <span className="text-xs opacity-80">We're here to help</span>
+                        {needsGuestStart || (!isAdmin && connected) ? (
+                            <span className="text-xs opacity-90 block truncate">{CONTACT.replyTime}</span>
                         ) : (
                             <div className="flex items-center gap-1">
                                 <span
@@ -247,7 +257,7 @@ const ChatWindow = () => {
                     {isAdmin && activeRoomId && roomStatus === "open" && (
                         <button
                             onClick={handleCloseConversation}
-                            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-white/15 rounded-lg transition-colors"
                             title="Close conversation"
                             aria-label="Close conversation"
                         >
@@ -255,11 +265,11 @@ const ChatWindow = () => {
                         </button>
                     )}
                     {!needsGuestStart && (connectionStatus === "error" || connectionStatus === "disconnected") && (
-                        <button onClick={handleReconnect} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" title="Reconnect" aria-label="Reconnect">
+                        <button onClick={handleReconnect} className="p-1.5 hover:bg-white/15 rounded-lg transition-colors" title="Reconnect" aria-label="Reconnect">
                             <RefreshCw size={18} />
                         </button>
                     )}
-                    <button onClick={() => dispatch(setIsOpen(false))} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" aria-label="Close chat window">
+                    <button onClick={() => dispatch(setIsOpen(false))} className="p-2 hover:bg-white/15 rounded-lg transition-colors" aria-label="Close chat window">
                         <X size={18} />
                     </button>
                 </div>
@@ -270,12 +280,12 @@ const ChatWindow = () => {
             ) : showInbox ? (
                 <>
                     {/* Admin inbox */}
-                    <div className="flex border-b border-gray-200 dark:border-gray-700 text-sm">
+                    <div className="flex border-b border-[var(--color-border)] text-sm">
                         {(["open", "closed"] as const).map((filter) => (
                             <button
                                 key={filter}
                                 onClick={() => dispatch(setRoomFilter(filter))}
-                                className={`flex-1 py-2 capitalize ${roomFilter === filter ? "border-b-2 border-indigo-600 font-medium text-indigo-600" : "text-gray-500"}`}
+                                className={`flex-1 py-2 capitalize ${roomFilter === filter ? "border-b-2 border-[var(--color-primary)] font-medium text-[var(--color-primary)]" : "text-[var(--color-text-muted)]"}`}
                             >
                                 {filter}
                             </button>
@@ -283,7 +293,7 @@ const ChatWindow = () => {
                     </div>
                     <div className="flex-1 overflow-y-auto p-2">
                         {rooms.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm">
+                            <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-muted)] text-sm">
                                 <p>{roomFilter === "open" ? "No open conversations" : "No closed conversations"}</p>
                             </div>
                         ) : (
@@ -291,26 +301,26 @@ const ChatWindow = () => {
                                 <button
                                     key={room._id}
                                     onClick={() => joinRoom(room._id)}
-                                    className="w-full text-left p-3 mb-2 rounded-lg bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors border border-gray-100 dark:border-gray-600"
+                                    className="w-full text-left p-3 mb-2 rounded-lg bg-[var(--color-surface-muted)] hover:bg-[var(--color-primary-soft)] transition-colors border border-[var(--color-border)]"
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-1">
-                                        <span className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                        <span className="font-medium text-sm text-[var(--color-text)] truncate">
                                             {roomDisplayName(room)}
                                         </span>
-                                        <span className="text-xs text-gray-500 shrink-0">{formatRoomTime(room.lastMessageAt)}</span>
+                                        <span className="text-xs text-[var(--color-text-muted)] shrink-0">{formatRoomTime(room.lastMessageAt)}</span>
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
-                                        <p className="text-xs text-gray-500 truncate">
+                                        <p className="text-xs text-[var(--color-text-muted)] truncate">
                                             {room.lastMessagePreview || room.customerId?.email || room.guestEmail}
                                         </p>
                                         {room.unreadCountAdmin > 0 && (
-                                            <span className="shrink-0 px-2 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                                            <span className="shrink-0 px-2 py-0.5 text-xs font-bold text-white bg-red-700 rounded-full">
                                                 {room.unreadCountAdmin}
                                             </span>
                                         )}
                                     </div>
                                     {room.adminId?.name && (
-                                        <p className="text-[11px] text-gray-400 mt-1">Last reply: {room.adminId.name}</p>
+                                        <p className="text-[11px] text-[var(--color-text-muted)] mt-1">Last reply: {room.adminId.name}</p>
                                     )}
                                 </button>
                             ))
@@ -322,22 +332,22 @@ const ChatWindow = () => {
                     <MessageList customerName={isAdmin ? customerName : undefined} />
 
                     {typing && (
-                        <div className="px-4 py-1 text-xs text-gray-500 italic animate-pulse">
+                        <div className="px-4 py-1 text-xs text-[var(--color-text-muted)] italic animate-pulse">
                             {typing.role === "admin" ? (isAdmin ? "Another admin" : "Support") : customerName || "Customer"} is typing...
                         </div>
                     )}
 
                     {roomStatus === "closed" ? (
-                        <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-center text-sm text-gray-500">
+                        <div className="p-3 border-t border-[var(--color-border)] text-center text-sm text-[var(--color-text-muted)]">
                             This conversation has been closed.
                             {!isAdmin && (
-                                <button onClick={handleStartNewConversation} className="block mx-auto mt-2 text-indigo-600 font-medium hover:underline">
+                                <button onClick={handleStartNewConversation} className="block mx-auto mt-2 text-[var(--color-primary)] font-medium hover:underline">
                                     Start a new conversation
                                 </button>
                             )}
                         </div>
                     ) : (
-                        <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                        <form onSubmit={handleSendMessage} className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
                             <div className="flex gap-2 items-end">
                                 <input
                                     ref={fileInputRef}
@@ -349,7 +359,7 @@ const ChatWindow = () => {
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
+                                    className="p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] rounded-full transition-colors disabled:opacity-50"
                                     disabled={!canWrite || isUploading}
                                     title="Send image"
                                     aria-label="Send image"
@@ -363,14 +373,14 @@ const ChatWindow = () => {
                                     onChange={handleInputChange}
                                     placeholder="Type a message..."
                                     maxLength={MAX_MESSAGE_LENGTH}
-                                    className="flex-1 min-w-0 px-4 py-2 rounded-full bg-gray-100 dark:bg-gray-700 border-0 focus:ring-2 focus:ring-indigo-500 text-sm"
+                                    className="flex-1 min-w-0 px-4 py-2.5 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] border-0 outline-none focus:ring-2 focus:ring-[var(--color-primary)] text-base sm:text-sm"
                                     disabled={!canWrite}
                                     aria-label="Message"
                                 />
                                 <button
                                     type="submit"
                                     disabled={!inputMessage.trim() || isSending || !canWrite}
-                                    className="p-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="p-2.5 bg-[var(--color-primary)] text-[var(--color-on-primary)] rounded-full hover:bg-[var(--color-primary-dark)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     aria-label="Send message"
                                 >
                                     <Send size={18} />

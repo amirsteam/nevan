@@ -134,7 +134,7 @@ const Users = () => {
             label: '',
             width: '50px',
             render: (_, user) => (
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--color-primary)] flex items-center justify-center text-white font-medium">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--color-primary)] flex items-center justify-center text-[var(--color-on-primary)] font-medium">
                     {user.avatar?.url ? (
                         <img
                             src={user.avatar.url}

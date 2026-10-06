@@ -111,9 +111,9 @@ export const TabList = ({
   };
 
   const variantClasses = {
-    default: "flex gap-1 p-1 bg-[var(--color-background)] rounded-xl",
-    pills: "flex gap-2",
-    underline: "flex gap-6 border-b border-[var(--color-border)]",
+    default: "flex gap-1 p-1 bg-[var(--color-surface-muted)] rounded-xl overflow-x-auto",
+    pills: "flex gap-2 overflow-x-auto",
+    underline: "flex gap-6 border-b border-[var(--color-border)] overflow-x-auto",
   };
 
   return (
@@ -148,7 +148,7 @@ export const TabTrigger = ({
   const isActive = activeTab === value;
 
   const baseClasses =
-    "transition-all duration-200 font-medium focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-1";
+    "transition-all duration-200 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 whitespace-nowrap";
 
   const variantClasses = {
     default: `
@@ -163,8 +163,8 @@ export const TabTrigger = ({
       px-4 py-2 rounded-full text-sm
       ${
         isActive
-          ? "bg-[var(--color-primary)] text-white"
-          : "bg-[var(--color-background)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
+          ? "bg-[var(--color-primary)] text-[var(--color-on-primary)]"
+          : "bg-[var(--color-bg)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
       }
     `,
     underline: `
@@ -179,7 +179,9 @@ export const TabTrigger = ({
 
   return (
     <button
+      type="button"
       role="tab"
+      id={`tab-${value}`}
       aria-selected={isActive}
       aria-controls={`tabpanel-${value}`}
       tabIndex={isActive ? 0 : -1}

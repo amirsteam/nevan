@@ -30,13 +30,13 @@ const Footer = (): React.ReactElement => {
             <div className="flex gap-3">
               <a
                 href="https://www.facebook.com/nevancollections"
-                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
               >
                 <FaFacebook className="w-4 h-4" />
               </a>
               <a
                 href="https://www.instagram.com/nevancollection/"
-                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-white transition-colors"
+                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
               >
                 <FaInstagram className="w-4 h-4" />
               </a>

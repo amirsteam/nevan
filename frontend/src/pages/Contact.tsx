@@ -36,7 +36,7 @@ const Contact = () => {
     return (
         <div className="min-h-screen">
             {/* HEADER */}
-            <div className="bg-[var(--color-primary)] text-white py-20 mb-12 text-center">
+            <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] py-20 mb-12 text-center">
                 <div className="container-app">
                     <h1 className="text-4xl md:text-5xl font-bold mb-4">Get In Touch</h1>
                     <p className="text-xl text-white/90 font-light">
@@ -139,7 +139,7 @@ const Contact = () => {
 
                     {/* SIDE INFO & MAP */}
                     <div className="lg:col-span-5">
-                        <div className="bg-gray-50 rounded-2xl shadow-sm border border-[var(--color-border)] p-8 h-full">
+                        <div className="bg-[var(--color-surface-muted)] rounded-2xl shadow-sm border border-[var(--color-border)] p-8 h-full">
                             <h3 className="text-2xl font-bold text-[var(--color-primary)] mb-8">Contact Information</h3>
 
                             <div className="space-y-8 mb-10">
@@ -185,7 +185,7 @@ const Contact = () => {
                                 <MapPin className="w-5 h-5 text-[var(--color-primary)]" />
                                 Find Us On Map
                             </h5>
-                            <div className="w-full aspect-[4/3] rounded-xl overflow-hidden shadow-inner border border-gray-200">
+                            <div className="w-full aspect-[4/3] rounded-xl overflow-hidden shadow-inner border border-[var(--color-border)]">
                                 <iframe
                                     title="Panauti Map"
                                     src="https://maps.google.com/maps?q=Taukhal%20Panauti%20Nepal&t=&z=15&ie=UTF8&iwloc=&output=embed"

@@ -40,7 +40,7 @@ export const StatCard = ({
     if (!trend) return "";
     if (trend.value > 0) return "text-green-600 dark:text-green-400";
     if (trend.value < 0) return "text-red-600 dark:text-red-400";
-    return "text-gray-500";
+    return "text-[var(--color-text-muted)]";
   };
 
   const cardClassName = `stat-card block w-full text-left ${link || onClick ? "cursor-pointer" : ""}`;

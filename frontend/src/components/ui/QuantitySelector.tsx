@@ -12,6 +12,8 @@ interface QuantitySelectorProps {
   disabled?: boolean;
   size?: "sm" | "md" | "lg";
   className?: string;
+  /** Accessible name, e.g. "Quantity for Cotton Romper" */
+  label?: string;
 }
 
 const sizeClasses = {
@@ -43,6 +45,7 @@ const QuantitySelector = ({
   disabled = false,
   size = "md",
   className = "",
+  label = "Quantity",
 }: QuantitySelectorProps) => {
   const handleDecrement = () => {
     if (value > min && !disabled) {
@@ -74,6 +77,8 @@ const QuantitySelector = ({
 
   return (
     <div
+      role="group"
+      aria-label={label}
       className={`
         inline-flex items-center rounded-lg border border-[var(--color-border)]
         overflow-hidden bg-[var(--color-surface)]
@@ -89,18 +94,19 @@ const QuantitySelector = ({
         className={`
           ${classes.container} ${classes.button}
           flex items-center justify-center
-          hover:bg-[var(--color-background)] 
+          hover:bg-[var(--color-surface-muted)]
           disabled:opacity-50 disabled:cursor-not-allowed
           transition-colors border-r border-[var(--color-border)]
         `}
         aria-label="Decrease quantity"
       >
-        <Minus className={classes.icon} />
+        <Minus className={classes.icon} aria-hidden="true" />
       </button>
 
       {/* Quantity Input */}
       <input
         type="number"
+        inputMode="numeric"
         value={value}
         onChange={handleInputChange}
         onBlur={handleBlur}
@@ -113,7 +119,7 @@ const QuantitySelector = ({
           focus:outline-none focus:ring-0
           [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
         `}
-        aria-label="Quantity"
+        aria-label={label}
       />
 
       {/* Increment Button */}
@@ -124,13 +130,13 @@ const QuantitySelector = ({
         className={`
           ${classes.container} ${classes.button}
           flex items-center justify-center
-          hover:bg-[var(--color-background)]
+          hover:bg-[var(--color-surface-muted)]
           disabled:opacity-50 disabled:cursor-not-allowed
           transition-colors border-l border-[var(--color-border)]
         `}
         aria-label="Increase quantity"
       >
-        <Plus className={classes.icon} />
+        <Plus className={classes.icon} aria-hidden="true" />
       </button>
     </div>
   );

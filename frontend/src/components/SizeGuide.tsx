@@ -1,75 +1,28 @@
 /**
  * SizeGuide Component
- * Modal displaying baby clothing size chart with age-to-measurement mapping
+ * Approximate measurements for the store's sizes (PRODUCT_SIZES), shown in
+ * the accessible Modal. The selected size is highlighted.
  */
 import { useState } from "react";
-import { X, Ruler, Info } from "lucide-react";
+import { Info } from "lucide-react";
+import Modal from "./ui/Modal";
 
-const SIZE_DATA = [
-  {
-    size: "NB",
-    label: "Newborn",
-    age: "0–1 mo",
-    weight: "2.5–4 kg",
-    height: "45–55 cm",
-    chest: "38–40 cm",
-  },
-  {
-    size: "0-3M",
-    label: "0–3 Months",
-    age: "0–3 mo",
-    weight: "3–6 kg",
-    height: "55–62 cm",
-    chest: "40–43 cm",
-  },
-  {
-    size: "3-6M",
-    label: "3–6 Months",
-    age: "3–6 mo",
-    weight: "5.5–8 kg",
-    height: "62–68 cm",
-    chest: "43–46 cm",
-  },
-  {
-    size: "6-9M",
-    label: "6–9 Months",
-    age: "6–9 mo",
-    weight: "7–9.5 kg",
-    height: "68–74 cm",
-    chest: "46–48 cm",
-  },
-  {
-    size: "9-12M",
-    label: "9–12 Months",
-    age: "9–12 mo",
-    weight: "9–11 kg",
-    height: "74–80 cm",
-    chest: "48–50 cm",
-  },
-  {
-    size: "12-18M",
-    label: "12–18 Months",
-    age: "12–18 mo",
-    weight: "10–12 kg",
-    height: "80–86 cm",
-    chest: "50–52 cm",
-  },
-  {
-    size: "18-24M",
-    label: "18–24 Months",
-    age: "18–24 mo",
-    weight: "11–13 kg",
-    height: "86–92 cm",
-    chest: "52–54 cm",
-  },
-  {
-    size: "2-3Y",
-    label: "2–3 Years",
-    age: "2–3 yr",
-    weight: "12–15 kg",
-    height: "92–98 cm",
-    chest: "54–56 cm",
-  },
+interface SizeRow {
+  size: string;
+  short: string;
+  age: string;
+  weightKg: [number, number];
+  heightCm: [number, number];
+  chestCm: [number, number];
+}
+
+// Approximate ranges; individual products may fit differently
+const SIZE_DATA: SizeRow[] = [
+  { size: "Small Size (0-1 yrs)", short: "S", age: "0–1 yr", weightKg: [3, 10], heightCm: [50, 76], chestCm: [38, 48] },
+  { size: "Medium Size (1-4 yrs)", short: "M", age: "1–4 yrs", weightKg: [10, 16], heightCm: [76, 103], chestCm: [48, 55] },
+  { size: "Large Size (4-6 yrs)", short: "L", age: "4–6 yrs", weightKg: [16, 21], heightCm: [103, 116], chestCm: [55, 60] },
+  { size: "XL Size (6-8 yrs)", short: "XL", age: "6–8 yrs", weightKg: [21, 26], heightCm: [116, 128], chestCm: [60, 64] },
+  { size: "XXL Size (8-10 yrs)", short: "XXL", age: "8–10 yrs", weightKg: [26, 33], heightCm: [128, 140], chestCm: [64, 68] },
 ];
 
 interface SizeGuideProps {
@@ -80,155 +33,94 @@ interface SizeGuideProps {
 
 const SizeGuide = ({ isOpen, onClose, currentSize }: SizeGuideProps) => {
   const [unit, setUnit] = useState<"cm" | "in">("cm");
-
-  if (!isOpen) return null;
-
-  const convertToInches = (cmRange: string) => {
-    return cmRange
-      .split("–")
-      .map((v: string) => (parseFloat(v) / 2.54).toFixed(1))
-      .join("–");
-  };
-
-  const displayMeasurement = (value: string) => {
-    if (unit === "in" && value.includes("cm")) {
-      return convertToInches(value.replace(" cm", "")) + " in";
-    }
-    return value;
-  };
+  const length = ([a, b]: [number, number]) =>
+    unit === "cm" ? `${a}–${b} cm` : `${(a / 2.54).toFixed(0)}–${(b / 2.54).toFixed(0)} in`;
+  const isCurrent = (row: SizeRow) => !!currentSize && row.size.toLowerCase() === currentSize.toLowerCase();
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[var(--color-surface)] rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-[var(--color-border)]">
-          <div className="flex items-center gap-2">
-            <Ruler className="w-5 h-5 text-[var(--color-primary)]" />
-            <h2 className="text-lg font-semibold">Baby Size Guide</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--color-bg)] transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Unit Toggle */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Find the right fit for your little one
-          </p>
-          <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden text-sm">
+    <Modal isOpen={isOpen} onClose={onClose} title="Size guide" size="lg" variant="sheet">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <p className="text-sm text-[var(--color-text-muted)]">Approximate body measurements for each size.</p>
+        <div role="group" aria-label="Units" className="inline-flex rounded-lg border border-[var(--color-border)] p-0.5 shrink-0">
+          {(["cm", "in"] as const).map((u) => (
             <button
-              onClick={() => setUnit("cm")}
-              className={`px-3 py-1 transition-colors ${
-                unit === "cm"
-                  ? "bg-[var(--color-primary)] text-white"
-                  : "hover:bg-[var(--color-bg)]"
+              key={u}
+              type="button"
+              aria-pressed={unit === u}
+              onClick={() => setUnit(u)}
+              className={`px-3 py-1 text-xs font-medium rounded-md ${
+                unit === u ? "bg-[var(--color-primary)] text-[var(--color-on-primary)]" : "text-[var(--color-text-muted)]"
               }`}
             >
-              cm
+              {u}
             </button>
-            <button
-              onClick={() => setUnit("in")}
-              className={`px-3 py-1 transition-colors ${
-                unit === "in"
-                  ? "bg-[var(--color-primary)] text-white"
-                  : "hover:bg-[var(--color-bg)]"
-              }`}
-            >
-              inches
-            </button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-auto px-5 pb-5" style={{ maxHeight: "60vh" }}>
-          <table className="w-full text-sm mt-2">
-            <thead>
-              <tr className="border-b border-[var(--color-border)]">
-                <th className="text-left py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs uppercase tracking-wider">
-                  Size
-                </th>
-                <th className="text-left py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs uppercase tracking-wider">
-                  Age
-                </th>
-                <th className="text-left py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs uppercase tracking-wider">
-                  Weight
-                </th>
-                <th className="text-left py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs uppercase tracking-wider">
-                  Height
-                </th>
-                <th className="text-left py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs uppercase tracking-wider">
-                  Chest
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {SIZE_DATA.map((row) => (
-                <tr
-                  key={row.size}
-                  className={`border-b border-[var(--color-border)] last:border-0 transition-colors ${
-                    currentSize &&
-                    row.size.toLowerCase() === currentSize.toLowerCase()
-                      ? "bg-[var(--color-primary)]/5 font-medium"
-                      : "hover:bg-[var(--color-bg)]"
-                  }`}
-                >
-                  <td className="py-3 px-2">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        currentSize &&
-                        row.size.toLowerCase() === currentSize.toLowerCase()
-                          ? "bg-[var(--color-primary)] text-white"
-                          : "bg-[var(--color-bg)]"
-                      }`}
-                    >
-                      {row.size}
-                    </span>
-                  </td>
-                  <td className="py-3 px-2">{row.age}</td>
-                  <td className="py-3 px-2">{row.weight}</td>
-                  <td className="py-3 px-2">
-                    {displayMeasurement(row.height)}
-                  </td>
-                  <td className="py-3 px-2">
-                    {displayMeasurement(row.chest)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Tips */}
-        <div className="px-5 pb-5">
-          <div className="flex items-start gap-2 p-3 bg-[var(--color-bg)] rounded-lg text-xs text-[var(--color-text-muted)]">
-            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium text-[var(--color-text)] mb-1">
-                How to measure your baby
-              </p>
-              <ul className="space-y-0.5">
-                <li>
-                  <strong>Height:</strong> Lay your baby flat and measure head to
-                  toe.
-                </li>
-                <li>
-                  <strong>Chest:</strong> Measure around the fullest part of the
-                  chest.
-                </li>
-                <li>
-                  <strong>Tip:</strong> When between sizes, choose the larger
-                  size for comfort.
-                </li>
-              </ul>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
-    </div>
+
+      <div className="overflow-x-auto -mx-4 px-4">
+        <table className="w-full text-sm min-w-[28rem]">
+          <caption className="sr-only">Size chart</caption>
+          <thead>
+            <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
+              <th scope="col" className="text-left py-2 px-2 font-semibold">Size</th>
+              <th scope="col" className="text-left py-2 px-2 font-semibold">Age</th>
+              <th scope="col" className="text-left py-2 px-2 font-semibold">Height</th>
+              <th scope="col" className="text-left py-2 px-2 font-semibold">Chest</th>
+              <th scope="col" className="text-left py-2 px-2 font-semibold">Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SIZE_DATA.map((row) => (
+              <tr
+                key={row.size}
+                aria-current={isCurrent(row) ? "true" : undefined}
+                className={`border-b border-[var(--color-border)] last:border-0 ${
+                  isCurrent(row) ? "bg-[var(--color-primary-soft)] font-medium" : ""
+                }`}
+              >
+                <th scope="row" className="py-3 px-2 text-left font-medium">
+                  <span
+                    className={`inline-block min-w-9 text-center px-2 py-0.5 rounded text-xs font-semibold ${
+                      isCurrent(row)
+                        ? "bg-[var(--color-primary)] text-[var(--color-on-primary)]"
+                        : "bg-[var(--color-surface-muted)]"
+                    }`}
+                  >
+                    {row.short}
+                  </span>
+                  {isCurrent(row) && <span className="sr-only"> (selected)</span>}
+                </th>
+                <td className="py-3 px-2">{row.age}</td>
+                <td className="py-3 px-2">{length(row.heightCm)}</td>
+                <td className="py-3 px-2">{length(row.chestCm)}</td>
+                <td className="py-3 px-2">
+                  {row.weightKg[0]}–{row.weightKg[1]} kg
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-start gap-2 mt-4 p-3 bg-[var(--color-surface-muted)] rounded-lg text-xs text-[var(--color-text-muted)]">
+        <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="font-medium text-[var(--color-text)] mb-1">How to measure</p>
+          <ul className="space-y-0.5">
+            <li>
+              <strong>Height:</strong> lay your baby flat and measure head to heel.
+            </li>
+            <li>
+              <strong>Chest:</strong> measure around the fullest part of the chest.
+            </li>
+            <li>
+              <strong>Between sizes?</strong> Choose the larger size — little ones grow fast.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </Modal>
   );
 };
 

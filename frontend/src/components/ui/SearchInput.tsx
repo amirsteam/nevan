@@ -140,7 +140,7 @@ const SearchInput = ({
           autoFocus={autoFocus}
           className={`
             w-full h-11 pl-11 ${showClear && value ? "pr-11" : "pr-4"} 
-            bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl
+            bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl
             text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
             focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
             transition-all duration-200
@@ -185,7 +185,7 @@ const SearchInput = ({
                 ${
                   index === selectedIndex
                     ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
-                    : "hover:bg-[var(--color-background)]"
+                    : "hover:bg-[var(--color-bg)]"
                 }
               `}
             >

@@ -9,16 +9,30 @@ interface SkeletonProps {
   style?: CSSProperties;
 }
 
+// Uses the .skeleton shimmer from index.css (theme tokens, so it works in dark mode)
 export const Skeleton = ({ className = "", style }: SkeletonProps) => (
-  <div
-    className={`animate-pulse bg-linear-to-r from-gray-200 via-gray-300 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 bg-size-[200%_100%] rounded ${className}`}
-    style={{ animation: "shimmer 1.5s infinite", ...style }}
-  />
+  <div aria-hidden="true" className={`skeleton rounded ${className}`} style={style} />
+);
+
+/** Wraps placeholder content so screen readers hear one "Loading" instead of nothing */
+export const LoadingRegion = ({
+  label = "Loading",
+  children,
+  className = "",
+}: {
+  label?: string;
+  children: React.ReactNode;
+  className?: string;
+}) => (
+  <div role="status" aria-live="polite" aria-busy="true" className={className}>
+    <span className="sr-only">{label}…</span>
+    {children}
+  </div>
 );
 
 export const ProductCardSkeleton = () => (
-  <div className="card">
-    <Skeleton className="aspect-square w-full" />
+  <div className="card" aria-hidden="true">
+    <Skeleton className="aspect-[4/5] w-full rounded-none" />
     <div className="p-4 space-y-3">
       <Skeleton className="h-3 w-16" />
       <Skeleton className="h-5 w-full" />
@@ -31,16 +45,46 @@ export const ProductCardSkeleton = () => (
   </div>
 );
 
-export const ProductGridSkeleton = ({ count = 8 }: { count?: number }) => (
-  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+export const ProductGridSkeleton = ({
+  count = 8,
+  className = "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+}: {
+  count?: number;
+  className?: string;
+}) => (
+  <LoadingRegion label="Loading products" className={className}>
     {Array.from({ length: count }).map((_, i) => (
       <ProductCardSkeleton key={i} />
     ))}
-  </div>
+  </LoadingRegion>
+);
+
+export const ProductDetailSkeleton = () => (
+  <LoadingRegion label="Loading product" className="container-app py-8">
+    <Skeleton className="h-4 w-48 mb-6" />
+    <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
+      <div className="space-y-3">
+        <Skeleton className="aspect-square w-full rounded-xl" />
+        <div className="flex gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="w-20 h-20 rounded-lg" />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-9 w-3/4" />
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+      </div>
+    </div>
+  </LoadingRegion>
 );
 
 export const CategoryCardSkeleton = () => (
-  <div className="relative aspect-4/3 rounded-xl overflow-hidden">
+  <div className="relative aspect-4/3 rounded-xl overflow-hidden" aria-hidden="true">
     <Skeleton className="w-full h-full" />
   </div>
 );
@@ -93,24 +137,5 @@ export const ChartSkeleton = () => (
     </div>
   </div>
 );
-
-// Add shimmer animation to global styles
-const shimmerKeyframes = `
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-`;
-
-// Inject keyframes if not already present
-if (typeof document !== "undefined") {
-  const styleId = "skeleton-shimmer-styles";
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.textContent = shimmerKeyframes;
-    document.head.appendChild(style);
-  }
-}
 
 export default Skeleton;

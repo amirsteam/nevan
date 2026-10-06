@@ -125,3 +125,51 @@ export const deleteReview: RequestHandler = asyncHandler(
     });
   },
 );
+
+/** "Srijana Maharjan" -> "Srijana M." so the storefront doesn't show full names */
+const shortName = (name?: string): string => {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "Customer";
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+};
+
+/**
+ * GET /api/v1/reviews/featured
+ * Recent approved 4-5 star reviews with a comment (homepage testimonials)
+ */
+export const getFeaturedReviews: RequestHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 3, 1), 12);
+
+    const reviews = await Review.find({
+      isApproved: true,
+      rating: { $gte: 4 },
+      comment: { $exists: true, $nin: [null, ""] },
+    })
+      .sort("-createdAt")
+      .limit(limit)
+      .populate("user", "name")
+      .populate("product", "name slug")
+      .lean();
+
+    res.status(200).json({
+      status: "success",
+      results: reviews.length,
+      data: {
+        reviews: reviews.map((review: any) => ({
+          _id: review._id,
+          rating: review.rating,
+          title: review.title,
+          comment: review.comment,
+          isVerifiedPurchase: review.isVerifiedPurchase,
+          createdAt: review.createdAt,
+          reviewerName: shortName(review.user?.name),
+          product: review.product
+            ? { _id: review.product._id, name: review.product.name, slug: review.product.slug }
+            : null,
+        })),
+      },
+    });
+  },
+);

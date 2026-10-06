@@ -11,7 +11,7 @@ import {
   ValidationChain,
 } from "express-validator";
 import AppError from "../utils/AppError";
-import { MAX_SIZE_LENGTH } from "../utils/constants";
+import { MAX_SIZE_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 
 interface ValidationError {
   field: string;
@@ -181,6 +181,21 @@ const variantRules = (): ValidationChain[] => [
     .withMessage("Variant SKU cannot exceed 50 characters"),
 ];
 
+// Age/gender tags used by the storefront filters
+const audienceRules = (): ValidationChain[] => [
+  body("ageGroups")
+    .optional()
+    .isArray()
+    .withMessage("Age groups must be a list"),
+  body("ageGroups.*")
+    .isIn([...AGE_GROUPS])
+    .withMessage(`Age group must be one of: ${AGE_GROUPS.join(", ")}`),
+  body("gender")
+    .optional({ values: "falsy" })
+    .isIn([...PRODUCT_GENDERS])
+    .withMessage("Gender must be boy, girl or unisex"),
+];
+
 // =============== PRODUCT VALIDATORS ===============
 
 const createProductValidator: (ValidationChain | RequestHandler)[] = [
@@ -220,6 +235,7 @@ const createProductValidator: (ValidationChain | RequestHandler)[] = [
     .isLength({ max: 50 })
     .withMessage("SKU cannot exceed 50 characters"),
   ...variantRules(),
+  ...audienceRules(),
   handleValidationErrors,
 ];
 
@@ -248,6 +264,7 @@ const updateProductValidator: (ValidationChain | RequestHandler)[] = [
     .isLength({ max: 50 })
     .withMessage("SKU cannot exceed 50 characters"),
   ...variantRules(),
+  ...audienceRules(),
   handleValidationErrors,
 ];
 
@@ -359,6 +376,85 @@ const createReviewValidator: (ValidationChain | RequestHandler)[] = [
   handleValidationErrors,
 ];
 
+// =============== ACCOUNT VALIDATORS ===============
+
+const NEPALI_PHONE = /^(\+?977)?[0-9]{10}$/;
+
+const updateProfileValidator: (ValidationChain | RequestHandler)[] = [
+  body("name")
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage("Name cannot be empty")
+    .isLength({ max: 100 })
+    .withMessage("Name cannot exceed 100 characters"),
+  body("phone")
+    .optional({ values: "falsy" })
+    .customSanitizer((value) => String(value).replace(/[\s-]/g, ""))
+    .matches(NEPALI_PHONE)
+    .withMessage("Please provide a valid Nepali phone number"),
+  handleValidationErrors,
+];
+
+const addressValidator = (partial: boolean): (ValidationChain | RequestHandler)[] => {
+  const field = (name: string) => (partial ? body(name).optional() : body(name));
+  return [
+    body("label").optional({ values: "falsy" }).trim().isLength({ max: 30 }).withMessage("Label cannot exceed 30 characters"),
+    field("name").trim().notEmpty().withMessage("Recipient name is required").isLength({ max: 100 }),
+    field("phone")
+      .customSanitizer((value) => String(value ?? "").replace(/[\s-]/g, ""))
+      .matches(NEPALI_PHONE)
+      .withMessage("Please provide a valid Nepali phone number"),
+    field("street").trim().notEmpty().withMessage("Street address is required").isLength({ max: 200 }),
+    field("city").trim().notEmpty().withMessage("City is required").isLength({ max: 100 }),
+    field("district").trim().notEmpty().withMessage("District is required").isLength({ max: 100 }),
+    field("province").isInt({ min: 1, max: 7 }).withMessage("Province must be between 1 and 7").toInt(),
+    body("landmark").optional({ values: "falsy" }).trim().isLength({ max: 200 }),
+    body("isDefault").optional().isBoolean().withMessage("isDefault must be true or false").toBoolean(),
+    handleValidationErrors,
+  ];
+};
+
+const createAddressValidator = addressValidator(false);
+const updateAddressValidator = addressValidator(true);
+
+// =============== CONTACT / NEWSLETTER VALIDATORS ===============
+
+const contactValidator: (ValidationChain | RequestHandler)[] = [
+  body("name")
+    .trim()
+    .notEmpty()
+    .withMessage("Name is required")
+    .isLength({ max: 100 })
+    .withMessage("Name cannot exceed 100 characters"),
+  resetEmailRule(),
+  body("phone")
+    .optional({ values: "falsy" })
+    .trim()
+    .matches(/^(\+?977)?[0-9]{7,10}$/)
+    .withMessage("Please provide a valid phone number"),
+  body("subject")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ max: 150 })
+    .withMessage("Subject cannot exceed 150 characters"),
+  body("message")
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage("Message must be between 10 and 2000 characters"),
+  handleValidationErrors,
+];
+
+const subscribeValidator: (ValidationChain | RequestHandler)[] = [
+  resetEmailRule(),
+  body("source")
+    .optional()
+    .trim()
+    .isLength({ max: 30 })
+    .withMessage("Source cannot exceed 30 characters"),
+  handleValidationErrors,
+];
+
 // =============== COMMON VALIDATORS ===============
 
 const mongoIdValidator = (
@@ -395,6 +491,11 @@ export {
   addToCartValidator,
   updateCartItemValidator,
   createReviewValidator,
+  contactValidator,
+  subscribeValidator,
+  updateProfileValidator,
+  createAddressValidator,
+  updateAddressValidator,
   mongoIdValidator,
   paginationValidator,
 };

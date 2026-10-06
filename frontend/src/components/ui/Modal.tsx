@@ -1,8 +1,11 @@
 /**
  * Modal Component
- * Accessible modal dialog with animations
+ * Accessible dialog: focus moves in and is trapped while open, Escape and the
+ * backdrop close it, and focus returns to the opener afterwards.
+ * `variant="sheet"` slides up from the bottom on phones (filters, menus) and
+ * is a centered dialog from `sm` up.
  */
-import { useEffect, useRef, ReactNode } from "react";
+import { useEffect, useId, useRef, ReactNode } from "react";
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -10,124 +13,173 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  /** Accessible name when there's no visible title */
+  ariaLabel?: string;
+  description?: string;
   children: ReactNode;
+  footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "full";
+  variant?: "dialog" | "sheet";
   showCloseButton?: boolean;
   closeOnOverlayClick?: boolean;
   closeOnEscape?: boolean;
   className?: string;
+  bodyClassName?: string;
 }
 
 const sizeClasses = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-lg",
-  xl: "max-w-xl",
-  full: "max-w-4xl",
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-md",
+  lg: "sm:max-w-lg",
+  xl: "sm:max-w-xl",
+  full: "sm:max-w-4xl",
 };
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const Modal = ({
   isOpen,
   onClose,
   title,
+  ariaLabel,
+  description,
   children,
+  footer,
   size = "md",
+  variant = "dialog",
   showCloseButton = true,
   closeOnOverlayClick = true,
   closeOnEscape = true,
   className = "",
+  bodyClassName = "",
 }: ModalProps) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  // Handle escape key
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!isOpen || !closeOnEscape) return;
+    onCloseRef.current = onClose;
+  });
+  const titleId = useId();
+  const descriptionId = useId();
 
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
+  // Focus, scroll lock and keyboard handling while open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // First focusable control (skipping the close button when there's a better target)
+    const node = modalRef.current;
+    const focusables = node ? Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+    const first = focusables.find((el) => !el.dataset.modalClose) || focusables[0];
+    (first || node)?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && closeOnEscape) {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !modalRef.current) return;
+
+      const items = Array.from(modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null,
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === firstItem) {
+        e.preventDefault();
+        lastItem.focus();
+      } else if (!e.shiftKey && document.activeElement === lastItem) {
+        e.preventDefault();
+        firstItem.focus();
       }
     };
 
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, closeOnEscape, onClose]);
-
-  // Manage focus and body scroll
-  useEffect(() => {
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement;
-      document.body.style.overflow = "hidden";
-      modalRef.current?.focus();
-    } else {
-      document.body.style.overflow = "";
-      previousFocusRef.current?.focus();
-    }
-
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.body.style.overflow = "";
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocusRef.current?.focus?.();
     };
-  }, [isOpen]);
-
-  // Handle overlay click
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (closeOnOverlayClick && e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  }, [isOpen, closeOnEscape]);
 
   if (!isOpen) return null;
 
+  const isSheet = variant === "sheet";
+
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={handleOverlayClick}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={title ? "modal-title" : undefined}
+      className={`fixed inset-0 z-50 flex justify-center ${
+        isSheet ? "items-end sm:items-center sm:p-4" : "items-center p-4"
+      }`}
+      onMouseDown={(e) => {
+        if (closeOnOverlayClick && e.target === e.currentTarget) onClose();
+      }}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fadeIn" />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-[var(--color-overlay)] backdrop-blur-[2px] animate-fadeIn pointer-events-none"
+      />
 
-      {/* Modal Content */}
       <div
         ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={!title ? ariaLabel : undefined}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`
-          relative w-full ${sizeClasses[size]} 
-          bg-[var(--color-surface)] rounded-xl shadow-xl
-          animate-slideIn
-          ${className}
-        `}
+        className={`relative w-full ${sizeClasses[size]} flex flex-col bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--shadow-lg)] outline-none ${
+          isSheet
+            ? "max-h-[88vh] rounded-t-2xl sm:rounded-xl animate-slideUp pb-[env(safe-area-inset-bottom)]"
+            : "max-h-[calc(100vh-2rem)] rounded-xl animate-slideUp"
+        } ${className}`}
       >
-        {/* Header */}
+        {isSheet && (
+          <div aria-hidden="true" className="sm:hidden mx-auto mt-2 h-1.5 w-10 rounded-full bg-[var(--color-border-strong)]" />
+        )}
+
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-border)]">
             {title && (
-              <h2
-                id="modal-title"
-                className="text-lg font-semibold text-[var(--color-text)]"
-              >
+              <h2 id={titleId} className="text-lg font-semibold">
                 {title}
               </h2>
             )}
             {showCloseButton && (
               <button
+                type="button"
+                data-modal-close="true"
                 onClick={onClose}
-                className="p-2 rounded-lg hover:bg-[var(--color-background)] transition-colors ml-auto"
-                aria-label="Close modal"
+                className="p-2 -mr-2 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors ml-auto"
+                aria-label="Close"
               >
-                <X className="w-5 h-5 text-[var(--color-text-muted)]" />
+                <X className="w-5 h-5 text-[var(--color-text-muted)]" aria-hidden="true" />
               </button>
             )}
           </div>
         )}
 
-        {/* Body */}
-        <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-          {children}
-        </div>
+        {description && (
+          <p id={descriptionId} className="sr-only">
+            {description}
+          </p>
+        )}
+
+        <div className={`p-4 overflow-y-auto overscroll-contain flex-1 ${bodyClassName}`}>{children}</div>
+
+        {footer && (
+          <div className="px-4 py-3 border-t border-[var(--color-border)] flex gap-3 justify-end">{footer}</div>
+        )}
       </div>
     </div>,
     document.body,
@@ -140,7 +192,7 @@ interface ConfirmModalProps {
   onClose: () => void;
   onConfirm: () => void;
   title: string;
-  message: string;
+  message: ReactNode;
   confirmText?: string;
   cancelText?: string;
   variant?: "danger" | "warning" | "info";
@@ -159,30 +211,35 @@ export const ConfirmModal = ({
   isLoading = false,
 }: ConfirmModalProps) => {
   const variantClasses = {
-    danger: "bg-red-600 hover:bg-red-700 focus:ring-red-500",
-    warning: "bg-amber-600 hover:bg-amber-700 focus:ring-amber-500",
-    info: "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500",
+    danger: "bg-red-700 hover:bg-red-800 text-white",
+    warning: "bg-amber-700 hover:bg-amber-800 text-white",
+    info: "bg-[var(--color-primary)] hover:bg-[var(--color-primary-dark)] text-[var(--color-on-primary)]",
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
-      <p className="text-[var(--color-text-muted)] mb-6">{message}</p>
-      <div className="flex gap-3 justify-end">
-        <button
-          onClick={onClose}
-          disabled={isLoading}
-          className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-background)] transition-colors disabled:opacity-50"
-        >
-          {cancelText}
-        </button>
-        <button
-          onClick={onConfirm}
-          disabled={isLoading}
-          className={`px-4 py-2 rounded-lg text-white transition-colors focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${variantClasses[variant]}`}
-        >
-          {isLoading ? "Processing..." : confirmText}
-        </button>
-      </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={isLoading ? () => {} : onClose}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <button type="button" onClick={onClose} disabled={isLoading} className="btn btn-secondary">
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isLoading}
+            aria-busy={isLoading}
+            className={`btn ${variantClasses[variant]}`}
+          >
+            {isLoading ? "Working…" : confirmText}
+          </button>
+        </>
+      }
+    >
+      <div className="text-[var(--color-text-muted)]">{message}</div>
     </Modal>
   );
 };

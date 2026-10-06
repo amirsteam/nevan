@@ -72,10 +72,11 @@ const Login = () => {
                         </div>
                     )}
                     <div>
-                        <label className="block text-sm font-medium mb-2">Email</label>
+                        <label htmlFor="login-field" className="block text-sm font-medium mb-2">Email</label>
                         <div className="input-group">
                             <Mail className={`input-icon w-4 h-4 ${errors.email ? 'text-[var(--color-error)]' : ''}`} />
                             <input
+                  id="login-field"
                                 type="email"
                                 value={email}
                                 onChange={(e) => {
@@ -93,7 +94,7 @@ const Login = () => {
 
                     <div>
                         <div className="flex justify-between items-center mb-2">
-                            <label className="block text-sm font-medium">Password</label>
+                            <label htmlFor="login-field-2" className="block text-sm font-medium">Password</label>
                             <Link
                                 to="/forgot-password"
                                 className="text-xs text-[var(--color-primary)] hover:underline"
@@ -104,6 +105,7 @@ const Login = () => {
                         <div className="input-group">
                             <Lock className={`input-icon w-4 h-4 ${errors.password ? 'text-[var(--color-error)]' : ''}`} />
                             <input
+                  id="login-field-2"
                                 type="password"
                                 value={password}
                                 onChange={(e) => {

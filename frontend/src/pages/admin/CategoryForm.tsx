@@ -248,7 +248,7 @@ const CategoryForm = ({ category, parentCategories, onSuccess, onCancel }: Categ
                             <button
                                 type="button"
                                 onClick={handleRemoveNewImage}
-                                className="absolute -top-2 -right-2 p-1 bg-white rounded-full shadow border border-[var(--color-border)]"
+                                className="absolute -top-2 -right-2 p-1 bg-[var(--color-surface)] rounded-full shadow border border-[var(--color-border)]"
                             >
                                 <X className="w-4 h-4" />
                             </button>

@@ -88,19 +88,19 @@ const Pagination = ({
   const pageButton = `
     ${buttonBase}
     border border-[var(--color-border)]
-    hover:bg-[var(--color-background)] hover:border-[var(--color-primary)]
+    hover:bg-[var(--color-bg)] hover:border-[var(--color-primary)]
   `;
 
   const activeButton = `
     ${buttonBase}
-    bg-[var(--color-primary)] text-white border border-[var(--color-primary)]
+    bg-[var(--color-primary)] text-[var(--color-on-primary)] border border-[var(--color-primary)]
     shadow-md
   `;
 
   const navButton = `
     ${buttonBase}
     border border-[var(--color-border)]
-    hover:bg-[var(--color-background)] hover:border-[var(--color-primary)]
+    hover:bg-[var(--color-bg)] hover:border-[var(--color-primary)]
   `;
 
   return (

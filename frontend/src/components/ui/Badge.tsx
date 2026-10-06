@@ -20,11 +20,13 @@ interface BadgeProps {
   dot?: boolean;
   removable?: boolean;
   onRemove?: () => void;
+  /** Accessible label for the remove button, e.g. "Remove filter: Girl" */
+  removeLabel?: string;
   className?: string;
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+  default: "bg-[var(--color-surface-muted)] text-[var(--color-text)]",
   primary: "bg-[var(--color-primary)]/10 text-[var(--color-primary)]",
   success:
     "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
@@ -41,7 +43,7 @@ const sizeClasses: Record<BadgeSize, string> = {
 };
 
 const dotColors: Record<BadgeVariant, string> = {
-  default: "bg-gray-500",
+  default: "bg-[var(--color-text-muted)]",
   primary: "bg-[var(--color-primary)]",
   success: "bg-green-500",
   warning: "bg-amber-500",
@@ -56,6 +58,7 @@ const Badge = ({
   dot = false,
   removable = false,
   onRemove,
+  removeLabel = "Remove",
   className = "",
 }: BadgeProps) => {
   return (
@@ -69,17 +72,20 @@ const Badge = ({
     >
       {dot && (
         <span
-          className={`w-2 h-2 rounded-full ${dotColors[variant]} ${variant === "warning" ? "" : "animate-pulse-slow"}`}
+          aria-hidden="true"
+          className={`w-2 h-2 rounded-full ${dotColors[variant]}`}
         />
       )}
       {children}
       {removable && onRemove && (
         <button
+          type="button"
           onClick={onRemove}
           className="ml-1 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-          aria-label="Remove"
+          aria-label={removeLabel}
         >
           <svg
+            aria-hidden="true"
             className="w-3 h-3"
             fill="none"
             viewBox="0 0 24 24"
@@ -164,26 +170,36 @@ export const PaymentStatusBadge = ({
 interface StockBadgeProps {
   stock: number;
   size?: BadgeSize;
+  /** "shopper": "Only 2 left" / "In stock"; "admin": exact counts */
+  audience?: "shopper" | "admin";
+  lowThreshold?: number;
+  className?: string;
 }
 
-export const StockBadge = ({ stock, size = "sm" }: StockBadgeProps) => {
-  if (stock === 0) {
+export const StockBadge = ({
+  stock,
+  size = "sm",
+  audience = "shopper",
+  lowThreshold = 5,
+  className = "",
+}: StockBadgeProps) => {
+  if (stock <= 0) {
     return (
-      <Badge variant="danger" size={size}>
-        Out of Stock
+      <Badge variant="danger" size={size} className={className}>
+        Out of stock
       </Badge>
     );
   }
-  if (stock <= 5) {
+  if (stock <= lowThreshold) {
     return (
-      <Badge variant="warning" size={size}>
-        Low Stock ({stock})
+      <Badge variant="warning" size={size} className={className}>
+        {audience === "admin" ? `Low stock (${stock})` : `Only ${stock} left`}
       </Badge>
     );
   }
   return (
-    <Badge variant="success" size={size}>
-      In Stock ({stock})
+    <Badge variant="success" size={size} className={className}>
+      {audience === "admin" ? `In stock (${stock})` : "In stock"}
     </Badge>
   );
 };

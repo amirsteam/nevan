@@ -12,6 +12,7 @@ interface EmailOptions {
   subject: string;
   text: string;
   html?: string;
+  replyTo?: string;
 }
 
 let transporter: Transporter | null = null;
@@ -57,6 +58,7 @@ export const sendEmail = async (options: EmailOptions): Promise<void> => {
     subject: options.subject,
     text: options.text,
     html: options.html,
+    replyTo: options.replyTo,
   });
 };
 
@@ -73,7 +75,7 @@ export const sendPasswordResetEmail = async (
   });
 };
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
   );

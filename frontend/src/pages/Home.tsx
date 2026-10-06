@@ -1,469 +1,393 @@
 /**
  * Home Page
- * Landing page with hero, featured products, and categories
+ * Hero, store promises, shop by age, featured products, categories,
+ * new arrivals, real customer reviews and newsletter sign-up
  */
 import { useState, useEffect, FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { productsAPI, categoriesAPI } from "../api";
-import { formatPrice, calculateDiscount, populated } from "../utils/helpers";
 import toast from "react-hot-toast";
+import { ArrowRight, Sparkles, Truck, Banknote, RotateCcw, Gift, Loader2, Star, Quote, BadgeCheck } from "lucide-react";
+import { productsAPI, categoriesAPI } from "../api";
+import { contactAPI, reviewsAPI, type FeaturedReview } from "../api/contact";
+import ProductCard from "../components/ProductCard";
+import { ProductGridSkeleton, Skeleton } from "../components/ui/Skeleton";
+import { formatPrice, getErrorMessage } from "../utils/helpers";
+import { imageUrl, onImageError } from "../utils/image";
+import { AGE_GROUPS, FREE_SHIPPING_THRESHOLD, RETURN_WINDOW_DAYS, formatAgeGroup } from "../config/store";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { ICategory, IProduct } from "../types";
-import {
-  ArrowRight,
-  Sparkles,
-  Heart,
-  Leaf,
-  ShieldCheck,
-  Baby,
-  Loader2,
-  Star,
-  Quote,
-} from "lucide-react";
+
+const AGE_LABELS: Record<string, { label: string; emoji: string }> = {
+  "0-3 Months": { label: "Newborn", emoji: "🍼" },
+  "3-6 Months": { label: "Infant", emoji: "👶" },
+  "6-12 Months": { label: "Crawler", emoji: "🙌" },
+  "1-2 Years": { label: "Toddler", emoji: "🚶" },
+  "2-4 Years": { label: "Little kid", emoji: "⭐" },
+  "4-6 Years": { label: "Big kid", emoji: "🎒" },
+  "6-10 Years": { label: "Junior", emoji: "🎈" },
+};
+
+const PROMISES = [
+  { icon: Banknote, title: "Cash on delivery", text: "Or pay securely with eSewa" },
+  { icon: Truck, title: "Delivery across Nepal", text: "3–5 days in Kathmandu Valley" },
+  { icon: Gift, title: "Free shipping", text: `On orders over ${formatPrice(FREE_SHIPPING_THRESHOLD)}` },
+  { icon: RotateCcw, title: `${RETURN_WINDOW_DAYS}-day returns`, text: "Request within 7 days of delivery" },
+];
+
+const SectionHeader = ({
+  title,
+  subtitle,
+  action,
+  icon,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: { to: string; label: string };
+  icon?: React.ReactNode;
+}) => (
+  <div className="flex flex-wrap justify-between items-end gap-3 mb-6 md:mb-8">
+    <div>
+      <h2 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+        {icon}
+        {title}
+      </h2>
+      {subtitle && <p className="text-[var(--color-text-muted)] mt-1">{subtitle}</p>}
+    </div>
+    {action && (
+      <Link
+        to={action.to}
+        className="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline underline-offset-4"
+      >
+        {action.label}
+        <ArrowRight className="w-4 h-4" aria-hidden="true" />
+      </Link>
+    )}
+  </div>
+);
 
 const Home = () => {
+  usePageTitle(null);
   const [featuredProducts, setFeaturedProducts] = useState<IProduct[]>([]);
   const [newArrivals, setNewArrivals] = useState<IProduct[]>([]);
   const [categories, setCategories] = useState<ICategory[]>([]);
+  const [reviews, setReviews] = useState<FeaturedReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [newsletterLoading, setNewsletterLoading] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const [productsRes, categoriesRes, newArrivalsRes] = await Promise.all([
-          productsAPI.getFeatured(8),
-          categoriesAPI.getCategories(),
-          productsAPI.getProducts({ sort: "-createdAt", limit: 4 }),
-        ]);
-        setFeaturedProducts(productsRes.data.products);
-        setCategories(categoriesRes.data.categories.slice(0, 6));
-        setNewArrivals(newArrivalsRes.data.products || []);
-      } catch (error) {
-        console.error("Failed to fetch home data:", error);
-      } finally {
-        setLoading(false);
-      }
+      // Each section loads independently so one failure doesn't blank the page
+      const [featuredRes, categoriesRes, newRes, reviewsRes] = await Promise.allSettled([
+        productsAPI.getFeatured(8),
+        categoriesAPI.getCategories(),
+        productsAPI.getProducts({ sort: "-createdAt", limit: 4 }),
+        reviewsAPI.getFeatured(3),
+      ]);
+      if (featuredRes.status === "fulfilled") setFeaturedProducts(featuredRes.value.data.products || []);
+      if (categoriesRes.status === "fulfilled") setCategories((categoriesRes.value.data.categories || []).slice(0, 6));
+      if (newRes.status === "fulfilled") setNewArrivals(newRes.value.data.products || []);
+      if (reviewsRes.status === "fulfilled") setReviews(reviewsRes.value.data.reviews || []);
+      setLoading(false);
     };
     fetchData();
   }, []);
 
   const handleNewsletter = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!newsletterEmail || !/\S+@\S+\.\S+/.test(newsletterEmail)) {
+    const email = newsletterEmail.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
       toast.error("Please enter a valid email address");
       return;
     }
     setNewsletterLoading(true);
-    // Simulate subscription — replace with real endpoint when available
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    toast.success("Thanks for subscribing! 🎉");
-    setNewsletterEmail("");
-    setNewsletterLoading(false);
+    try {
+      const res = await contactAPI.subscribe(email, "home");
+      toast.success(res.message || "You're subscribed!");
+      setSubscribed(true);
+      setNewsletterEmail("");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Couldn't subscribe right now. Please try again."));
+    } finally {
+      setNewsletterLoading(false);
+    }
   };
+
+  const heroImages = featuredProducts
+    .map((p) => (p.images?.find((img) => img.isPrimary) || p.images?.[0])?.url)
+    .filter(Boolean)
+    .slice(0, 3) as string[];
 
   return (
     <div>
-      {/* Hero Section */}
-      {/* Hero Section */}
-      <section className="relative h-[600px] flex items-center overflow-hidden bg-[var(--color-primary-dark)] text-white">
-        {/* Dynamic Background Image */}
-        <div className="absolute inset-0 z-0">
-          <div
-            className={`absolute inset-0 bg-black/50 z-10 ${loading ? "opacity-100" : "opacity-60"}`}
-          />
-          {featuredProducts.length > 0 && (
-            <img
-              src={featuredProducts[0]?.images?.[0]?.url || "/placeholder.jpg"}
-              alt="Featured Handicraft"
-              className="w-full h-full object-cover animate-slow-zoom opacity-80"
-            />
-          )}
-        </div>
-
-        <div className="container-app relative z-20">
-          <div className="max-w-2xl animate-slideUp">
-            <span className="inline-block px-4 py-1 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full text-sm mb-6 font-medium tracking-wide">
-              🧶 Made with a Mother's Love
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-[var(--color-primary-soft)] via-[var(--color-bg)] to-[var(--color-accent-light)]/40">
+        <div className="container-app grid md:grid-cols-2 gap-8 items-center py-12 md:py-20 min-h-[60vh] md:min-h-[520px]">
+          <div className="animate-slideUp">
+            <span className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-sm mb-5 font-medium">
+              <span aria-hidden="true">🧶</span> Handmade in Nepal
             </span>
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 leading-tight drop-shadow-lg">
-              Soft, Safe &amp; Handmade Baby Clothing
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-5 leading-[1.1]">
+              Soft, safe &amp; handmade clothing for little ones
             </h1>
-            <p className="text-lg md:text-xl text-white/90 mb-8 leading-relaxed max-w-xl drop-shadow-md">
-              Gentle fabrics, thoughtful designs, and handmade care — because
-              your little one deserves the softest start.
+            <p className="text-lg text-[var(--color-text-muted)] mb-8 max-w-lg">
+              Gentle fabrics and thoughtful designs from newborn to 10 years. Cash on delivery anywhere in Nepal.
             </p>
-            <div className="flex flex-wrap gap-4">
-              <Link
-                to={
-                  featuredProducts.length > 0
-                    ? `/products/${featuredProducts[0].slug}`
-                    : "/products"
-                }
-                className="btn bg-white text-[var(--color-primary)] hover:bg-gray-100 border-none px-8 py-3 text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all"
-              >
-                Shop Featured
-                <ArrowRight className="w-5 h-5" />
+            <div className="flex flex-wrap gap-3">
+              <Link to="/products" className="btn btn-primary px-7 py-3 text-base">
+                Shop now
+                <ArrowRight className="w-5 h-5" aria-hidden="true" />
               </Link>
-              <Link
-                to="/categories"
-                className="btn bg-transparent border-2 border-white text-white hover:bg-white hover:text-[var(--color-primary)] px-8 py-3 text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all"
-              >
-                Explore Categories
-              </Link>
+              <a href="#shop-by-age" className="btn btn-secondary px-7 py-3 text-base bg-[var(--color-surface)]">
+                Shop by age
+              </a>
             </div>
+          </div>
+
+          {/* Product collage (decorative; the products are listed below) */}
+          <div className="hidden md:grid grid-cols-2 gap-4 h-[440px]" aria-hidden="true">
+            {loading ? (
+              <>
+                <Skeleton className="row-span-2 rounded-2xl" />
+                <Skeleton className="rounded-2xl" />
+                <Skeleton className="rounded-2xl" />
+              </>
+            ) : heroImages.length > 0 ? (
+              heroImages.map((url, i) => (
+                <img
+                  key={url}
+                  src={imageUrl(url, i === 0 ? 480 : 320)}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                  onError={onImageError}
+                  className={`w-full h-full object-cover rounded-2xl shadow-[var(--shadow-lg)] ${
+                    i === 0 ? (heroImages.length > 1 ? "row-span-2" : "row-span-2 col-span-2") : ""
+                  } ${heroImages.length === 2 && i === 1 ? "row-span-2" : ""}`}
+                />
+              ))
+            ) : (
+              <div className="col-span-2 row-span-2 rounded-2xl bg-[var(--color-brand)]/20 flex items-center justify-center text-8xl">
+                👶
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Trust Badges */}
-      <section className="py-12 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-        <div className="container-app">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-pink-50 rounded-full flex items-center justify-center">
-                <Baby className="w-6 h-6 text-[var(--color-primary)]" />
+      {/* Store promises */}
+      <section aria-label="Why shop with us" className="bg-[var(--color-surface)] border-y border-[var(--color-border)]">
+        <ul className="container-app grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 py-6 md:py-8">
+          {PROMISES.map(({ icon: Icon, title, text }) => (
+            <li key={title} className="flex items-center gap-3">
+              <span className="w-11 h-11 shrink-0 bg-[var(--color-primary-soft)] rounded-full flex items-center justify-center">
+                <Icon className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">{title}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{text}</p>
               </div>
-              <div>
-                <h3 className="font-semibold text-sm">Baby-Safe Fabrics</h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Soft, gentle on skin
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center">
-                <Leaf className="w-6 h-6 text-[var(--color-accent-dark)]" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm">Eco-Friendly</h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Natural, sustainable materials
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center">
-                <Heart className="w-6 h-6 text-rose-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm">Handmade in Nepal</h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Crafted with love &amp; care
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center">
-                <ShieldCheck className="w-6 h-6 text-amber-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm">Mom-Approved</h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Made by moms, for moms
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* Shop by Age */}
-      <section className="py-12 bg-[var(--color-bg)]">
+      <section id="shop-by-age" className="py-12 md:py-16 scroll-mt-20">
         <div className="container-app">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl md:text-3xl font-bold">Shop by Age</h2>
-            <p className="text-[var(--color-text-muted)] mt-2">
-              Find the right size for your growing baby
-            </p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            {[
-              { label: "Newborn", range: "0-3 Months", emoji: "\uD83C\uDF7C" },
-              { label: "Infant", range: "3-6 Months", emoji: "\uD83D\uDC76" },
-              { label: "Crawler", range: "6-12 Months", emoji: "\uD83D\uDE4C" },
-              { label: "Toddler", range: "1-2 Years", emoji: "\uD83D\uDEB6" },
-              { label: "Little Kid", range: "2-3 Years", emoji: "\u2B50" },
-            ].map((age) => (
-              <Link
-                key={age.label}
-                to={`/products?age=${encodeURIComponent(age.range)}`}
-                className="group flex flex-col items-center gap-3 p-5 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] hover:border-[var(--color-primary)] hover:shadow-md transition-all"
-              >
-                <span className="text-3xl">{age.emoji}</span>
-                <div className="text-center">
-                  <p className="font-semibold text-sm group-hover:text-[var(--color-primary)] transition-colors">
-                    {age.label}
-                  </p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    {age.range}
-                  </p>
-                </div>
-              </Link>
+          <SectionHeader title="Shop by age" subtitle="Find the right fit for your growing baby" />
+          <ul className="flex md:grid md:grid-cols-4 lg:grid-cols-7 gap-3 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4 md:mx-0 md:px-0 md:overflow-visible">
+            {AGE_GROUPS.map((age) => (
+              <li key={age} className="snap-start shrink-0 w-[42%] sm:w-[30%] md:w-auto">
+                <Link
+                  to={`/products?age=${encodeURIComponent(age)}`}
+                  className="group flex flex-col items-center gap-2 p-4 h-full bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-md)] transition-all"
+                >
+                  <span className="text-3xl" aria-hidden="true">
+                    {AGE_LABELS[age]?.emoji}
+                  </span>
+                  <span className="text-center">
+                    <span className="block font-semibold text-sm group-hover:text-[var(--color-primary)] transition-colors">
+                      {AGE_LABELS[age]?.label}
+                    </span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">{formatAgeGroup(age)}</span>
+                  </span>
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
       {/* Featured Products */}
-      <section className="py-16">
-        <div className="container-app">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h2 className="text-2xl md:text-3xl font-bold">
-                Featured Products
-              </h2>
-              <p className="text-[var(--color-text-muted)] mt-1">
-                Our most loved baby essentials
-              </p>
-            </div>
-            <Link
-              to="/products?featured=true"
-              className="btn btn-secondary text-sm"
-            >
-              View All
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+      {(loading || featuredProducts.length > 0) && (
+        <section className="py-12 md:py-16 bg-[var(--color-surface-muted)]">
+          <div className="container-app">
+            <SectionHeader
+              title="Most loved"
+              subtitle="Our favourite baby essentials"
+              action={{ to: "/products?sort=-soldCount", label: "View all" }}
+            />
+            {loading ? (
+              <ProductGridSkeleton count={4} />
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                {featuredProducts.map((product, i) => (
+                  <ProductCard key={product._id} product={product} priority={i < 2} />
+                ))}
+              </div>
+            )}
           </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {featuredProducts.map((product) => (
-                <Link
-                  key={product._id}
-                  to={`/products/${product.slug}`}
-                  className="card group"
-                >
-                  <div className="relative aspect-square overflow-hidden">
-                    <img
-                      src={product.images[0]?.url || "/placeholder.jpg"}
-                      alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {(product.comparePrice ?? 0) > product.price && (
-                      <span className="absolute top-2 left-2 bg-[var(--color-error)] text-white text-xs px-2 py-1 rounded">
-                        -
-                        {calculateDiscount(product.comparePrice, product.price)}
-                        %
-                      </span>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <p className="text-xs text-[var(--color-text-muted)] mb-1">
-                      {populated(product.category)?.name}
-                    </p>
-                    <h3 className="font-medium mb-2 line-clamp-2 group-hover:text-[var(--color-primary)]">
-                      {product.name}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[var(--color-primary)]">
-                        {formatPrice(product.price)}
-                      </span>
-                      {(product.comparePrice ?? 0) > product.price && (
-                        <span className="text-sm text-[var(--color-text-muted)] line-through">
-                          {formatPrice(product.comparePrice)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Categories */}
-      <section className="py-16 bg-[var(--color-bg)]">
-        <div className="container-app">
-          <div className="text-center mb-12">
-            <h2 className="text-2xl md:text-3xl font-bold">Shop by Category</h2>
-            <p className="text-[var(--color-text-muted)] mt-2">
-              Find the perfect outfit for your little one
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-            {categories.map((category) => (
-              <Link
-                key={category._id}
-                to={`/products?category=${category.slug}`}
-                className="group relative aspect-[4/3] rounded-xl overflow-hidden"
-              >
-                <img
-                  src={category.image?.url || "/placeholder-category.jpg"}
-                  alt={category.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                  <h3 className="font-semibold text-lg">{category.name}</h3>
-                  {category.productCount && (
-                    <p className="text-sm text-white/70">
-                      {category.productCount} Products
-                    </p>
-                  )}
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* New Arrivals */}
-      <section className="py-16">
-        <div className="container-app">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Sparkles className="w-5 h-5 text-[var(--color-accent-dark)]" />
-                <h2 className="text-2xl md:text-3xl font-bold">New Arrivals</h2>
-              </div>
-              <p className="text-[var(--color-text-muted)]">
-                Fresh styles just added for your little one
-              </p>
-            </div>
-            <Link
-              to="/products?sort=newest"
-              className="btn btn-secondary text-sm"
-            >
-              See All New
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          {!loading && newArrivals.length > 0 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {newArrivals.map((product) => (
+      {categories.length > 0 && (
+        <section className="py-12 md:py-16">
+          <div className="container-app">
+            <SectionHeader
+              title="Shop by category"
+              subtitle="Find the perfect outfit for your little one"
+              action={{ to: "/categories", label: "All categories" }}
+            />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+              {categories.map((category) => (
                 <Link
-                  key={product._id}
-                  to={`/products/${product.slug}`}
-                  className="card group"
+                  key={category._id}
+                  to={`/products?category=${category.slug}`}
+                  className="group relative aspect-[4/3] rounded-xl overflow-hidden bg-[var(--color-primary-soft)]"
                 >
-                  <div className="relative aspect-square overflow-hidden">
+                  {category.image?.url && (
                     <img
-                      src={product.images[0]?.url || "/placeholder.jpg"}
-                      alt={product.name}
+                      src={imageUrl(category.image.url, 480)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      onError={onImageError}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <span className="absolute top-2 left-2 bg-[var(--color-primary)] text-white text-xs px-2.5 py-1 rounded-full font-medium">
-                      New
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <p className="text-xs text-[var(--color-text-muted)] mb-1">
-                      {populated(product.category)?.name}
-                    </p>
-                    <h3 className="font-medium mb-2 line-clamp-2 group-hover:text-[var(--color-primary)]">
-                      {product.name}
-                    </h3>
-                    <span className="font-bold text-[var(--color-primary)]">
-                      {formatPrice(product.price)}
-                    </span>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4 text-white">
+                    <h3 className="font-semibold md:text-lg">{category.name}</h3>
+                    {!!category.productCount && (
+                      <p className="text-xs md:text-sm text-white/80">{category.productCount} products</p>
+                    )}
                   </div>
                 </Link>
               ))}
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="py-16 bg-[var(--color-surface)]">
-        <div className="container-app">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl md:text-3xl font-bold">What Moms Are Saying</h2>
-            <p className="text-[var(--color-text-muted)] mt-2">
-              Real reviews from real parents
-            </p>
           </div>
+        </section>
+      )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              {
-                name: "Srijana M.",
-                location: "Kathmandu",
-                rating: 5,
-                text: "The softest baby clothes I've ever felt! My 6-month-old loves the organic cotton rompers. The quality is amazing for the price.",
-                product: "Organic Cotton Romper",
-              },
-              {
-                name: "Anita T.",
-                location: "Pokhara",
-                rating: 5,
-                text: "I bought the newborn gift set for my friend's baby shower — she absolutely loved it! Beautiful packaging and such thoughtful details.",
-                product: "Newborn Gift Set",
-              },
-              {
-                name: "Priya S.",
-                location: "Lalitpur",
-                rating: 4,
-                text: "Fast delivery and the clothes are true to size. My toddler has been wearing Nevan outfits on repeat. Will definitely order again!",
-                product: "Toddler Dress Set",
-              },
-            ].map((testimonial, idx) => (
-              <div
-                key={idx}
-                className="card p-6 flex flex-col"
-              >
-                <Quote className="w-8 h-8 text-[var(--color-primary-light)] mb-3" />
-                <p className="text-sm text-[var(--color-text)] leading-relaxed flex-1">
-                  "{testimonial.text}"
-                </p>
-                <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-                  <div className="flex items-center gap-1 mb-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={`w-3.5 h-3.5 ${
-                          star <= testimonial.rating
-                            ? "fill-amber-400 text-amber-400"
-                            : "text-gray-300"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className="font-semibold text-sm">{testimonial.name}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    {testimonial.location} • Purchased: {testimonial.product}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-16 bg-[var(--color-accent)]">
-        <div className="container-app text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-[var(--color-primary-dark)] mb-4">
-            Join Our Newsletter
-          </h2>
-          <p className="text-[var(--color-text)] mb-6 max-w-md mx-auto">
-            Get early access to new arrivals, special offers, and parenting
-            tips from our mom community.
-          </p>
-          <form onSubmit={handleNewsletter} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-            <input
-              type="email"
-              placeholder="Enter your email"
-              value={newsletterEmail}
-              onChange={(e) => setNewsletterEmail(e.target.value)}
-              className="input flex-1"
+      {/* New Arrivals */}
+      {(loading || newArrivals.length > 0) && (
+        <section className="py-12 md:py-16 bg-[var(--color-surface-muted)]">
+          <div className="container-app">
+            <SectionHeader
+              title="New arrivals"
+              subtitle="Fresh styles just added"
+              icon={<Sparkles className="w-5 h-5 text-[var(--color-accent-strong)]" aria-hidden="true" />}
+              action={{ to: "/products?sort=-createdAt", label: "See all new" }}
             />
-            <button type="submit" disabled={newsletterLoading} className="btn btn-primary">
-              {newsletterLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                "Subscribe"
-              )}
-            </button>
-          </form>
+            {loading ? (
+              <ProductGridSkeleton count={4} />
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                {newArrivals.map((product) => (
+                  <ProductCard key={product._id} product={product} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Real customer reviews (hidden until there are some) */}
+      {reviews.length > 0 && (
+        <section className="py-12 md:py-16">
+          <div className="container-app">
+            <SectionHeader title="What parents are saying" subtitle="Recent reviews from our customers" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              {reviews.map((review) => (
+                <figure key={review._id} className="card p-6 flex flex-col">
+                  <Quote className="w-8 h-8 text-[var(--color-primary-light)] mb-3" aria-hidden="true" />
+                  <blockquote className="text-sm leading-relaxed flex-1">
+                    {review.title && <p className="font-semibold mb-1">{review.title}</p>}
+                    <p>{review.comment}</p>
+                  </blockquote>
+                  <figcaption className="mt-4 pt-4 border-t border-[var(--color-border)]">
+                    <div className="flex items-center gap-0.5 mb-2" role="img" aria-label={`${review.rating} out of 5 stars`}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          aria-hidden="true"
+                          className={`w-3.5 h-3.5 ${
+                            star <= review.rating ? "fill-amber-400 text-amber-400" : "text-[var(--color-border-strong)]"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className="font-semibold text-sm flex items-center gap-1.5">
+                      {review.reviewerName}
+                      {review.isVerifiedPurchase && (
+                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-[var(--color-success)]">
+                          <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                          Verified purchase
+                        </span>
+                      )}
+                    </p>
+                    {review.product && (
+                      <Link
+                        to={`/products/${review.product.slug}`}
+                        className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        {review.product.name}
+                      </Link>
+                    )}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Newsletter */}
+      <section className="py-12 md:py-16 bg-[var(--color-primary-soft)]">
+        <div className="container-app text-center">
+          <h2 className="text-2xl md:text-3xl font-bold mb-3">Join our newsletter</h2>
+          <p className="text-[var(--color-text-muted)] mb-6 max-w-md mx-auto">
+            New arrivals and offers, about twice a month. Unsubscribe anytime.
+          </p>
+          {subscribed ? (
+            <p role="status" className="font-medium text-[var(--color-success)]">
+              Thanks! You're on the list.
+            </p>
+          ) : (
+            <form onSubmit={handleNewsletter} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto" noValidate>
+              <label htmlFor="newsletter-email" className="sr-only">
+                Email address
+              </label>
+              <input
+                id="newsletter-email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                placeholder="you@example.com"
+                value={newsletterEmail}
+                onChange={(e) => setNewsletterEmail(e.target.value)}
+                className="input flex-1"
+                required
+              />
+              <button type="submit" disabled={newsletterLoading} aria-busy={newsletterLoading} className="btn btn-primary">
+                {newsletterLoading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : null}
+                Subscribe
+              </button>
+            </form>
+          )}
         </div>
       </section>
     </div>

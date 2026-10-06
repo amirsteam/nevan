@@ -49,7 +49,7 @@ const SidebarContent = ({ userName, onLogout }: { userName?: string; onLogout: (
                     end={item.end}
                     className={({ isActive }) =>
                         `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${isActive
-                            ? 'bg-[var(--color-primary)] text-white'
+                            ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                             : 'hover:bg-[var(--color-bg)]'
                         }`
                     }
@@ -63,7 +63,7 @@ const SidebarContent = ({ userName, onLogout }: { userName?: string; onLogout: (
         {/* User section */}
         <div className="p-4 border-t border-[var(--color-border)]">
             <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-[var(--color-primary)] rounded-full flex items-center justify-center text-white font-medium">
+                <div className="w-10 h-10 bg-[var(--color-primary)] rounded-full flex items-center justify-center text-[var(--color-on-primary)] font-medium">
                     {userName?.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">

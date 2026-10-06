@@ -113,7 +113,7 @@ const ForgotPassword = () => {
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                     s <= step
-                      ? "bg-[var(--color-primary)] text-white"
+                      ? "bg-[var(--color-primary)] text-[var(--color-on-primary)]"
                       : "bg-[var(--color-bg)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
                   }`}
                 >
@@ -148,10 +148,11 @@ const ForgotPassword = () => {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-2">Email Address</label>
+                <label htmlFor="reset-field" className="block text-sm font-medium mb-2">Email Address</label>
                 <div className="input-group">
                   <Mail className={`input-icon w-4 h-4 ${error ? "text-[var(--color-error)]" : ""}`} />
                   <input
+                  id="reset-field"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -185,10 +186,11 @@ const ForgotPassword = () => {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-2">Reset Code (OTP)</label>
+                <label htmlFor="reset-field-2" className="block text-sm font-medium mb-2">Reset Code (OTP)</label>
                 <div className="input-group">
                   <KeyRound className="input-icon w-4 h-4" />
                   <input
+                  id="reset-field-2"
                     type="text"
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
@@ -234,10 +236,11 @@ const ForgotPassword = () => {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-2">New Password</label>
+                <label htmlFor="reset-field-3" className="block text-sm font-medium mb-2">New Password</label>
                 <div className="input-group">
                   <Lock className="input-icon w-4 h-4" />
                   <input
+                  id="reset-field-3"
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
@@ -248,10 +251,11 @@ const ForgotPassword = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Confirm Password</label>
+                <label htmlFor="reset-field-4" className="block text-sm font-medium mb-2">Confirm Password</label>
                 <div className="input-group">
                   <Lock className="input-icon w-4 h-4" />
                   <input
+                  id="reset-field-4"
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}

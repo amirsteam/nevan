@@ -125,3 +125,116 @@ describe("API docs", () => {
     );
   });
 });
+
+describe("Admin needs-attention data", () => {
+  it("reports low stock, refunds owed and 30-day top products", async () => {
+    const { user } = await createUser();
+    const low = await createProduct({ name: "Low Stock Bib", stock: 2 });
+    await createProduct({ name: "Plenty Socks", stock: 50 });
+    const seller = await createProduct({ name: "Best Seller Romper", price: 1500, stock: 20 });
+
+    await fillCart(user._id, [{ product: seller, quantity: 3 }]);
+    const sold = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await Order.updateOne({ _id: sold._id }, { status: "confirmed" });
+
+    await fillCart(user._id, [{ product: seller, quantity: 1 }]);
+    const refund = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "esewa" });
+    await Order.updateOne({ _id: refund._id }, { status: "cancelled", "payment.status": "paid" });
+
+    const res = await request(app)
+      .get("/api/v1/admin/dashboard")
+      .set("Authorization", `Bearer ${await asAdmin()}`);
+
+    const stats = res.body.data;
+    expect(stats.needsAttention).toMatchObject({ refundRequired: 1, toShip: 1, lowStock: 1 });
+    expect(stats.lowStockProducts.map((p: any) => p._id)).toEqual([String(low._id)]);
+    expect(stats.topProducts[0]).toMatchObject({ name: "Best Seller Romper", quantity: 3 });
+  });
+});
+
+describe("Admin order filters and bulk status", () => {
+  it("searches by order number and customer, and filters refunds owed", async () => {
+    const { user } = await createUser({ name: "Maya Tamang" });
+    const product = await createProduct({ stock: 10 });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const first = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const second = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await Order.updateOne({ _id: second._id }, { status: "cancelled", "payment.status": "paid" });
+    const token = await asAdmin();
+
+    const byNumber = await request(app)
+      .get("/api/v1/admin/orders")
+      .query({ search: first.orderNumber })
+      .set("Authorization", `Bearer ${token}`);
+    expect(byNumber.body.data.orders.map((o: any) => o._id)).toEqual([String(first._id)]);
+
+    const byCustomer = await request(app)
+      .get("/api/v1/admin/orders")
+      .query({ search: "maya" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(byCustomer.body.data.orders).toHaveLength(2);
+
+    const refunds = await request(app)
+      .get("/api/v1/admin/orders")
+      .query({ refundRequired: "true" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(refunds.body.data.orders.map((o: any) => o._id)).toEqual([String(second._id)]);
+  });
+
+  it("updates several orders and reports the ones that can't change", async () => {
+    const { user } = await createUser();
+    const product = await createProduct({ stock: 10 });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const a = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const b = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await Order.updateOne({ _id: b._id }, { status: "delivered" });
+
+    const res = await request(app)
+      .post("/api/v1/admin/orders/bulk-status")
+      .set("Authorization", `Bearer ${await asAdmin()}`)
+      .send({ orderIds: [String(a._id), String(b._id)], status: "confirmed" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.updated.map((o: any) => o._id)).toEqual([String(a._id)]);
+    expect(res.body.data.failed).toHaveLength(1);
+    expect(res.body.data.failed[0]._id).toBe(String(b._id));
+    expect((await Order.findById(a._id))?.status).toBe("confirmed");
+  });
+
+  it("rejects an invalid bulk request", async () => {
+    const res = await request(app)
+      .post("/api/v1/admin/orders/bulk-status")
+      .set("Authorization", `Bearer ${await asAdmin()}`)
+      .send({ orderIds: ["nope"], status: "confirmed" });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("Admin user search", () => {
+  it("searches all users server-side by name, email or phone", async () => {
+    await createUser({ name: "Sita Rai", phone: "9800000001" });
+    await createUser({ name: "Gita Shrestha" });
+    const token = await asAdmin();
+
+    const byName = await request(app)
+      .get("/api/v1/admin/users")
+      .query({ search: "sita" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(byName.body.data.users.map((u: any) => u.name)).toEqual(["Sita Rai"]);
+
+    const byPhone = await request(app)
+      .get("/api/v1/admin/users")
+      .query({ search: "9800000001" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(byPhone.body.data.users).toHaveLength(1);
+
+    // Regex characters are matched literally
+    const literal = await request(app)
+      .get("/api/v1/admin/users")
+      .query({ search: ".*" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(literal.body.data.users).toHaveLength(0);
+  });
+});

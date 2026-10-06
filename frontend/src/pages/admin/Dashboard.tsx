@@ -153,8 +153,8 @@ const Dashboard = () => {
       label: "Total Users",
       value: stats?.totalUsers || 0,
       icon: Users,
-      color: "text-purple-500",
-      bg: "bg-purple-50 dark:bg-purple-900/20",
+      color: "text-[var(--color-primary)]",
+      bg: "bg-[var(--color-primary-soft)]",
       link: "/admin/users",
     },
     {

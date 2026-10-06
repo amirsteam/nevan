@@ -6,7 +6,8 @@ import Order, { IOrder } from "../models/Order";
 import Payment from "../models/Payment";
 import Cart from "../models/Cart";
 import Product from "../models/Product";
-import { paginate, PaginationResult } from "../utils/helpers";
+import User from "../models/User";
+import { paginate, PaginationResult, escapeRegex } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { sendOrderStatusNotification } from "./pushNotificationService";
 
@@ -36,7 +37,50 @@ interface GetOrdersOptions {
   limit?: number;
   status?: string;
   paymentStatus?: string;
+  paymentMethod?: string;
+  // Order number, customer name/phone on the address, or account email/name
+  search?: string;
+  // Cancelled but paid (payment arrived after cancellation): needs a manual refund
+  refundRequired?: string | boolean;
 }
+
+const ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
+const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
+const PAYMENT_METHODS = ["cod", "esewa", "khalti"];
+
+
+/** Mongo filter for the admin order list; unknown values are ignored */
+const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<string, unknown>> => {
+  const { status, paymentStatus, paymentMethod, search, refundRequired } = options;
+  const filter: Record<string, unknown> = {};
+
+  if (typeof status === "string" && ORDER_STATUSES.includes(status)) filter.status = status;
+  if (typeof paymentStatus === "string" && PAYMENT_STATUSES.includes(paymentStatus)) {
+    filter["payment.status"] = paymentStatus;
+  }
+  if (typeof paymentMethod === "string" && PAYMENT_METHODS.includes(paymentMethod)) {
+    filter["payment.method"] = paymentMethod;
+  }
+  if (refundRequired === true || refundRequired === "true") {
+    filter.status = "cancelled";
+    filter["payment.status"] = "paid";
+  }
+
+  if (typeof search === "string" && search.trim()) {
+    const pattern = new RegExp(escapeRegex(search.trim().slice(0, 100)), "i");
+    const users = await User.find({ $or: [{ email: pattern }, { name: pattern }] })
+      .limit(200)
+      .distinct("_id");
+    filter.$or = [
+      { orderNumber: pattern },
+      { "shippingAddress.name": pattern },
+      { "shippingAddress.phone": pattern },
+      ...(users.length ? [{ user: { $in: users } }] : []),
+    ];
+  }
+
+  return filter;
+};
 
 /**
  * Create order from cart
@@ -447,11 +491,9 @@ const cancelOrder = async (
 const getAllOrders = async (
   options: GetOrdersOptions = {},
 ): Promise<OrdersResult> => {
-  const { page = 1, limit = 20, status, paymentStatus } = options;
+  const { page = 1, limit = 20 } = options;
 
-  const filter: any = {};
-  if (status) filter.status = status;
-  if (paymentStatus) filter["payment.status"] = paymentStatus;
+  const filter = await buildAdminOrderFilter(options);
 
   const total = await Order.countDocuments(filter);
   const pagination = paginate(page, limit, total);
@@ -501,7 +543,43 @@ const updateOrderStatus = async (
   return order;
 };
 
+interface BulkStatusResult {
+  updated: { _id: string; orderNumber: string }[];
+  failed: { _id: string; orderNumber?: string; message: string }[];
+}
+
+/**
+ * Change the status of several orders. Each order goes through
+ * updateOrderStatus, so transition rules, stock release and notifications
+ * are the same as for a single update; one failure doesn't stop the rest.
+ */
+const bulkUpdateOrderStatus = async (
+  orderIds: string[],
+  status: string,
+  adminId: string,
+  note: string = "",
+): Promise<BulkStatusResult> => {
+  const result: BulkStatusResult = { updated: [], failed: [] };
+
+  for (const id of [...new Set(orderIds)]) {
+    try {
+      const order = await updateOrderStatus(id, status, adminId, note);
+      result.updated.push({ _id: id, orderNumber: (order as any).orderNumber });
+    } catch (error) {
+      const existing = await Order.findById(id).select("orderNumber").lean();
+      result.failed.push({
+        _id: id,
+        orderNumber: (existing as any)?.orderNumber,
+        message: error instanceof Error ? error.message : "Update failed",
+      });
+    }
+  }
+
+  return result;
+};
+
 export {
+  bulkUpdateOrderStatus,
   createOrder,
   getUserOrders,
   getOrderById,

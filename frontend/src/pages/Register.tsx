@@ -185,7 +185,7 @@ const Register = () => {
 
           {/* Full Name Field */}
           <div>
-            <label className="block text-sm font-medium mb-2">
+            <label htmlFor="register-name" className="block text-sm font-medium mb-2">
               Full Name<span className="text-[var(--color-error)] ml-1">*</span>
             </label>
             <div className="relative">
@@ -196,6 +196,7 @@ const Register = () => {
                   className={`input-icon w-4 h-4 ${getFieldState("name").hasError ? "text-[var(--color-error)]" : getFieldState("name").isValid ? "text-green-500" : ""}`}
                 />
                 <input
+                  id="register-name"
                   type="text"
                   name="name"
                   value={formData.name}
@@ -220,7 +221,7 @@ const Register = () => {
 
           {/* Email Field */}
           <div>
-            <label className="block text-sm font-medium mb-2">
+            <label htmlFor="register-email" className="block text-sm font-medium mb-2">
               Email<span className="text-[var(--color-error)] ml-1">*</span>
             </label>
             <div className="relative">
@@ -231,6 +232,7 @@ const Register = () => {
                   className={`input-icon w-4 h-4 ${getFieldState("email").hasError ? "text-[var(--color-error)]" : getFieldState("email").isValid ? "text-green-500" : ""}`}
                 />
                 <input
+                  id="register-email"
                   type="email"
                   name="email"
                   value={formData.email}
@@ -255,7 +257,7 @@ const Register = () => {
 
           {/* Phone Field */}
           <div>
-            <label className="block text-sm font-medium mb-2">Phone</label>
+            <label htmlFor="register-phone" className="block text-sm font-medium mb-2">Phone</label>
             <div className="relative">
               <div
                 className={`input-group ${getFieldState("phone").hasError ? "ring-2 ring-[var(--color-error)] rounded-lg" : getFieldState("phone").isValid ? "ring-2 ring-green-500 rounded-lg" : ""}`}
@@ -264,6 +266,7 @@ const Register = () => {
                   className={`input-icon w-4 h-4 ${getFieldState("phone").hasError ? "text-[var(--color-error)]" : getFieldState("phone").isValid ? "text-green-500" : ""}`}
                 />
                 <input
+                  id="register-phone"
                   type="tel"
                   name="phone"
                   value={formData.phone}
@@ -287,7 +290,7 @@ const Register = () => {
 
           {/* Password Field */}
           <div>
-            <label className="block text-sm font-medium mb-2">
+            <label htmlFor="register-password" className="block text-sm font-medium mb-2">
               Password<span className="text-[var(--color-error)] ml-1">*</span>
             </label>
             <div className="relative">
@@ -298,6 +301,7 @@ const Register = () => {
                   className={`input-icon w-4 h-4 ${getFieldState("password").hasError ? "text-[var(--color-error)]" : getFieldState("password").isValid ? "text-green-500" : ""}`}
                 />
                 <input
+                  id="register-password"
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
@@ -310,6 +314,8 @@ const Register = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 >
                   {showPassword ? (
@@ -333,16 +339,16 @@ const Register = () => {
             <div className="space-y-1">
               <div className="flex gap-1">
                 <div
-                  className={`h-1 flex-1 rounded ${formData.password.length >= 6 ? "bg-green-500" : "bg-gray-300"}`}
+                  className={`h-1 flex-1 rounded ${formData.password.length >= 6 ? "bg-green-500" : "bg-[var(--color-border)]"}`}
                 />
                 <div
-                  className={`h-1 flex-1 rounded ${/[a-zA-Z]/.test(formData.password) ? "bg-green-500" : "bg-gray-300"}`}
+                  className={`h-1 flex-1 rounded ${/[a-zA-Z]/.test(formData.password) ? "bg-green-500" : "bg-[var(--color-border)]"}`}
                 />
                 <div
-                  className={`h-1 flex-1 rounded ${/[0-9]/.test(formData.password) ? "bg-green-500" : "bg-gray-300"}`}
+                  className={`h-1 flex-1 rounded ${/[0-9]/.test(formData.password) ? "bg-green-500" : "bg-[var(--color-border)]"}`}
                 />
                 <div
-                  className={`h-1 flex-1 rounded ${/[!@#$%^&*]/.test(formData.password) ? "bg-green-500" : "bg-gray-300"}`}
+                  className={`h-1 flex-1 rounded ${/[!@#$%^&*]/.test(formData.password) ? "bg-green-500" : "bg-[var(--color-border)]"}`}
                 />
               </div>
               <p className="text-xs text-[var(--color-text-muted)]">
@@ -353,7 +359,7 @@ const Register = () => {
 
           {/* Confirm Password Field */}
           <div>
-            <label className="block text-sm font-medium mb-2">
+            <label htmlFor="register-confirmPassword" className="block text-sm font-medium mb-2">
               Confirm Password
               <span className="text-[var(--color-error)] ml-1">*</span>
             </label>
@@ -365,6 +371,7 @@ const Register = () => {
                   className={`input-icon w-4 h-4 ${getFieldState("confirmPassword").hasError ? "text-[var(--color-error)]" : getFieldState("confirmPassword").isValid ? "text-green-500" : ""}`}
                 />
                 <input
+                  id="register-confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
                   value={formData.confirmPassword}
@@ -377,6 +384,8 @@ const Register = () => {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showConfirmPassword}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 >
                   {showConfirmPassword ? (

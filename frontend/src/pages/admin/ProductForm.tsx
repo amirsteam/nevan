@@ -933,7 +933,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         <div className="flex justify-between items-center border-b border-[var(--color-border)] pb-2">
           <h3 className="font-semibold text-lg">Variants</h3>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+            <label className="flex items-center gap-2 cursor-pointer bg-[var(--color-surface-muted)] px-3 py-1.5 rounded-lg border border-[var(--color-border)]">
               <input
                 type="checkbox"
                 checked={hasVariants}
@@ -964,7 +964,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
             {variants.map((variant, index) => (
               <div
                 key={variant._id || index}
-                className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start p-4 md:p-0 border md:border-0 rounded-lg md:rounded-none bg-gray-50 md:bg-transparent"
+                className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start p-4 md:p-0 border md:border-0 rounded-lg md:rounded-none bg-[var(--color-surface-muted)] md:bg-transparent"
               >
                 {/* Size */}
                 <div className="col-span-3">
@@ -1053,7 +1053,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
                     </div>
                   ) : (
                     <label className="cursor-pointer">
-                      <div className="w-10 h-10 border border-dashed border-gray-300 rounded flex items-center justify-center hover:bg-gray-50 text-gray-500">
+                      <div className="w-10 h-10 border border-dashed border-[var(--color-border)] rounded flex items-center justify-center hover:bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]">
                         <Plus className="w-4 h-4" />
                       </div>
                       <input

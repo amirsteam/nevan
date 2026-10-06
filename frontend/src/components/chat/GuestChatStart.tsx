@@ -44,8 +44,8 @@ const GuestChatStart = () => {
     return (
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
             <div>
-                <h4 className="font-semibold text-gray-900 dark:text-gray-100">Chat with us 👋</h4>
-                <p className="text-sm text-gray-500 mt-1">
+                <h4 className="font-semibold text-[var(--color-text)]">Chat with us 👋</h4>
+                <p className="text-sm text-[var(--color-text-muted)] mt-1">
                     Questions about sizes, delivery or an order? Our team usually replies within a few hours.
                 </p>
             </div>
@@ -68,7 +68,7 @@ const GuestChatStart = () => {
 
             <div>
                 <label htmlFor="guest-chat-email" className="block text-sm font-medium mb-1">
-                    Email <span className="text-gray-400 font-normal">(optional)</span>
+                    Email <span className="text-[var(--color-text-muted)] font-normal">(optional)</span>
                 </label>
                 <input
                     id="guest-chat-email"
@@ -88,9 +88,9 @@ const GuestChatStart = () => {
                 Start chat
             </button>
 
-            <p className="text-xs text-gray-500 text-center">
+            <p className="text-xs text-[var(--color-text-muted)] text-center">
                 Have an account?{" "}
-                <Link to="/login" onClick={() => dispatch(setIsOpen(false))} className="text-indigo-600 hover:underline">
+                <Link to="/login" onClick={() => dispatch(setIsOpen(false))} className="text-[var(--color-primary)] hover:underline">
                     Log in
                 </Link>{" "}
                 to see your orders in chat. Your guest conversation moves to your account when you log in.

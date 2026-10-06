@@ -119,6 +119,9 @@ export interface IProduct {
   material?: string;
   careInstructions?: string;
   ageRecommendation?: string;
+  // Storefront filters ("Shop by Age", gender); untagged products have none
+  ageGroups?: string[];
+  gender?: "boy" | "girl" | "unisex";
   price: number;
   comparePrice?: number;
   category: string | ICategory;
@@ -198,6 +201,22 @@ export type OrderStatus =
 export type PaymentStatus = "pending" | "paid" | "failed" | "refunded";
 
 export type PaymentMethod = "cod" | "esewa" | "khalti";
+
+/** Saved delivery address (address book on the account, max 5) */
+export interface ISavedAddress {
+  _id: string;
+  label?: string;
+  name: string;
+  phone: string;
+  street: string;
+  city: string;
+  district: string;
+  province: number;
+  landmark?: string;
+  isDefault: boolean;
+}
+
+export type ISavedAddressInput = Omit<ISavedAddress, "_id" | "isDefault"> & { isDefault?: boolean };
 
 export interface IShippingAddress {
   fullName?: string;

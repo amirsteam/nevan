@@ -26,38 +26,38 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary: `
-    bg-[var(--color-primary)] text-white
-    hover:bg-[var(--color-primary-dark)] 
-    focus:ring-[var(--color-primary)]
+    bg-[var(--color-primary)] text-[var(--color-on-primary)]
+    hover:bg-[var(--color-primary-dark)]
+    focus-visible:ring-[var(--color-primary)]
     shadow-sm hover:shadow-md
   `,
   secondary: `
     bg-[var(--color-surface)] text-[var(--color-text)]
     border border-[var(--color-border)]
-    hover:bg-[var(--color-background)] hover:border-[var(--color-primary)]
-    focus:ring-[var(--color-primary)]
+    hover:bg-[var(--color-surface-muted)] hover:border-[var(--color-primary)]
+    focus-visible:ring-[var(--color-primary)]
   `,
   outline: `
     bg-transparent text-[var(--color-primary)]
     border-2 border-[var(--color-primary)]
-    hover:bg-[var(--color-primary)] hover:text-white
-    focus:ring-[var(--color-primary)]
+    hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)]
+    focus-visible:ring-[var(--color-primary)]
   `,
   ghost: `
     bg-transparent text-[var(--color-text)]
-    hover:bg-[var(--color-background)]
-    focus:ring-[var(--color-primary)]
+    hover:bg-[var(--color-surface-muted)]
+    focus-visible:ring-[var(--color-primary)]
   `,
   danger: `
-    bg-red-600 text-white
-    hover:bg-red-700
-    focus:ring-red-500
+    bg-red-700 text-white
+    hover:bg-red-800
+    focus-visible:ring-red-600
     shadow-sm hover:shadow-md
   `,
   success: `
-    bg-green-600 text-white
-    hover:bg-green-700
-    focus:ring-green-500
+    bg-green-700 text-white
+    hover:bg-green-800
+    focus-visible:ring-green-600
     shadow-sm hover:shadow-md
   `,
 };
@@ -98,11 +98,13 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
+        type={props.type ?? "button"}
         disabled={isDisabled}
+        aria-busy={isLoading || undefined}
         className={`
         inline-flex items-center justify-center font-medium
         transition-all duration-200
-        focus:outline-none focus:ring-2 focus:ring-offset-2
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]
         disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
         ${variantClasses[variant]}
         ${sizeClasses[size]}
@@ -113,14 +115,14 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {isLoading ? (
           <>
-            <Loader2 className={`animate-spin ${iconSizes[size]}`} />
-            {loadingText && <span>{loadingText}</span>}
+            <Loader2 className={`animate-spin ${iconSizes[size]}`} aria-hidden="true" />
+            <span>{loadingText ?? children}</span>
           </>
         ) : (
           <>
-            {leftIcon && <span className={iconSizes[size]}>{leftIcon}</span>}
+            {leftIcon && <span className={`${iconSizes[size]} inline-flex`} aria-hidden="true">{leftIcon}</span>}
             {children}
-            {rightIcon && <span className={iconSizes[size]}>{rightIcon}</span>}
+            {rightIcon && <span className={`${iconSizes[size]} inline-flex`} aria-hidden="true">{rightIcon}</span>}
           </>
         )}
       </button>
@@ -161,11 +163,13 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     return (
       <button
         ref={ref}
+        type={props.type ?? "button"}
         disabled={isLoading || props.disabled}
+        aria-busy={isLoading || undefined}
         className={`
         inline-flex items-center justify-center rounded-lg
         transition-all duration-200
-        focus:outline-none focus:ring-2 focus:ring-offset-2
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg)]
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variantClasses[variant]}
         ${iconButtonSizes[size]}
@@ -176,7 +180,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         {isLoading ? (
           <Loader2 className={`animate-spin ${iconSizes[size]}`} />
         ) : (
-          <span className={iconSizes[size]}>{icon}</span>
+          <span className={`${iconSizes[size]} inline-flex`} aria-hidden="true">{icon}</span>
         )}
       </button>
     );

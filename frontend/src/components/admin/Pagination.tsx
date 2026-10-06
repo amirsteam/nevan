@@ -97,7 +97,7 @@ const Pagination = ({
                             className={`
                                 w-10 h-10 rounded-lg border transition-colors
                                 ${page === currentPage
-                                    ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
                                     : 'border-[var(--color-border)] hover:bg-[var(--color-bg)]'}
                             `}
                         >

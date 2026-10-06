@@ -21,9 +21,11 @@ const ChatWidget = () => {
             {/* Floating Button */}
             <button
                 onClick={() => dispatch(toggleChat())}
-                className={`fixed bottom-4 right-4 z-50 p-4 rounded-full shadow-lg transition-all duration-300 ${isOpen
-                    ? "bg-gray-600 hover:bg-gray-700 scale-90"
-                    : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90"
+                aria-expanded={isOpen}
+                style={{ bottom: "calc(1rem + env(safe-area-inset-bottom) + var(--chat-offset, 0px))" }}
+                className={`fixed right-4 z-50 p-4 rounded-full shadow-[var(--shadow-lg)] transition-all duration-300 ${isOpen
+                    ? "hidden sm:block bg-[var(--color-text)] text-[var(--color-surface)] scale-90"
+                    : "bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-dark)]"
                     }`}
                 aria-label={
                     isOpen
@@ -33,11 +35,11 @@ const ChatWidget = () => {
                             : "Open chat"
                 }
             >
-                <MessageCircle size={24} className="text-white" />
+                <MessageCircle size={24} aria-hidden="true" />
 
                 {/* Unread Badge */}
                 {!isOpen && unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-5 h-5 px-1 bg-red-500 text-white text-xs font-bold rounded-full border-2 border-white">
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-5 h-5 px-1 bg-red-700 text-white text-xs font-bold rounded-full border-2 border-[var(--color-surface)]">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                 )}

@@ -1,365 +1,441 @@
 /**
  * Products Page
- * Product listing with filters and pagination
+ * Product listing with URL-driven filters (category, search, price, age,
+ * gender, sort), active-filter chips, and a bottom-sheet filter panel on phones
  */
-import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { productsAPI, categoriesAPI } from '../api';
-import { formatPrice, calculateDiscount, debounce, populated, getAvailableStock } from "../utils/helpers";
-import { Search, Filter, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ProductQueryParams } from '../api';
-import type { ICategory, IPagination, IProduct } from '../types';
+import { useState, useEffect, useMemo, FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Search, SlidersHorizontal, X } from "lucide-react";
+import { productsAPI, categoriesAPI } from "../api";
+import type { ProductQueryParams } from "../api";
+import ProductCard from "../components/ProductCard";
+import Breadcrumb from "../components/ui/Breadcrumb";
+import Modal from "../components/ui/Modal";
+import Pagination from "../components/ui/Pagination";
+import EmptyState from "../components/ui/EmptyState";
+import { ProductGridSkeleton } from "../components/ui/Skeleton";
+import { AGE_GROUPS, GENDER_LABELS, PRODUCT_GENDERS, formatAgeGroup } from "../config/store";
+import { formatPrice } from "../utils/helpers";
+import { usePageTitle } from "../hooks/usePageTitle";
+import type { ICategory, IPagination, IProduct } from "../types";
+
+const SORT_OPTIONS = [
+  { value: "-createdAt", label: "Newest" },
+  { value: "-soldCount", label: "Best selling" },
+  { value: "price", label: "Price: low to high" },
+  { value: "-price", label: "Price: high to low" },
+  { value: "-ratings.average", label: "Top rated" },
+];
+
+const PAGE_SIZE = 12;
+
+interface FiltersProps {
+  categories: ICategory[];
+  current: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  onPriceApply: (min: string, max: string) => void;
+}
+
+const chipClass = (active: boolean) =>
+  `px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+    active
+      ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-on-primary)]"
+      : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
+  }`;
+
+const FilterGroup = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <fieldset className="space-y-3">
+    <legend className="font-semibold text-sm mb-3">{title}</legend>
+    {children}
+  </fieldset>
+);
+
+/** Filter controls shared by the desktop sidebar and the mobile sheet */
+const Filters = ({ categories, current, onChange, onPriceApply }: FiltersProps) => {
+  const [min, setMin] = useState(current.minPrice);
+  const [max, setMax] = useState(current.maxPrice);
+  useEffect(() => {
+    setMin(current.minPrice);
+    setMax(current.maxPrice);
+  }, [current.minPrice, current.maxPrice]);
+
+  const submitPrice = (e: FormEvent) => {
+    e.preventDefault();
+    onPriceApply(min, max);
+  };
+
+  return (
+    <div className="space-y-7">
+      <FilterGroup title="Category">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={!current.category} onClick={() => onChange("category", "")} className={chipClass(!current.category)}>
+            All
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat._id}
+              type="button"
+              aria-pressed={current.category === cat.slug}
+              onClick={() => onChange("category", cat.slug)}
+              className={chipClass(current.category === cat.slug)}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup title="Age">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={!current.age} onClick={() => onChange("age", "")} className={chipClass(!current.age)}>
+            All ages
+          </button>
+          {AGE_GROUPS.map((age) => (
+            <button
+              key={age}
+              type="button"
+              aria-pressed={current.age === age}
+              onClick={() => onChange("age", age)}
+              className={chipClass(current.age === age)}
+            >
+              {formatAgeGroup(age)}
+            </button>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup title="For">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={!current.gender} onClick={() => onChange("gender", "")} className={chipClass(!current.gender)}>
+            Everyone
+          </button>
+          {PRODUCT_GENDERS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              aria-pressed={current.gender === g}
+              onClick={() => onChange("gender", g)}
+              className={chipClass(current.gender === g)}
+            >
+              {GENDER_LABELS[g]}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]">Boy and Girl include unisex styles.</p>
+      </FilterGroup>
+
+      <FilterGroup title="Price (NPR)">
+        <form onSubmit={submitPrice} className="flex items-end gap-2">
+          <label className="flex-1">
+            <span className="block text-xs text-[var(--color-text-muted)] mb-1">Min</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={min}
+              onChange={(e) => setMin(e.target.value)}
+              placeholder="0"
+              className="input text-sm"
+            />
+          </label>
+          <label className="flex-1">
+            <span className="block text-xs text-[var(--color-text-muted)] mb-1">Max</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={max}
+              onChange={(e) => setMax(e.target.value)}
+              placeholder="Any"
+              className="input text-sm"
+            />
+          </label>
+          <button type="submit" className="btn btn-secondary text-sm px-3">
+            Apply
+          </button>
+        </form>
+      </FilterGroup>
+    </div>
+  );
+};
 
 const Products = () => {
-    const [searchParams, setSearchParams] = useSearchParams();
-    const [products, setProducts] = useState<IProduct[]>([]);
-    const [categories, setCategories] = useState<ICategory[]>([]);
-    const [pagination, setPagination] = useState<IPagination | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [showFilters, setShowFilters] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [products, setProducts] = useState<IProduct[]>([]);
+  const [categories, setCategories] = useState<ICategory[]>([]);
+  const [pagination, setPagination] = useState<IPagination | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-    // Get current filters from URL
-    const currentPage = parseInt(searchParams.get('page') || '', 10) || 1;
-    const currentCategory = searchParams.get('category') || '';
-    const currentSearch = searchParams.get('search') || '';
-    const currentSort = searchParams.get('sort') || '-createdAt';
-    const currentMinPrice = searchParams.get('minPrice') || '';
-    const currentMaxPrice = searchParams.get('maxPrice') || '';
-    const currentAge = searchParams.get('age') || '';
-    const currentGender = searchParams.get('gender') || '';
+  const current = useMemo(
+    () => ({
+      page: searchParams.get("page") || "1",
+      category: searchParams.get("category") || "",
+      search: searchParams.get("search") || "",
+      sort: searchParams.get("sort") || "-createdAt",
+      minPrice: searchParams.get("minPrice") || "",
+      maxPrice: searchParams.get("maxPrice") || "",
+      age: searchParams.get("age") || "",
+      gender: searchParams.get("gender") || "",
+    }),
+    [searchParams],
+  );
+  const currentPage = parseInt(current.page, 10) || 1;
+  const [searchText, setSearchText] = useState(current.search);
 
-    // Fetch products
-    useEffect(() => {
-        const fetchProducts = async () => {
-            setLoading(true);
-            try {
-                const params: ProductQueryParams = {
-                    page: currentPage,
-                    limit: 12,
-                    sort: currentSort,
-                };
-                if (currentCategory) params.category = currentCategory;
-                if (currentSearch) params.search = currentSearch;
-                if (currentMinPrice) params.minPrice = currentMinPrice;
-                if (currentMaxPrice) params.maxPrice = currentMaxPrice;
-                if (currentAge) params.age = currentAge;
-                if (currentGender) params.gender = currentGender;
+  // Keep the box in sync when the URL changes elsewhere (header search, chips)
+  useEffect(() => setSearchText(current.search), [current.search]);
 
-                const response = await productsAPI.getProducts(params);
-                setProducts(response.data.products);
-                setPagination(response.pagination ?? null);
-            } catch (error) {
-                console.error('Failed to fetch products:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchProducts();
-    }, [currentPage, currentCategory, currentSearch, currentSort, currentMinPrice, currentMaxPrice, currentAge, currentGender]);
+  const updateFilters = (changes: Record<string, string | number>) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, String(value));
+      else next.delete(key);
+    }
+    if (!("page" in changes)) next.delete("page");
+    setSearchParams(next);
+  };
 
-    // Fetch categories
-    useEffect(() => {
-        const fetchCategories = async () => {
-            try {
-                const response = await categoriesAPI.getCategories();
-                setCategories(response.data.categories);
-            } catch (error) {
-                console.error('Failed to fetch categories:', error);
-            }
-        };
-        fetchCategories();
-    }, []);
+  // Debounced search: one timer, reset on each keystroke
+  useEffect(() => {
+    if (searchText.trim() === current.search) return;
+    const timer = setTimeout(() => updateFilters({ search: searchText.trim() }), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText]);
 
-    // Update filters
-    const updateFilters = (key: string, value: string | number) => {
-        const newParams = new URLSearchParams(searchParams);
-        if (value) {
-            newParams.set(key, String(value));
-        } else {
-            newParams.delete(key);
-        }
-        if (key !== 'page') {
-            newParams.set('page', '1');
-        }
-        setSearchParams(newParams);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchProducts = async () => {
+      setLoading(true);
+      setError(false);
+      try {
+        const params: ProductQueryParams = { page: currentPage, limit: PAGE_SIZE, sort: current.sort };
+        if (current.category) params.category = current.category;
+        if (current.search) params.search = current.search;
+        if (current.minPrice) params.minPrice = current.minPrice;
+        if (current.maxPrice) params.maxPrice = current.maxPrice;
+        if (current.age) params.age = current.age;
+        if (current.gender) params.gender = current.gender;
+
+        const response = await productsAPI.getProducts(params);
+        if (cancelled) return;
+        setProducts(response.data.products);
+        setPagination(response.pagination ?? null);
+      } catch {
+        if (!cancelled) setError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     };
-
-    const clearFilters = () => {
-        setSearchParams({});
+    fetchProducts();
+    return () => {
+      cancelled = true;
     };
+  }, [current, currentPage, reloadKey]);
 
-    const hasActiveFilters = currentCategory || currentSearch || currentMinPrice || currentMaxPrice || currentAge || currentGender;
+  useEffect(() => {
+    categoriesAPI
+      .getCategories()
+      .then((response) => setCategories(response.data.categories))
+      .catch(() => {});
+  }, []);
 
-    return (
-        <div className="container-app py-8">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] mb-6">
-                <Link to="/" className="hover:text-[var(--color-primary)] transition-colors">Home</Link>
-                <span>/</span>
-                <span className="text-[var(--color-text)]">Products</span>
-            </nav>
+  const categoryName = categories.find((c) => c.slug === current.category)?.name;
+  const heading = current.search
+    ? `Results for “${current.search}”`
+    : categoryName || (current.age ? `Clothing for ${formatAgeGroup(current.age)}` : "All products");
+  usePageTitle(heading);
 
-            <div className="flex flex-col lg:flex-row gap-8">
-                {/* Sidebar Filters (Desktop) */}
-                <aside className="hidden lg:block w-64 flex-shrink-0">
-                    <div className="sticky top-24 space-y-6">
-                        {/* Search */}
-                        <div>
-                            <h3 className="font-semibold mb-3">Search</h3>
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    defaultValue={currentSearch}
-                                    onChange={debounce((e) => updateFilters('search', e.target.value), 500)}
-                                    placeholder="Search products..."
-                                    className="input pl-10"
-                                />
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" />
-                            </div>
-                        </div>
+  // Removable chips for everything that narrows the list
+  const chips = [
+    current.search && { key: "search", label: `“${current.search}”` },
+    current.category && { key: "category", label: categoryName || current.category },
+    current.age && { key: "age", label: formatAgeGroup(current.age) },
+    current.gender && { key: "gender", label: GENDER_LABELS[current.gender as keyof typeof GENDER_LABELS] || current.gender },
+    (current.minPrice || current.maxPrice) && {
+      key: "price",
+      label: `${current.minPrice ? formatPrice(Number(current.minPrice)) : "NPR 0"} – ${
+        current.maxPrice ? formatPrice(Number(current.maxPrice)) : "any"
+      }`,
+    },
+  ].filter(Boolean) as { key: string; label: string }[];
 
-                        {/* Categories */}
-                        <div>
-                            <h3 className="font-semibold mb-3">Categories</h3>
-                            <ul className="space-y-2">
-                                <li>
-                                    <button
-                                        onClick={() => updateFilters('category', '')}
-                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${!currentCategory ? 'bg-[var(--color-primary)] text-white' : 'hover:bg-[var(--color-bg)]'
-                                            }`}
-                                    >
-                                        All Products
-                                    </button>
-                                </li>
-                                {categories.map((cat) => (
-                                    <li key={cat._id}>
-                                        <button
-                                            onClick={() => updateFilters('category', cat.slug)}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${currentCategory === cat.slug ? 'bg-[var(--color-primary)] text-white' : 'hover:bg-[var(--color-bg)]'
-                                                }`}
-                                        >
-                                            {cat.name}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+  const removeChip = (key: string) =>
+    key === "price" ? updateFilters({ minPrice: "", maxPrice: "" }) : updateFilters({ [key]: "" });
 
-                        {/* Price Range */}
-                        <div>
-                            <h3 className="font-semibold mb-3">Price Range</h3>
-                            <div className="flex gap-2">
-                                <input
-                                    type="number"
-                                    placeholder="Min"
-                                    defaultValue={currentMinPrice}
-                                    onChange={debounce((e) => updateFilters('minPrice', e.target.value), 500)}
-                                    className="input text-sm"
-                                />
-                                <input
-                                    type="number"
-                                    placeholder="Max"
-                                    defaultValue={currentMaxPrice}
-                                    onChange={debounce((e) => updateFilters('maxPrice', e.target.value), 500)}
-                                    className="input text-sm"
-                                />
-                            </div>
-                        </div>
+  const clearFilters = () => setSearchParams(current.sort !== "-createdAt" ? { sort: current.sort } : {});
 
-                        {/* Age Range */}
-                        <div>
-                            <h3 className="font-semibold mb-3">Age Range</h3>
-                            <ul className="space-y-1">
-                                {[
-                                    { value: '', label: 'All Ages' },
-                                    { value: '0-3 Months', label: '0–3 Months' },
-                                    { value: '3-6 Months', label: '3–6 Months' },
-                                    { value: '6-12 Months', label: '6–12 Months' },
-                                    { value: '1-2 Years', label: '1–2 Years' },
-                                    { value: '2-3 Years', label: '2–3 Years' },
-                                ].map((age) => (
-                                    <li key={age.value}>
-                                        <button
-                                            onClick={() => updateFilters('age', age.value)}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                                currentAge === age.value
-                                                    ? 'bg-[var(--color-primary)] text-white'
-                                                    : 'hover:bg-[var(--color-bg)]'
-                                            }`}
-                                        >
-                                            {age.label}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+  const filterProps: FiltersProps = {
+    categories,
+    current,
+    onChange: (key, value) => updateFilters({ [key]: value }),
+    onPriceApply: (min, max) => updateFilters({ minPrice: min, maxPrice: max }),
+  };
 
-                        {/* Gender */}
-                        <div>
-                            <h3 className="font-semibold mb-3">Gender</h3>
-                            <div className="flex flex-wrap gap-2">
-                                {[
-                                    { value: '', label: 'All' },
-                                    { value: 'boy', label: 'Boy' },
-                                    { value: 'girl', label: 'Girl' },
-                                    { value: 'unisex', label: 'Unisex' },
-                                ].map((g) => (
-                                    <button
-                                        key={g.value}
-                                        onClick={() => updateFilters('gender', g.value)}
-                                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                                            currentGender === g.value
-                                                ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
-                                                : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
-                                        }`}
-                                    >
-                                        {g.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+  const total = pagination?.totalItems ?? products.length;
 
-                        {/* Clear Filters */}
-                        {hasActiveFilters && (
-                            <button
-                                onClick={clearFilters}
-                                className="btn btn-secondary w-full text-sm"
-                            >
-                                <X className="w-4 h-4" />
-                                Clear Filters
-                            </button>
-                        )}
-                    </div>
-                </aside>
+  return (
+    <div className="container-app py-6 md:py-8">
+      <Breadcrumb items={[{ label: "Shop" }]} className="mb-5" />
 
-                {/* Main Content */}
-                <div className="flex-1">
-                    {/* Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                        <div>
-                            <h1 className="text-2xl font-bold">
-                                {currentCategory ? categories.find(c => c.slug === currentCategory)?.name || 'Products' : 'All Products'}
-                            </h1>
-                            {pagination && (
-                                <p className="text-sm text-[var(--color-text-muted)]">
-                                    Showing {products.length} of {pagination.totalItems} products
-                                </p>
-                            )}
-                        </div>
+      <div className="flex flex-col lg:flex-row gap-8">
+        {/* Desktop filters */}
+        <aside className="hidden lg:block w-64 shrink-0" aria-label="Filters">
+          <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
+            <Filters {...filterProps} />
+          </div>
+        </aside>
 
-                        <div className="flex items-center gap-3">
-                            {/* Mobile Filter Toggle */}
-                            <button
-                                onClick={() => setShowFilters(!showFilters)}
-                                className="lg:hidden btn btn-secondary text-sm"
-                            >
-                                <Filter className="w-4 h-4" />
-                                Filters
-                            </button>
-
-                            {/* Sort */}
-                            <select
-                                value={currentSort}
-                                onChange={(e) => updateFilters('sort', e.target.value)}
-                                className="input text-sm w-auto"
-                            >
-                                <option value="-createdAt">Newest</option>
-                                <option value="createdAt">Oldest</option>
-                                <option value="price">Price: Low to High</option>
-                                <option value="-price">Price: High to Low</option>
-                                <option value="-ratings.average">Best Rated</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Products Grid */}
-                    {loading ? (
-                        <div className="flex items-center justify-center py-20">
-                            <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
-                        </div>
-                    ) : products.length === 0 ? (
-                        <div className="text-center py-20">
-                            <p className="text-lg text-[var(--color-text-muted)] mb-4">No products found</p>
-                            <button onClick={clearFilters} className="btn btn-primary">
-                                Clear Filters
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                            {products.map((product) => (
-                                <Link
-                                    key={product._id}
-                                    to={`/products/${product.slug}`}
-                                    className="card group"
-                                >
-                                    <div className="relative aspect-square overflow-hidden">
-                                        <img
-                                            src={product.images[0]?.url || '/placeholder.jpg'}
-                                            alt={product.name}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                        />
-                                        {(product.comparePrice ?? 0) > product.price && (
-                                            <span className="absolute top-2 left-2 bg-[var(--color-error)] text-white text-xs px-2 py-1 rounded">
-                                                -{calculateDiscount(product.comparePrice, product.price)}%
-                                            </span>
-                                        )}
-                                        {getAvailableStock(product) <= 0 && (
-                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                                <span className="bg-white text-[var(--color-text)] px-4 py-2 rounded-lg font-medium">
-                                                    Out of Stock
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="p-4">
-                                        <p className="text-xs text-[var(--color-text-muted)] mb-1">
-                                            {populated(product.category)?.name}
-                                        </p>
-                                        <h3 className="font-medium mb-2 line-clamp-2 group-hover:text-[var(--color-primary)]">
-                                            {product.name}
-                                        </h3>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-[var(--color-primary)]">
-                                                {formatPrice(product.price)}
-                                            </span>
-                                            {(product.comparePrice ?? 0) > product.price && (
-                                                <span className="text-sm text-[var(--color-text-muted)] line-through">
-                                                    {formatPrice(product.comparePrice)}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Pagination */}
-                    {pagination && pagination.totalPages > 1 && (
-                        <div className="flex items-center justify-center gap-2 mt-8">
-                            <button
-                                onClick={() => updateFilters('page', currentPage - 1)}
-                                disabled={currentPage === 1}
-                                className="btn btn-secondary text-sm disabled:opacity-50"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="px-4 py-2 text-sm">
-                                Page {currentPage} of {pagination.totalPages}
-                            </span>
-                            <button
-                                onClick={() => updateFilters('page', currentPage + 1)}
-                                disabled={currentPage === pagination.totalPages}
-                                className="btn btn-secondary text-sm disabled:opacity-50"
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
-                </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col gap-4 mb-5">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold">{heading}</h1>
+              <p className="text-sm text-[var(--color-text-muted)] mt-1" aria-live="polite">
+                {loading ? "Loading products…" : `${total} ${total === 1 ? "product" : "products"}`}
+              </p>
             </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[12rem]">
+                <label htmlFor="product-search" className="sr-only">
+                  Search products
+                </label>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-muted)]" aria-hidden="true" />
+                <input
+                  id="product-search"
+                  type="search"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search rompers, sweaters…"
+                  className="input pl-10"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowFilters(true)}
+                className="lg:hidden btn btn-secondary text-sm"
+                aria-haspopup="dialog"
+              >
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+                Filters
+                {chips.length > 0 && (
+                  <span className="ml-1 min-w-5 h-5 px-1 rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs flex items-center justify-center">
+                    {chips.length}
+                  </span>
+                )}
+              </button>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-[var(--color-text-muted)] hidden sm:inline">Sort</span>
+                <span className="sr-only sm:hidden">Sort by</span>
+                <select
+                  value={current.sort}
+                  onChange={(e) => updateFilters({ sort: e.target.value })}
+                  className="select text-sm w-auto py-2"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {chips.length > 0 && (
+              <ul className="flex flex-wrap items-center gap-2" aria-label="Active filters">
+                {chips.map((chip) => (
+                  <li key={chip.key}>
+                    <button
+                      type="button"
+                      onClick={() => removeChip(chip.key)}
+                      className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] text-sm font-medium hover:bg-[var(--color-primary-light)]/40"
+                      aria-label={`Remove filter: ${chip.label}`}
+                    >
+                      {chip.label}
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+                <li>
+                  <button type="button" onClick={clearFilters} className="text-sm text-[var(--color-text-muted)] underline underline-offset-4 hover:text-[var(--color-primary)]">
+                    Clear all
+                  </button>
+                </li>
+              </ul>
+            )}
+          </div>
+
+          {loading ? (
+            <ProductGridSkeleton count={6} className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6" />
+          ) : error ? (
+            <EmptyState
+              type="generic"
+              title="Couldn't load products"
+              description="Please check your connection and try again."
+              actionLabel="Try again"
+              onAction={() => setReloadKey((k) => k + 1)}
+            />
+          ) : products.length === 0 ? (
+            <EmptyState
+              type={current.search ? "search" : "products"}
+              description={
+                current.age || current.gender
+                  ? "No products are tagged for this age or style yet. Try another filter, or ask us on chat — we're happy to help."
+                  : undefined
+              }
+              actionLabel="Clear filters"
+              onAction={clearFilters}
+            />
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+              {products.map((product, i) => (
+                <ProductCard key={product._id} product={product} priority={i < 2} />
+              ))}
+            </div>
+          )}
+
+          {pagination && pagination.totalPages > 1 && !loading && (
+            <Pagination
+              className="mt-10"
+              currentPage={currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={(page) => {
+                updateFilters({ page });
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          )}
         </div>
-    );
+      </div>
+
+      {/* Mobile filters */}
+      <Modal
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        title="Filters"
+        variant="sheet"
+        footer={
+          <>
+            {chips.length > 0 && (
+              <button type="button" onClick={clearFilters} className="btn btn-secondary">
+                Clear all
+              </button>
+            )}
+            <button type="button" onClick={() => setShowFilters(false)} className="btn btn-primary flex-1 sm:flex-none">
+              {loading ? "Show results" : `Show ${total} ${total === 1 ? "result" : "results"}`}
+            </button>
+          </>
+        }
+      >
+        <Filters {...filterProps} />
+      </Modal>
+    </div>
+  );
 };
 
 export default Products;

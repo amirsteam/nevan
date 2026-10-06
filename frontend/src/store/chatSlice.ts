@@ -50,6 +50,8 @@ interface ChatState {
     typing: { roomId: string; role: "customer" | "admin" } | null;
     // Signed-out visitor chatting as a guest (token kept in utils/guestChat)
     guest: { id: string; name: string } | null;
+    // Text to put in the message box when the window opens (e.g. "Order #NV-123: ")
+    draft: string;
 }
 
 const initialState: ChatState = {
@@ -68,6 +70,7 @@ const initialState: ChatState = {
     unreadCount: 0,
     typing: null,
     guest: null,
+    draft: "",
 };
 
 const chatSlice = createSlice({
@@ -82,10 +85,15 @@ const chatSlice = createSlice({
             state.isOpen = action.payload;
         },
 
-        /** Open the chat window, optionally straight into a conversation (admins) */
-        openChat: (state, action: PayloadAction<{ roomId?: string } | undefined>) => {
+        /** Open the chat window, optionally straight into a conversation (admins) or with a draft message */
+        openChat: (state, action: PayloadAction<{ roomId?: string; draft?: string } | undefined>) => {
             state.isOpen = true;
             state.pendingRoomId = action.payload?.roomId ?? null;
+            if (action.payload?.draft) state.draft = action.payload.draft;
+        },
+
+        clearDraft: (state) => {
+            state.draft = "";
         },
 
         clearPendingRoom: (state) => {
@@ -216,6 +224,7 @@ export const {
     toggleChat,
     setIsOpen,
     openChat,
+    clearDraft,
     clearPendingRoom,
     enterRoom,
     leaveRoom,

@@ -294,7 +294,7 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                                     className={`
                                         px-4 py-2 rounded-lg border transition-colors capitalize
                                         ${newStatus === status
-                                            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                                            ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
                                             : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'}
                                         ${status === 'cancelled' ? 'text-red-500 hover:bg-red-50' : ''}
                                     `}

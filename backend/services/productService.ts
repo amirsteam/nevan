@@ -10,7 +10,7 @@ import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
-import { PRODUCT_SIZES } from "../utils/constants";
+import { PRODUCT_SIZES, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 
 interface ProductsOptions {
   page?: number;
@@ -21,6 +21,8 @@ interface ProductsOptions {
   maxPrice?: number;
   isFeatured?: boolean | string;
   sort?: string;
+  age?: string;
+  gender?: string;
 }
 
 interface ProductsResult {
@@ -45,6 +47,8 @@ interface ProductData {
   material?: string;
   careInstructions?: string;
   ageRecommendation?: string;
+  ageGroups?: string[];
+  gender?: string | null;
   price: number;
   comparePrice?: number;
   category: string;
@@ -132,6 +136,8 @@ const getProducts = async (
     maxPrice,
     isFeatured,
     sort = "-createdAt",
+    age,
+    gender,
   } = options;
 
   // Build filter
@@ -166,6 +172,15 @@ const getProducts = async (
 
   if (isFeatured !== undefined) {
     filter.isFeatured = isFeatured === "true" || isFeatured === true;
+  }
+
+  // Unknown values are ignored rather than returning nothing
+  if (typeof age === "string" && (AGE_GROUPS as readonly string[]).includes(age)) {
+    filter.ageGroups = age;
+  }
+
+  if (typeof gender === "string" && (PRODUCT_GENDERS as readonly string[]).includes(gender)) {
+    filter.gender = gender === "unisex" ? "unisex" : { $in: [gender, "unisex"] };
   }
 
   // Count total
@@ -230,7 +245,7 @@ const getFeaturedProducts = async (limit: number = 8): Promise<IProduct[]> => {
  * Create product (Admin)
  */
 // Optional fields an admin can clear by sending null or ""
-const CLEARABLE_FIELDS = ["comparePrice", "sku", "shortDescription"] as const;
+const CLEARABLE_FIELDS = ["comparePrice", "sku", "shortDescription", "gender"] as const;
 
 /**
  * Normalize admin product input: cleared optional fields become undefined

@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
-import { PRODUCT_SIZES, MAX_SIZE_LENGTH } from "../utils/constants";
+import { PRODUCT_SIZES, MAX_SIZE_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 
 // Re-export for backward compatibility
 export const VALID_SIZES = PRODUCT_SIZES;
@@ -40,6 +40,9 @@ export interface IProduct extends Document, IProductMethods {
   material?: string;
   careInstructions?: string;
   ageRecommendation?: string;
+  // Filterable on the storefront; empty/undefined means "not tagged"
+  ageGroups: string[];
+  gender?: "boy" | "girl" | "unisex";
   price: number;
   comparePrice?: number;
   category: Types.ObjectId;
@@ -162,6 +165,14 @@ const productSchema = new Schema<IProduct, IProductModel>(
       trim: true,
       maxlength: [100, "Age recommendation cannot exceed 100 characters"],
     },
+    ageGroups: {
+      type: [{ type: String, enum: { values: [...AGE_GROUPS], message: "Invalid age group" } }],
+      default: [],
+    },
+    gender: {
+      type: String,
+      enum: { values: [...PRODUCT_GENDERS], message: "Invalid gender" },
+    },
     price: {
       type: Number,
       required: [true, "Price is required"],
@@ -232,6 +243,7 @@ productSchema.index({ price: 1 });
 productSchema.index({ "ratings.average": -1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ soldCount: -1 });
+productSchema.index({ ageGroups: 1, isActive: 1 });
 productSchema.index(
   { name: "text", description: "text", shortDescription: "text" },
   { weights: { name: 10, shortDescription: 5, description: 1 } },

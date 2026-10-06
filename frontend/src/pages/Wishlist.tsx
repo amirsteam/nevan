@@ -100,7 +100,7 @@ const Wishlist = () => {
               {/* Remove button */}
               <button
                 onClick={() => handleRemove(product._id)}
-                className="absolute top-2 right-2 z-10 p-1.5 bg-white/90 rounded-full shadow hover:bg-red-50 transition-colors"
+                className="absolute top-2 right-2 z-10 p-1.5 bg-[var(--color-surface)]/90 rounded-full shadow hover:bg-red-50 transition-colors"
                 title="Remove from wishlist"
               >
                 <Trash2 className="w-4 h-4 text-red-500" />
@@ -109,7 +109,7 @@ const Wishlist = () => {
               <Link to={`/products/${product.slug}`}>
                 <div className="relative aspect-square overflow-hidden">
                   <img
-                    src={product.images?.[0]?.url || "/placeholder.jpg"}
+                    src={product.images?.[0]?.url || "/placeholder.svg"}
                     alt={product.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />

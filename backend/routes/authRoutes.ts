@@ -4,6 +4,7 @@
  */
 import express from "express";
 import * as authController from "../controllers/authController";
+import * as accountController from "../controllers/accountController";
 import { protect, optionalAuth } from "../middleware/auth";
 import {
   registerValidator,
@@ -12,6 +13,10 @@ import {
   verifyResetOtpValidator,
   resetPasswordValidator,
   changePasswordValidator,
+  updateProfileValidator,
+  createAddressValidator,
+  updateAddressValidator,
+  mongoIdValidator,
 } from "../middleware/validate";
 import {
   loginLimiter,
@@ -51,6 +56,13 @@ router.post(
 // Protected routes
 router.use(protect); // All routes below require authentication
 router.get("/me", authController.getMe);
+router.put("/me", updateProfileValidator, accountController.updateProfile);
+
+// Address book
+router.get("/addresses", accountController.getAddresses);
+router.post("/addresses", createAddressValidator, accountController.addAddress);
+router.put("/addresses/:addressId", mongoIdValidator("addressId"), updateAddressValidator, accountController.updateAddress);
+router.delete("/addresses/:addressId", mongoIdValidator("addressId"), accountController.deleteAddress);
 router.put("/change-password", changePasswordValidator, authController.changePassword);
 
 // Push notification token management

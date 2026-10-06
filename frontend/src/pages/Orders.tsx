@@ -1,171 +1,121 @@
 /**
  * Orders Page
- * Lists user's order history
+ * The customer's order history
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { ordersAPI } from "../api";
 import { formatPrice, formatDate, populated } from "../utils/helpers";
-import { Loader2, Package, ChevronRight, AlertCircle } from "lucide-react";
+import { imageUrl, onImageError } from "../utils/image";
+import { canPayOnline } from "../utils/payment";
+import { usePageTitle } from "../hooks/usePageTitle";
+import { OrderStatusBadge } from "../components/ui/Badge";
+import { OrderItemSkeleton, LoadingRegion } from "../components/ui/Skeleton";
+import EmptyState from "../components/ui/EmptyState";
+import Breadcrumb from "../components/ui/Breadcrumb";
+import PayNowButton from "../components/PayNowButton";
 import type { IOrder, IOrderItem } from "../types";
 
 const Orders = () => {
+  usePageTitle("My orders");
   const [orders, setOrders] = useState<IOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const response = await ordersAPI.getMyOrders();
-        setOrders(response.data.orders);
-      } catch (err) {
-        console.error("Failed to fetch orders:", err);
-        setError("Failed to load your orders. Please try again later.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrders();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const response = await ordersAPI.getMyOrders();
+      setOrders(response.data.orders);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case "delivered":
-        return "bg-green-100 text-green-800";
-      case "processing":
-        return "bg-blue-100 text-blue-800";
-      case "shipped":
-        return "bg-purple-100 text-purple-800";
-      case "cancelled":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container-app py-12 text-center">
-        <AlertCircle className="w-12 h-12 text-[var(--color-error)] mx-auto mb-4" />
-        <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
-        <p className="text-[var(--color-text-muted)] mb-6">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="btn btn-primary"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
-    <div className="container-app py-8">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
-        <Package className="w-6 h-6" />
-        My Orders
-      </h1>
+    <div className="container-app py-6 md:py-8">
+      <Breadcrumb items={[{ label: "Account", path: "/profile" }, { label: "Orders" }]} className="mb-5" />
+      <h1 className="text-2xl md:text-3xl font-bold mb-6">My orders</h1>
 
-      {orders.length === 0 ? (
-        <div className="text-center py-12 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-          <Package className="w-12 h-12 text-[var(--color-text-muted)] mx-auto mb-4" />
-          <h2 className="text-xl font-medium mb-2">No orders yet</h2>
-          <p className="text-[var(--color-text-muted)] mb-6">
-            You haven't placed any orders yet. Start shopping to see your orders
-            here.
-          </p>
-          <Link to="/products" className="btn btn-primary">
-            Start Shopping
-          </Link>
-        </div>
+      {loading ? (
+        <LoadingRegion label="Loading your orders" className="space-y-4">
+          <OrderItemSkeleton />
+          <OrderItemSkeleton />
+          <OrderItemSkeleton />
+        </LoadingRegion>
+      ) : error ? (
+        <EmptyState
+          type="generic"
+          title="Couldn't load your orders"
+          description="Please check your connection and try again."
+          actionLabel="Try again"
+          onAction={load}
+        />
+      ) : orders.length === 0 ? (
+        <EmptyState type="orders" />
       ) : (
-        <div className="space-y-4">
-          {orders.map((order) => (
-            <div
-              key={order._id}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg overflow-hidden hover:shadow-md transition-shadow"
-            >
-              <div className="p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <ul className="space-y-4">
+          {orders.map((order) => {
+            const status = order.orderStatus ?? order.status;
+            const number = order.orderNumber || order._id.slice(-6).toUpperCase();
+            return (
+              <li key={order._id} className="card p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                   <div>
+                    <p className="font-semibold">
+                      <Link to={`/orders/${order._id}`} className="hover:text-[var(--color-primary)]">
+                        Order #{number}
+                      </Link>
+                    </p>
                     <p className="text-sm text-[var(--color-text-muted)]">
-                      Order ID
-                    </p>
-                    <p className="font-mono font-medium">
-                      #{order.orderNumber || order._id.slice(-6).toUpperCase()}
+                      {formatDate(order.createdAt)} · {order.items.length} {order.items.length === 1 ? "item" : "items"} ·{" "}
+                      <span className="font-medium text-[var(--color-text)]">{formatPrice(order.total ?? order.pricing?.total ?? 0)}</span>
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <p className="text-sm text-[var(--color-text-muted)]">
-                        Date placed
-                      </p>
-                      <p className="font-medium">
-                        {formatDate(order.createdAt)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-[var(--color-text-muted)]">
-                        Total amount
-                      </p>
-                      <p className="font-bold text-[var(--color-primary)]">
-                        {formatPrice(order.total ?? order.pricing?.total ?? 0)}
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-medium uppercase ${getStatusColor(order.orderStatus)}`}
-                    >
-                      {order.orderStatus}
-                    </span>
-                  </div>
+                  {status && <OrderStatusBadge status={status} size="sm" />}
                 </div>
 
-                <div className="border-t border-[var(--color-border)] pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex -space-x-2 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex -space-x-2" aria-hidden="true">
                     {order.items.slice(0, 4).map((item: IOrderItem) => (
                       <img
                         key={item._id || populated(item.product)?._id || item.name}
-                        src={
-                          item.image ||
-                          populated(item.product)?.images?.[0]?.url ||
-                          "/placeholder.jpg"
-                        }
-                        alt={item.name}
-                        className="inline-block h-10 w-10 rounded-full ring-2 ring-white object-cover"
-                        title={item.name}
+                        src={imageUrl(item.image || populated(item.product)?.images?.[0]?.url, 80)}
+                        alt=""
+                        onError={onImageError}
+                        className="h-11 w-11 rounded-full ring-2 ring-[var(--color-surface)] object-cover bg-[var(--color-surface-muted)]"
                       />
                     ))}
                     {order.items.length > 4 && (
-                      <div className="flex items-center justify-center h-10 w-10 rounded-full ring-2 ring-white bg-gray-100 text-xs font-medium text-gray-600">
+                      <span className="flex items-center justify-center h-11 w-11 rounded-full ring-2 ring-[var(--color-surface)] bg-[var(--color-surface-muted)] text-xs font-medium text-[var(--color-text-muted)]">
                         +{order.items.length - 4}
-                      </div>
+                      </span>
                     )}
                   </div>
-
-                  <Link
-                    to={`/orders/${order._id}`}
-                    className="btn btn-secondary text-sm flex items-center gap-2 w-full sm:w-auto justify-center"
-                  >
-                    View Details
-                    <ChevronRight className="w-4 h-4" />
-                  </Link>
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    {canPayOnline(order) && <PayNowButton order={order} className="text-sm flex-1 sm:flex-none" />}
+                    <Link
+                      to={`/orders/${order._id}`}
+                      className="btn btn-secondary text-sm flex-1 sm:flex-none"
+                      aria-label={`View order #${number}`}
+                    >
+                      View order
+                      <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

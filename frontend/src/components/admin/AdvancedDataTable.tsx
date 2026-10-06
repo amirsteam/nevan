@@ -322,7 +322,7 @@ export function AdvancedDataTable<T extends object>({
                     className="fixed inset-0 z-10"
                     onClick={() => setShowColumnSettings(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-56 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-2">
+                  <div className="absolute right-0 mt-2 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-2">
                     <div className="px-3 py-2 border-b border-[var(--color-border)] font-medium text-sm">
                       Toggle Columns
                     </div>
@@ -372,7 +372,7 @@ export function AdvancedDataTable<T extends object>({
                     className="fixed inset-0 z-10"
                     onClick={() => setShowExportDropdown(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-40 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-1">
+                  <div className="absolute right-0 mt-2 w-40 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-lg z-20 py-1">
                     <button
                       onClick={() => {
                         handleExport("csv");
@@ -505,7 +505,7 @@ export function AdvancedDataTable<T extends object>({
                               header.column.setFilterValue(e.target.value)
                             }
                             placeholder="Filter..."
-                            className="w-full px-2 py-1 text-xs border border-[var(--color-border)] rounded bg-[var(--color-bg-elevated)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                            className="w-full px-2 py-1 text-xs border border-[var(--color-border)] rounded bg-[var(--color-surface)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
                             onClick={(e) => e.stopPropagation()}
                           />
                         )}
@@ -551,7 +551,7 @@ export function AdvancedDataTable<T extends object>({
                   className={`
                                         border-b border-[var(--color-border)] last:border-0
                                         ${striped && index % 2 === 1 ? "bg-[var(--color-bg)]" : ""}
-                                        ${onRowClick ? "cursor-pointer hover:bg-[var(--color-bg-elevated)]" : "hover:bg-[var(--color-bg)]"}
+                                        ${onRowClick ? "cursor-pointer hover:bg-[var(--color-surface)]" : "hover:bg-[var(--color-bg)]"}
                                         ${row.getIsSelected() ? "bg-[var(--color-primary)]/5" : ""}
                                         transition-colors
                                     `}
@@ -652,7 +652,7 @@ export function AdvancedDataTable<T extends object>({
                       onClick={() => table.setPageIndex(pageNum as number)}
                       className={`min-w-[32px] h-8 rounded text-sm font-medium ${
                         table.getState().pagination.pageIndex === pageNum
-                          ? "bg-[var(--color-primary)] text-white"
+                          ? "bg-[var(--color-primary)] text-[var(--color-on-primary)]"
                           : "hover:bg-[var(--color-bg)]"
                       }`}
                     >

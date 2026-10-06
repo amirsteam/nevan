@@ -1,326 +1,276 @@
 /**
  * Order Detail Page
- * Shows full details of a specific order
+ * Progress stepper, items, totals, delivery address, payment, and help
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ordersAPI } from "../api";
-import { formatPrice, formatDate, getErrorMessage, PROVINCES } from "../utils/helpers";
-import type { IOrder } from "../types";
-import PayNowButton from "../components/PayNowButton";
-import { canPayOnline } from "../utils/payment";
-import {
-  Loader2,
-  ArrowLeft,
-  MapPin,
-  CreditCard,
-  Package,
-  Truck,
-  AlertTriangle,
-} from "lucide-react";
 import toast from "react-hot-toast";
+import { ArrowLeft, MapPin, CreditCard, Package, MessageCircle, AlertTriangle, Clock } from "lucide-react";
+import { ordersAPI } from "../api";
+import { formatPrice, formatDate, getErrorMessage } from "../utils/helpers";
+import { imageUrl, onImageError } from "../utils/image";
+import { PROVINCE_NAMES } from "../utils/nepal";
+import { canPayOnline } from "../utils/payment";
+import { useAppDispatch } from "../store/hooks";
+import { openChat } from "../store/chatSlice";
+import { usePageTitle } from "../hooks/usePageTitle";
+import PayNowButton from "../components/PayNowButton";
+import OrderStatusStepper from "../components/OrderStatusStepper";
+import { OrderStatusBadge, PaymentStatusBadge } from "../components/ui/Badge";
+import { ConfirmModal } from "../components/ui/Modal";
+import { LoadingRegion, Skeleton } from "../components/ui/Skeleton";
+import EmptyState from "../components/ui/EmptyState";
+import type { IOrder } from "../types";
+
+const PAYMENT_LABELS: Record<string, string> = { cod: "Cash on delivery", esewa: "eSewa", khalti: "Khalti" };
 
 const OrderDetail = () => {
   const { id = "" } = useParams();
+  const dispatch = useAppDispatch();
   const [order, setOrder] = useState<IOrder | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
-  useEffect(() => {
-    const fetchOrder = async () => {
-      try {
-        const response = await ordersAPI.getOrder(id);
-        setOrder(response.data.order);
-      } catch (error) {
-        console.error("Failed to fetch order:", error);
-        toast.error("Failed to load order details");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchOrder();
-  }, [id]);
-
-  const handleCancelOrder = async () => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) return;
-
-    setActionLoading(true);
+  const load = useCallback(async () => {
     try {
-      await ordersAPI.cancelOrder(id, "User requested cancellation");
-      toast.success("Order cancelled successfully");
-      // Refresh order
       const response = await ordersAPI.getOrder(id);
       setOrder(response.data.order);
-    } catch (error) {
-      console.error("Failed to cancel order:", error);
-      toast.error(getErrorMessage(error, "Failed to cancel order"));
+    } catch {
+      setOrder(null);
     } finally {
-      setActionLoading(false);
+      setLoading(false);
     }
-  };
+  }, [id]);
 
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case "delivered":
-        return "bg-green-100 text-green-800";
-      case "processing":
-        return "bg-blue-100 text-blue-800";
-      case "shipped":
-        return "bg-purple-100 text-purple-800";
-      case "cancelled":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const orderNumber = order ? order.orderNumber || order._id.slice(-6).toUpperCase() : "";
+  usePageTitle(order ? `Order #${orderNumber}` : "Order");
+
+  const handleCancelOrder = async () => {
+    setCancelling(true);
+    try {
+      await ordersAPI.cancelOrder(id, "Cancelled by customer");
+      toast.success("Order cancelled");
+      setConfirmCancel(false);
+      await load();
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Couldn't cancel this order"));
+    } finally {
+      setCancelling(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
-      </div>
+      <LoadingRegion label="Loading order" className="container-app py-8 space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <div className="grid lg:grid-cols-3 gap-6">
+          <Skeleton className="h-64 lg:col-span-2 rounded-xl" />
+          <Skeleton className="h-64 rounded-xl" />
+        </div>
+      </LoadingRegion>
     );
   }
 
   if (!order) {
     return (
-      <div className="container-app py-12 text-center">
-        <AlertTriangle className="w-12 h-12 text-[var(--color-error)] mx-auto mb-4" />
-        <h2 className="text-xl font-bold mb-2">Order Not Found</h2>
-        <Link to="/orders" className="btn btn-primary mt-4">
-          Back to Orders
-        </Link>
+      <div className="container-app py-12">
+        <EmptyState
+          type="orders"
+          headingLevel="h1"
+          title="We couldn't find that order"
+          description="It may belong to another account, or the link is incomplete."
+          actionLabel="View my orders"
+          actionLink="/orders"
+        />
       </div>
     );
   }
 
+  const status = order.orderStatus ?? order.status;
+  const paymentMethod = order.payment?.method ?? order.paymentMethod;
+  const paymentStatus = order.payment?.status ?? order.paymentStatus;
+  const subtotal = order.subtotal ?? order.pricing?.subtotal ?? 0;
+  const shippingCost = order.shippingCost ?? order.pricing?.shippingCost ?? 0;
+  const total = order.total ?? order.pricing?.total ?? 0;
+  const canCancel = order.canBeCancelled && !(paymentStatus === "paid" && paymentMethod !== "cod");
+  const awaitingPayment = canPayOnline(order);
+
   return (
-    <div className="container-app py-8">
-      <Link
-        to="/orders"
-        className="inline-flex items-center text-[var(--color-text-muted)] hover:text-[var(--color-primary)] mb-6"
-      >
-        <ArrowLeft className="w-4 h-4 mr-1" />
-        Back to Orders
+    <div className="container-app py-6 md:py-8">
+      <Link to="/orders" className="inline-flex items-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] mb-5">
+        <ArrowLeft className="w-4 h-4 mr-1" aria-hidden="true" />
+        All orders
       </Link>
 
-      <div className="flex flex-col md:flex-row gap-6 mb-8">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-bold">
-              Order #{order.orderNumber || order._id.slice(-6).toUpperCase()}
-            </h1>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium uppercase ${getStatusColor(order.orderStatus)}`}
-            >
-              {order.orderStatus}
-            </span>
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+        <div>
+          <div className="flex flex-wrap items-center gap-3 mb-1">
+            <h1 className="text-2xl md:text-3xl font-bold">Order #{orderNumber}</h1>
+            {status && <OrderStatusBadge status={status} />}
           </div>
-          <p className="text-[var(--color-text-muted)]">
-            Placed on {formatDate(order.createdAt)}
-          </p>
+          <p className="text-[var(--color-text-muted)]">Placed on {formatDate(order.createdAt)}</p>
         </div>
-
-        <div className="flex flex-wrap gap-3 items-start">
-          <PayNowButton order={order} />
-          {/* Paid eSewa/Khalti orders need a refund, so the shop cancels those */}
-          {order.canBeCancelled &&
-            !(order.paymentStatus === "paid" && order.paymentMethod !== "cod") && (
-              <button
-                onClick={handleCancelOrder}
-                disabled={actionLoading}
-                className="btn btn-outline text-red-500 border-red-200 hover:bg-red-50"
-              >
-                {actionLoading ? "Cancelling..." : "Cancel Order"}
-              </button>
-            )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => dispatch(openChat({ draft: `Hi! I have a question about order #${orderNumber}: ` }))}
+            className="btn btn-secondary text-sm"
+          >
+            <MessageCircle className="w-4 h-4" aria-hidden="true" />
+            Need help?
+          </button>
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => setConfirmCancel(true)}
+              className="btn btn-secondary text-sm text-[var(--color-error)] hover:border-[var(--color-error)]"
+            >
+              Cancel order
+            </button>
+          )}
         </div>
       </div>
 
-      {canPayOnline(order) && (
-        <div className="card p-4 mb-6 bg-[var(--color-warning)]/10 border-[var(--color-warning)]/30 text-sm">
-          Payment for this order hasn't been received yet. Unpaid online orders are
-          cancelled automatically after 30 minutes.
+      {awaitingPayment && (
+        <div role="status" className="card p-4 md:p-5 mb-6 border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 flex flex-col sm:flex-row sm:items-center gap-4">
+          <Clock className="w-6 h-6 text-amber-700 dark:text-amber-300 shrink-0" aria-hidden="true" />
+          <div className="flex-1 text-sm">
+            <p className="font-semibold text-amber-900 dark:text-amber-100">Payment not received yet</p>
+            <p className="text-amber-900/80 dark:text-amber-100/80">
+              Complete the {PAYMENT_LABELS[paymentMethod] || paymentMethod} payment to confirm your order. Unpaid online orders are cancelled automatically after 30
+              minutes.
+            </p>
+          </div>
+          <PayNowButton order={order} className="shrink-0" />
         </div>
       )}
-      {order.orderStatus === "cancelled" && order.cancellationReason && (
-        <div className="card p-4 mb-6 text-sm text-[var(--color-text-muted)]">
-          Cancelled: {order.cancellationReason}
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content - Items */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-[var(--color-border)]">
-              <h2 className="font-semibold flex items-center gap-2">
-                <Package className="w-5 h-5" />
-                Order Items
-              </h2>
-            </div>
-            <div className="divide-y divide-[var(--color-border)]">
-              {order.items.map((item) => (
-                <div key={item._id} className="p-6 flex gap-4">
-                  <div className="w-20 h-20 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
-                    <img
-                      src={item.image || "/placeholder.jpg"}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    {item.slug ? (
-                      <Link
-                        to={`/products/${item.slug}`}
-                        className="font-medium hover:text-[var(--color-primary)] block mb-1"
-                      >
-                        {item.name}
-                      </Link>
-                    ) : (
-                      <p className="font-medium mb-1">{item.name}</p>
-                    )}
-                    {item.variant && (
-                      <div className="text-sm text-[var(--color-text-muted)] mb-2">
-                        Size: {item.variant.size} • Color: {item.variant.color}
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-[var(--color-text-muted)]">
-                        Qty: {item.quantity} × {formatPrice(item.price)}
-                      </span>
-                      <span className="font-medium">
-                        {formatPrice(item.price * item.quantity)}
-                      </span>
-                    </div>
+      <section className="card p-5 md:p-6 mb-6" aria-labelledby="progress-heading">
+        <h2 id="progress-heading" className="sr-only">
+          Order progress
+        </h2>
+        <OrderStatusStepper order={order} />
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+        <section className="lg:col-span-2 card overflow-hidden" aria-labelledby="items-heading">
+          <h2 id="items-heading" className="px-5 md:px-6 py-4 border-b border-[var(--color-border)] font-semibold flex items-center gap-2 font-sans">
+            <Package className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+            Items ({order.items.length})
+          </h2>
+          <ul className="divide-y divide-[var(--color-border)]">
+            {order.items.map((item) => (
+              <li key={item._id} className="p-4 md:p-5 flex gap-4">
+                <img
+                  src={imageUrl(item.image, 160)}
+                  alt=""
+                  onError={onImageError}
+                  className="w-20 h-20 shrink-0 rounded-lg object-cover bg-[var(--color-surface-muted)]"
+                />
+                <div className="flex-1 min-w-0">
+                  {item.slug ? (
+                    <Link to={`/products/${item.slug}`} className="font-medium hover:text-[var(--color-primary)] line-clamp-2">
+                      {item.name}
+                    </Link>
+                  ) : (
+                    <p className="font-medium line-clamp-2">{item.name}</p>
+                  )}
+                  {item.variant && (
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {item.variant.size} · {item.variant.color}
+                    </p>
+                  )}
+                  <div className="flex justify-between items-center mt-1 text-sm">
+                    <span className="text-[var(--color-text-muted)]">
+                      {item.quantity} × {formatPrice(item.price)}
+                    </span>
+                    <span className="font-medium">{formatPrice(item.price * item.quantity)}</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </li>
+            ))}
+          </ul>
+          {order.customerNotes && (
+            <p className="px-5 md:px-6 py-4 border-t border-[var(--color-border)] text-sm">
+              <span className="font-medium">Your note:</span> <span className="text-[var(--color-text-muted)]">{order.customerNotes}</span>
+            </p>
+          )}
+        </section>
 
-          {/* Timeline / Tracking (Placeholder logic as simplified timeline) */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-6">
-            <h2 className="font-semibold flex items-center gap-2 mb-4">
-              <Truck className="w-5 h-5" />
-              Order Status:{" "}
-              {(order.orderStatus || "unknown").charAt(0).toUpperCase() +
-                (order.orderStatus || "unknown").slice(1)}
-            </h2>
-            <div className="relative pl-4 border-l-2 border-[var(--color-border)] space-y-6">
-              {/* Simplified steps */}
-              <div className="relative">
-                <span className="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-[var(--color-primary)] border-2 border-white"></span>
-                <p className="font-medium">Order Placed</p>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {formatDate(order.createdAt)}
-                </p>
-              </div>
-              {order.orderStatus !== "pending" &&
-                order.orderStatus !== "cancelled" && (
-                  <div className="relative">
-                    <span className="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-[var(--color-primary)] border-2 border-white"></span>
-                    <p className="font-medium">Processing</p>
-                  </div>
-                )}
-              {order.orderStatus === "shipped" && (
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-[var(--color-primary)] border-2 border-white"></span>
-                  <p className="font-medium">Shipped</p>
-                </div>
-              )}
-              {order.orderStatus === "delivered" && (
-                <div className="relative">
-                  <span className="absolute -left-[21px] top-1 w-4 h-4 rounded-full bg-green-500 border-2 border-white"></span>
-                  <p className="font-medium text-green-600">Delivered</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar Info */}
         <div className="space-y-6">
-          {/* Summary */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-6">
-            <h2 className="font-semibold mb-4">Order Summary</h2>
-            <div className="space-y-3 text-sm">
+          <section className="card p-5 md:p-6" aria-labelledby="summary-heading">
+            <h2 id="summary-heading" className="font-semibold mb-4 font-sans">
+              Summary
+            </h2>
+            <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">Subtotal</span>
-                <span>
-                  {formatPrice(order.subtotal ?? order.pricing?.subtotal ?? 0)}
-                </span>
+                <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
+                <dd>{formatPrice(subtotal)}</dd>
               </div>
               <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">Shipping</span>
-                <span>
-                  {(order.shippingCost ?? order.pricing?.shippingCost ?? 0) ===
-                  0
-                    ? "Free"
-                    : formatPrice(
-                        order.shippingCost ?? order.pricing?.shippingCost ?? 0,
-                      )}
-                </span>
+                <dt className="text-[var(--color-text-muted)]">Shipping</dt>
+                <dd>{shippingCost === 0 ? "Free" : formatPrice(shippingCost)}</dd>
               </div>
               <div className="border-t border-[var(--color-border)] pt-3 flex justify-between font-bold text-lg">
-                <span>Total</span>
-                <span className="text-[var(--color-primary)]">
-                  {formatPrice(order.total ?? order.pricing?.total ?? 0)}
-                </span>
+                <dt>Total</dt>
+                <dd className="text-[var(--color-primary)]">{formatPrice(total)}</dd>
               </div>
-            </div>
-          </div>
+            </dl>
+          </section>
 
-          {/* Shipping Address */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-6">
-            <h2 className="font-semibold flex items-center gap-2 mb-4">
-              <MapPin className="w-5 h-5" />
-              Shipping Address
+          <section className="card p-5 md:p-6" aria-labelledby="address-heading">
+            <h2 id="address-heading" className="font-semibold flex items-center gap-2 mb-3 font-sans">
+              <MapPin className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+              Delivery address
             </h2>
-            <address className="not-italic text-sm text-[var(--color-text-muted)] space-y-1">
-              <p className="font-medium text-[var(--color-text)]">
-                {order.shippingAddress.name || order.shippingAddress.fullName}
-              </p>
+            <address className="not-italic text-sm text-[var(--color-text-muted)] space-y-0.5">
+              <p className="font-medium text-[var(--color-text)]">{order.shippingAddress.name || order.shippingAddress.fullName}</p>
               <p>{order.shippingAddress.street}</p>
-              <p>
-                {[order.shippingAddress.city, order.shippingAddress.district]
-                  .filter(Boolean)
-                  .join(", ")}{" "}
-                {order.shippingAddress.postalCode}
-              </p>
-              {order.shippingAddress.province && (
-                <p>
-                  {PROVINCES.find((p) => p.id === order.shippingAddress.province)?.name}
-                </p>
-              )}
-              <p className="mt-2 text-[var(--color-text)]">
-                {order.shippingAddress.phone}
-              </p>
+              {order.shippingAddress.landmark && <p>Near {order.shippingAddress.landmark}</p>}
+              <p>{[order.shippingAddress.city, order.shippingAddress.district].filter(Boolean).join(", ")}</p>
+              {order.shippingAddress.province && <p>{PROVINCE_NAMES[order.shippingAddress.province]} Province</p>}
+              <p className="pt-1 text-[var(--color-text)]">{order.shippingAddress.phone}</p>
             </address>
-          </div>
+          </section>
 
-          {/* Payment Info */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-6">
-            <h2 className="font-semibold flex items-center gap-2 mb-4">
-              <CreditCard className="w-5 h-5" />
-              Payment Method
+          <section className="card p-5 md:p-6" aria-labelledby="payment-heading">
+            <h2 id="payment-heading" className="font-semibold flex items-center gap-2 mb-3 font-sans">
+              <CreditCard className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+              Payment
             </h2>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="font-medium capitalize">{order.paymentMethod}</p>
-              <span
-                className={`px-2 py-0.5 rounded text-xs ${order.paymentStatus === "paid" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}
-              >
-                {order.paymentStatus}
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{PAYMENT_LABELS[paymentMethod] || paymentMethod}</p>
+              {paymentStatus && <PaymentStatusBadge status={paymentStatus} size="sm" />}
             </div>
             {order.payment?.transactionId && (
-              <p className="text-xs text-[var(--color-text-muted)] break-all">
-                Transaction ID: {order.payment.transactionId}
+              <p className="text-xs text-[var(--color-text-muted)] break-all mt-2">Transaction ID: {order.payment.transactionId}</p>
+            )}
+            {status === "cancelled" && paymentStatus === "paid" && paymentMethod !== "cod" && (
+              <p className="mt-3 flex items-start gap-2 text-xs text-[var(--color-warning)]">
+                <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                We'll refund this payment. Chat with us if you have questions.
               </p>
             )}
-          </div>
+          </section>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmCancel}
+        onClose={() => setConfirmCancel(false)}
+        onConfirm={handleCancelOrder}
+        isLoading={cancelling}
+        title="Cancel this order?"
+        message={`Order #${orderNumber} will be cancelled and the items released. This can't be undone.`}
+        confirmText="Cancel order"
+        cancelText="Keep order"
+      />
     </div>
   );
 };

@@ -8,6 +8,7 @@ import * as productController from "../controllers/productController";
 import * as categoryController from "../controllers/categoryController";
 import * as orderController from "../controllers/orderController";
 import * as paymentController from "../controllers/paymentController";
+import * as contactController from "../controllers/contactController";
 import asyncHandler from "../utils/asyncHandler";
 import { protect } from "../middleware/auth";
 import { adminOnly } from "../middleware/role";
@@ -23,8 +24,14 @@ import Order from "../models/Order";
 import User from "../models/User";
 import Product from "../models/Product";
 import Category from "../models/Category";
-import { paginate } from "../utils/helpers";
+import { paginate, escapeRegex } from "../utils/helpers";
 import { disconnectUserSockets } from "../config/socketRegistry";
+import { LOW_STOCK_THRESHOLD } from "../utils/constants";
+import * as orderService from "../services/orderService";
+import AppError from "../utils/AppError";
+import ContactMessage from "../models/ContactMessage";
+
+const REVENUE_STATUSES = ["confirmed", "processing", "shipped", "delivered"];
 
 const router = express.Router();
 
@@ -36,8 +43,18 @@ router.use(adminOnly);
 router.get(
   "/dashboard",
   asyncHandler(async (req: Request, res: Response) => {
-    const [orderStats, userCount, productCount, recentOrders] =
-      await Promise.all([
+    const since30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [
+      orderStats,
+      userCount,
+      productCount,
+      recentOrders,
+      lowStockProducts,
+      lowStockCount,
+      refundRequired,
+      topProducts,
+      unreadMessages,
+    ] = await Promise.all([
         (Order as any).getDashboardStats(),
         User.countDocuments({ isActive: true }),
         Product.countDocuments({ isActive: true }),
@@ -48,6 +65,29 @@ router.get(
           .select(
             "orderNumber status payment pricing items shippingAddress createdAt user",
           ),
+        Product.find({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } })
+          .sort({ stock: 1, name: 1 })
+          .limit(8)
+          .select("name slug stock images variants.size variants.color variants.stock"),
+        Product.countDocuments({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } }),
+        Order.countDocuments({ status: "cancelled", "payment.status": "paid" }),
+        Order.aggregate([
+          { $match: { createdAt: { $gte: since30Days }, status: { $in: REVENUE_STATUSES } } },
+          { $unwind: "$items" },
+          {
+            $group: {
+              _id: "$items.product",
+              name: { $first: "$items.name" },
+              slug: { $first: "$items.slug" },
+              image: { $first: "$items.image" },
+              quantity: { $sum: "$items.quantity" },
+              revenue: { $sum: "$items.subtotal" },
+            },
+          },
+          { $sort: { quantity: -1, revenue: -1 } },
+          { $limit: 5 },
+        ]),
+        ContactMessage.countDocuments({ isRead: false }),
       ]);
 
     // Map recentOrders to include flattened fields for frontend compatibility
@@ -71,6 +111,37 @@ router.get(
         totalUsers: userCount,
         totalProducts: productCount,
         recentOrders: mappedOrders,
+        lowStockThreshold: LOW_STOCK_THRESHOLD,
+        lowStockCount,
+        lowStockProducts: lowStockProducts.map((p: any) => ({
+          _id: p._id,
+          name: p.name,
+          slug: p.slug,
+          stock: p.stock,
+          image: p.images?.find((img: any) => img.isPrimary)?.url || p.images?.[0]?.url,
+          // Variants that are low on their own, so admins know what to restock
+          lowVariants: (p.variants || [])
+            .filter((v: any) => v.stock <= LOW_STOCK_THRESHOLD)
+            .map((v: any) => ({ size: v.size, color: v.color, stock: v.stock })),
+        })),
+        // Things an admin should act on, each linked to a filtered list
+        needsAttention: {
+          pendingOrders: orderStats.ordersByStatus?.pending || 0,
+          toShip:
+            (orderStats.ordersByStatus?.confirmed || 0) +
+            (orderStats.ordersByStatus?.processing || 0),
+          refundRequired,
+          lowStock: lowStockCount,
+          unreadMessages,
+        },
+        topProducts: topProducts.map((p: any) => ({
+          _id: p._id,
+          name: p.name,
+          slug: p.slug,
+          image: p.image,
+          quantity: p.quantity,
+          revenue: p.revenue,
+        })),
       },
     });
   }),
@@ -82,11 +153,11 @@ router.get(
   paginationValidator,
   asyncHandler(async (req: Request, res: Response) => {
     // Get all products including inactive for admin
-    const { page = 1, limit = 20, search, category, isActive } = req.query;
+    const { page = 1, limit = 20, search, category, isActive, stock } = req.query;
 
     const filter: Record<string, unknown> = {};
     if (typeof search === "string" && search.trim()) {
-      const pattern = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const pattern = new RegExp(escapeRegex(search.trim()), "i");
       filter.$or = [{ name: pattern }, { sku: pattern }];
     }
     if (typeof category === "string" && mongoose.Types.ObjectId.isValid(category)) {
@@ -94,6 +165,11 @@ router.get(
     }
     if (isActive === "true" || isActive === "false") {
       filter.isActive = isActive === "true";
+    }
+    if (stock === "low") {
+      filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
+    } else if (stock === "out") {
+      filter.stock = { $lte: 0 };
     }
 
     const total = await Product.countDocuments(filter);
@@ -214,6 +290,37 @@ router.post(
 
 // ==================== ORDERS ====================
 router.get("/orders", paginationValidator, orderController.getAllOrders);
+// Before "/orders/:id" routes
+router.post(
+  "/orders/bulk-status",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { orderIds, status, note } = req.body;
+    if (
+      !Array.isArray(orderIds) ||
+      orderIds.length === 0 ||
+      orderIds.length > 100 ||
+      !orderIds.every((id: unknown) => typeof id === "string" && mongoose.Types.ObjectId.isValid(id))
+    ) {
+      throw new AppError("orderIds must be a list of 1-100 order ids", 400);
+    }
+    if (!["confirmed", "processing", "shipped", "delivered", "cancelled"].includes(status)) {
+      throw new AppError("Invalid status", 400);
+    }
+
+    const result = await orderService.bulkUpdateOrderStatus(
+      orderIds,
+      status,
+      String((req.user as any)._id),
+      typeof note === "string" ? note.slice(0, 500) : "",
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: `${result.updated.length} updated, ${result.failed.length} failed`,
+      data: result,
+    });
+  }),
+);
 router.get("/orders/:id", mongoIdValidator("id"), orderController.getOrder);
 router.put(
   "/orders/:id/status",
@@ -226,9 +333,14 @@ router.get(
   "/users",
   paginationValidator,
   asyncHandler(async (req: Request, res: Response) => {
-    const { page = 1, limit = 20, role } = req.query;
+    const { page = 1, limit = 20, role, search, isActive } = req.query;
     const filter: any = {};
-    if (role) filter.role = role;
+    if (role === "customer" || role === "admin") filter.role = role;
+    if (isActive === "true" || isActive === "false") filter.isActive = isActive === "true";
+    if (typeof search === "string" && search.trim()) {
+      const pattern = new RegExp(escapeRegex(search.trim().slice(0, 100)), "i");
+      filter.$or = [{ name: pattern }, { email: pattern }, { phone: pattern }];
+    }
 
     const total = await User.countDocuments(filter);
     const pagination = paginate(Number(page), Number(limit), total);
@@ -307,6 +419,15 @@ router.put(
     });
   }),
 );
+
+// ==================== CONTACT / NEWSLETTER ====================
+router.get("/contact-messages", paginationValidator, contactController.getContactMessages);
+router.put(
+  "/contact-messages/:id",
+  mongoIdValidator("id"),
+  contactController.updateContactMessage,
+);
+router.get("/subscribers", paginationValidator, contactController.getSubscribers);
 
 // ==================== PAYMENTS ====================
 router.post("/payments/cod-collected", paymentController.markCODCollected);

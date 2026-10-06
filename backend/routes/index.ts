@@ -13,6 +13,8 @@ import adminRoutes from "./adminRoutes";
 import wishlistRoutes from "./wishlistRoutes";
 import chatRoutes from "./chatRoutes";
 import notificationRoutes from "./notificationRoutes";
+import { contactRouter, newsletterRouter } from "./contactRoutes";
+import { getFeaturedReviews } from "../controllers/reviewController";
 
 const router = express.Router();
 
@@ -27,6 +29,9 @@ router.use("/admin", adminRoutes);
 router.use("/wishlist", wishlistRoutes);
 router.use("/chat", chatRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/contact", contactRouter);
+router.use("/newsletter", newsletterRouter);
+router.get("/reviews/featured", getFeaturedReviews);
 
 // Health check endpoint
 router.get("/health", (req: Request, res: Response) => {
