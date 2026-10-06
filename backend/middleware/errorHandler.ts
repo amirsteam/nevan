@@ -4,6 +4,7 @@
  */
 import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import AppError from "../utils/AppError";
+import { captureError } from "../utils/monitoring";
 
 interface MongooseError extends Error {
   path?: string;
@@ -129,6 +130,11 @@ const errorHandler: ErrorRequestHandler = (
 ): void => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || "error";
+
+  // Report unexpected failures (not 4xx client errors) to error monitoring
+  if (err.statusCode >= 500) {
+    captureError(err, { method: req.method, path: req.originalUrl });
+  }
 
   if (process.env.NODE_ENV === "development") {
     sendErrorDev(err, res);

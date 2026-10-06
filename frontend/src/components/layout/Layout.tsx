@@ -7,6 +7,7 @@ import Header from "./Header";
 import Footer from "./Footer";
 import AuthPromptModal from "../ui/AuthPromptModal";
 import ScrollToTop from "./ScrollToTop";
+import CartSync from "./CartSync";
 
 const Layout = (): React.ReactElement => {
   return (
@@ -18,6 +19,7 @@ const Layout = (): React.ReactElement => {
         Skip to content
       </a>
       <ScrollToTop />
+      <CartSync />
       <Header />
       <main id="main-content" className="flex-1">
         <Outlet />

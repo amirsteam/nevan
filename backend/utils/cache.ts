@@ -18,7 +18,8 @@ class MemoryCache {
     this.defaultTTL = defaultTTL * 1000;
 
     // Clean expired items every minute
-    setInterval(() => this.cleanup(), 60 * 1000);
+    // unref: the cleanup timer must not keep the process (or Jest) alive
+    setInterval(() => this.cleanup(), 60 * 1000).unref();
   }
 
   /**

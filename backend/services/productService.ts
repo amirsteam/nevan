@@ -10,6 +10,7 @@ import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
+import { PRODUCT_SIZES } from "../utils/constants";
 
 interface ProductsOptions {
   page?: number;
@@ -27,16 +28,32 @@ interface ProductsResult {
   pagination: PaginationResult;
 }
 
+interface VariantData {
+  _id?: string;
+  size: string;
+  color: string;
+  price?: number;
+  stock?: number;
+  image?: string | null;
+  sku?: string;
+}
+
 interface ProductData {
   name: string;
   description: string;
+  shortDescription?: string;
+  material?: string;
+  careInstructions?: string;
+  ageRecommendation?: string;
   price: number;
   comparePrice?: number;
   category: string;
   stock?: number;
   sku?: string;
   images?: any[];
-  variants?: any[];
+  variants?: VariantData[];
+  // Not stored: selects which existing image is primary
+  primaryImageId?: string;
   isFeatured?: boolean;
   isActive?: boolean;
 }
@@ -82,6 +99,23 @@ const cleanupCartsForProduct = async (productId: string): Promise<void> => {
     { $pull: { items: { product: new Types.ObjectId(productId) } } },
   );
 };
+
+// Sort options the storefront offers ("newest" kept as an alias); anything else
+// falls back to newest so clients can't sort on arbitrary fields
+const SORT_OPTIONS: Record<string, string> = {
+  "-createdAt": "-createdAt",
+  newest: "-createdAt",
+  createdAt: "createdAt",
+  price: "price",
+  "-price": "-price",
+  "-ratings.average": "-ratings.average",
+  "-soldCount": "-soldCount",
+};
+
+const resolveSort = (sort: unknown): string =>
+  typeof sort === "string" && Object.prototype.hasOwnProperty.call(SORT_OPTIONS, sort)
+    ? SORT_OPTIONS[sort]
+    : "-createdAt";
 
 /**
  * Get all products with filters and pagination
@@ -140,7 +174,7 @@ const getProducts = async (
 
   // Get products
   const products = await Product.find(filter)
-    .sort(sort)
+    .sort(resolveSort(sort))
     .skip(pagination.skip)
     .limit(pagination.itemsPerPage)
     .populate("category", "name slug")
@@ -195,6 +229,36 @@ const getFeaturedProducts = async (limit: number = 8): Promise<IProduct[]> => {
 /**
  * Create product (Admin)
  */
+// Optional fields an admin can clear by sending null or ""
+const CLEARABLE_FIELDS = ["comparePrice", "sku", "shortDescription"] as const;
+
+/**
+ * Normalize admin product input: cleared optional fields become undefined
+ * (so Mongoose unsets them) and variant sizes/colors are trimmed.
+ */
+const normalizeProductInput = <T extends Partial<ProductData>>(data: T): T => {
+  const normalized: any = { ...data };
+  for (const field of CLEARABLE_FIELDS) {
+    if (normalized[field] === null || normalized[field] === "") {
+      normalized[field] = undefined;
+    }
+  }
+  if (Array.isArray(normalized.variants)) {
+    normalized.variants = normalized.variants.map((v: VariantData) => ({
+      ...v,
+      size: String(v.size).trim(),
+      color: String(v.color).trim(),
+    }));
+  }
+  delete normalized.primaryImageId;
+  return normalized;
+};
+
+/** Featured products are cached; any create/update/delete may change them */
+const invalidateProductCaches = (): void => {
+  cache.deletePattern("featured_products_");
+};
+
 const createProduct = async (productData: ProductData): Promise<IProduct> => {
   // Verify category exists
   const category = await Category.findById(productData.category);
@@ -202,8 +266,27 @@ const createProduct = async (productData: ProductData): Promise<IProduct> => {
     throw new AppError("Category not found", 404);
   }
 
-  const product = await Product.create(productData);
+  const data = normalizeProductInput(productData);
+  // New products can't reference existing variant ids
+  data.variants = data.variants?.map(({ _id, ...variant }) => variant);
+
+  // Variant _id is a string here; Mongoose casts it
+  const product = await Product.create(data as unknown as Partial<IProduct>);
+  invalidateProductCaches();
   return product;
+};
+
+/**
+ * Size options for the admin product form: the built-in sizes plus custom
+ * sizes already used on other products (so admins reuse the same spelling).
+ */
+const getSizeOptions = async (): Promise<{ builtIn: string[]; custom: string[] }> => {
+  const used: string[] = await Product.distinct("variants.size");
+  const builtIn = [...PRODUCT_SIZES] as string[];
+  const custom = used
+    .filter((size) => size && !builtIn.includes(size))
+    .sort((a, b) => a.localeCompare(b));
+  return { builtIn, custom };
 };
 
 /**
@@ -226,15 +309,23 @@ const updateProduct = async (
     }
   }
 
+  const { primaryImageId } = updateData;
+  const data = normalizeProductInput(updateData);
+
   // Check for removed variants and clean up carts
-  if (updateData.variants) {
-    const currentVariantIds = new Set(
+  if (data.variants) {
+    const currentVariantIds = new Set<string>(
       (product as any).variants.map((v: any) => v._id.toString()),
     );
+    // Existing variants are matched by _id so their ids (referenced by carts) are
+    // kept; ids that don't belong to this product are treated as new variants.
+    data.variants = data.variants.map(({ _id, ...variant }) =>
+      _id && currentVariantIds.has(String(_id)) ? { _id, ...variant } : variant,
+    );
     const newVariantIds = new Set(
-      updateData.variants
-        .filter((v: any) => v._id) // Only existing variants have _id
-        .map((v: any) => v._id.toString()),
+      data.variants
+        .filter((v) => v._id)
+        .map((v) => String(v._id)),
     );
 
     // Find variants that are being removed
@@ -251,8 +342,20 @@ const updateProduct = async (
     }
   }
 
-  Object.assign(product, updateData);
+  Object.assign(product, data);
+
+  if (primaryImageId) {
+    const images = (product as any).images;
+    if (!images.id(primaryImageId)) {
+      throw new AppError("Primary image not found on this product", 400);
+    }
+    images.forEach((img: any) => {
+      img.isPrimary = img._id.toString() === String(primaryImageId);
+    });
+  }
+
   await product.save();
+  invalidateProductCaches();
 
   return product;
 };
@@ -280,8 +383,7 @@ const deleteProduct = async (
 
   await product.deleteOne();
 
-  // Invalidate featured products cache
-  cache.deletePattern("featured_products_");
+  invalidateProductCaches();
 
   return { message: "Product deleted successfully" };
 };
@@ -292,20 +394,36 @@ const deleteProduct = async (
 const addProductImages = async (
   productId: string,
   files: MulterFile[],
+  primaryIndex?: number,
 ): Promise<IProduct> => {
   const product = await Product.findById(productId);
   if (!product) {
     throw new AppError("Product not found", 404);
   }
 
+  const images = (product as any).images;
+  // An explicit primaryIndex (chosen in the admin form) wins; otherwise the
+  // first image becomes primary only if the product has none yet
+  const explicitPrimary =
+    primaryIndex !== undefined && primaryIndex >= 0 && primaryIndex < files.length;
+
+  if (explicitPrimary) {
+    images.forEach((img: any) => {
+      img.isPrimary = false;
+    });
+  }
+
   const newImages = files.map((file, index) => ({
     url: file.path,
     publicId: file.filename,
-    isPrimary: (product as any).images.length === 0 && index === 0,
+    isPrimary: explicitPrimary
+      ? index === primaryIndex
+      : images.length === 0 && index === 0,
   }));
 
-  (product as any).images.push(...newImages);
+  images.push(...newImages);
   await product.save();
+  invalidateProductCaches();
 
   return product;
 };
@@ -371,6 +489,7 @@ export {
   createProduct,
   updateProduct,
   deleteProduct,
+  getSizeOptions,
   addProductImages,
   deleteProductImage,
   uploadVariantImage,

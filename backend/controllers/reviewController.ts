@@ -51,7 +51,7 @@ export const getProductReviews: RequestHandler = asyncHandler(
  */
 export const createReview: RequestHandler = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const { productId } = req.params;
+    const productId = String(req.params.productId);
     const userId = req.user?._id;
 
     // Check product exists

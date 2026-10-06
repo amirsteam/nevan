@@ -12,6 +12,7 @@ const router = express.Router();
 router.get('/methods', paymentController.getPaymentMethods);
 router.get('/esewa/success', paymentController.esewaSuccess);
 router.get('/esewa/failure', paymentController.esewaFailure);
+router.get('/esewa/failure/:orderId', paymentController.esewaFailure);
 router.get('/khalti/callback', paymentController.khaltiCallback);
 
 // Protected routes

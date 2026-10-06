@@ -1,0 +1,12 @@
+# Secrets — templates are .env.example / env.production.example
+.env
+.env.*
+!.env.example
+
+# Build / deploy archives and debug dumps
+*.zip
+debug_output.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db

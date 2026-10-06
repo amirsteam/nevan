@@ -80,16 +80,15 @@ export const DashboardStatSkeleton = () => (
   </div>
 );
 
+// Fixed bar heights so the placeholder doesn't jump around on re-render
+const CHART_SKELETON_HEIGHTS = [45, 70, 35, 80, 55, 65, 40];
+
 export const ChartSkeleton = () => (
   <div className="card p-4">
     <Skeleton className="h-6 w-48 mb-4" />
     <div className="h-72 flex items-end justify-around gap-2">
-      {Array.from({ length: 7 }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className="w-full"
-          style={{ height: `${Math.random() * 60 + 20}%` }}
-        />
+      {CHART_SKELETON_HEIGHTS.map((height, i) => (
+        <Skeleton key={i} className="w-full" style={{ height: `${height}%` }} />
       ))}
     </div>
   </div>

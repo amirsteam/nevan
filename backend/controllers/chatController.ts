@@ -3,36 +3,27 @@
  * Handles HTTP requests for chat features (file uploads, etc.)
  */
 import { Request, Response, NextFunction } from "express";
-// @ts-ignore
-import AppError from "../middleware/errorHandler";
+import AppError from "../utils/AppError";
 
 /**
- * Upload chat attachment
+ * Upload chat attachment (the image URL is then sent in a chat message)
  * @route POST /api/v1/chat/upload
  * @access Private
  */
-export const uploadChatAttachment = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
-    try {
-        if (!req.file) {
-            if (req.body.error) {
-                // Error passed from multer filter
-                return next(new AppError(req.body.error, 400));
-            }
-            return next(new AppError("No file uploaded", 400));
-        }
-
-        // Cloudinary storage automatically provided the URL in req.file.path
-        res.status(200).json({
-            success: true,
-            url: (req.file as any).path, // Cloudinary adds path
-            filename: req.file.filename,
-            type: "image",
-        });
-    } catch (error) {
-        next(error);
+export const uploadChatAttachment = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.file) {
+        return next(new AppError("No image uploaded", 400));
     }
+
+    // Cloudinary storage puts the hosted URL in req.file.path
+    const url = (req.file as any).path as string;
+
+    res.status(200).json({
+        status: "success",
+        data: { url, type: "image" },
+        // Kept for older app versions that read these top-level fields
+        success: true,
+        url,
+        type: "image",
+    });
 };

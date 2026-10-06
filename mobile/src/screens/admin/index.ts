@@ -11,3 +11,4 @@ export { default as AdminProductEditScreen } from "./AdminProductEditScreen";
 export { default as AdminCategoriesScreen } from "./AdminCategoriesScreen";
 export { default as AdminCategoryEditScreen } from "./AdminCategoryEditScreen";
 export { default as AdminUsersScreen } from "./AdminUsersScreen";
+export { default as AdminChatRoomsScreen } from "./AdminChatRoomsScreen";

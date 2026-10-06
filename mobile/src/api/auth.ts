@@ -1,4 +1,5 @@
 import api from "./axios";
+import { getItem } from "../utils/storage";
 import type {
   IApiResponse,
   IUser,
@@ -22,8 +23,10 @@ export const authAPI = {
     return response.data;
   },
 
+  // Ends this device's session on the server (native apps send the refresh token in the body)
   logout: async (): Promise<IApiResponse<null>> => {
-    const response = await api.post("/auth/logout");
+    const refreshToken = await getItem("refreshToken");
+    const response = await api.post("/auth/logout", { refreshToken });
     return response.data;
   },
 

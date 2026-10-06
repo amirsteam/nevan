@@ -9,6 +9,7 @@ import Payment, { IPayment } from '../../models/Payment';
 import Order from '../../models/Order';
 import Cart from '../../models/Cart';
 import AppError from '../../utils/AppError';
+import { reserveOrderStock } from '../orderService';
 import { UserData } from './IPaymentGateway';
 
 interface PaymentMethod {
@@ -52,16 +53,31 @@ class PaymentService {
     /**
      * Initiate payment for an order
      */
-    async initiatePayment(orderId: string, gatewayName: string, userData: UserData): Promise<any> {
+    async initiatePayment(orderId: string, gatewayName: string, userData: UserData, userId?: string): Promise<any> {
         // Get order
         const order = await Order.findById(orderId);
         if (!order) {
             throw new AppError('Order not found', 404);
         }
 
+        if (userId && order.user.toString() !== userId.toString()) {
+            throw new AppError('Order not found', 404);
+        }
+
         // Check if order can be paid
         if (order.payment.status === 'paid') {
             throw new AppError('Order is already paid', 400);
+        }
+        if (order.status !== 'pending') {
+            throw new AppError(
+                order.status === 'cancelled'
+                    ? 'This order was cancelled because payment was not completed. Please place a new order.'
+                    : 'This order can no longer be paid online',
+                400,
+            );
+        }
+        if (String(gatewayName).toLowerCase() !== order.payment.method) {
+            throw new AppError(`This order was placed with ${order.payment.method.toUpperCase()}`, 400);
         }
 
         // Get gateway
@@ -81,7 +97,10 @@ class PaymentService {
 
         // Update payment record
         if (result.success) {
-            (payment as any).gatewayResponse.transactionId = result.transactionId;
+            // referenceId keeps the gateway's initiation id (eSewa transaction_uuid / Khalti pidx);
+            // markComplete later overwrites transactionId with the gateway's final transaction code.
+            payment.gatewayResponse.transactionId = result.transactionId;
+            payment.gatewayResponse.referenceId = result.transactionId;
             payment.status = 'pending';
         } else {
             payment.status = 'failed';
@@ -100,7 +119,21 @@ class PaymentService {
     /**
      * Verify payment after gateway callback
      */
-    async verifyPayment(orderId: string, gatewayName: string, callbackData: any): Promise<any> {
+    /**
+     * Verify payment after gateway callback.
+     *
+     * The callback data comes from the client (query string or request body), so a
+     * gateway-verified payment is only accepted when it is bound to THIS order:
+     *  - the gateway reference (eSewa transaction_uuid / Khalti pidx) must match a
+     *    Payment record initiated for this order, and
+     *  - the verified amount must equal the order total.
+     * When userId is given (authenticated /verify route) the order must also belong to that user.
+     */
+    async verifyPayment(orderId: string, gatewayName: string, callbackData: any, userId?: string): Promise<any> {
+        if (!orderId || typeof orderId !== 'string') {
+            throw new AppError('Order ID is required', 400);
+        }
+
         // Get order
         let query: any;
         if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -111,35 +144,97 @@ class PaymentService {
 
         const order = await Order.findOne(query);
 
-        if (!order) {
+        if (!order || (userId && order.user.toString() !== userId.toString())) {
             throw new AppError('Order not found', 404);
         }
 
-        // Get payment record
-        const payment = await Payment.findOne({
-            order: order._id,
-            gateway: gatewayName,
-        }).sort({ createdAt: -1 });
-
-        if (!payment) {
-            // If payment record not found, try to find by transaction ID or create new?
-            // Usually should exist from initiation.
-            throw new AppError('Payment record not found', 404);
+        // Idempotent: a paid order stays paid; never re-process a callback for it
+        if (order.payment.status === 'paid') {
+            return {
+                success: true,
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                status: 'completed',
+                message: 'Order is already paid',
+            };
         }
 
-        // Get gateway and verify
+        // Ask the gateway whether the payment in the callback data really completed
         const gateway = PaymentFactory.getGateway(gatewayName);
-        const result = await gateway.verify((payment as any).gatewayResponse.transactionId, callbackData);
+        const result = await gateway.verify('', callbackData || {});
+
+        // Bind the verified payment to a payment attempt that was initiated for this order
+        const reference = result.referenceId;
+        const payment = reference
+            ? await Payment.findOne({
+                order: order._id,
+                gateway: gatewayName,
+                $or: [
+                    { 'gatewayResponse.referenceId': reference },
+                    { 'gatewayResponse.transactionId': reference },
+                ],
+            })
+            : null;
+
+        if (!payment) {
+            if (result.verified) {
+                console.warn(
+                    `⚠️ Rejected ${gatewayName} payment ${reference} that does not belong to order ${order.orderNumber}`,
+                );
+            }
+            return {
+                success: false,
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                status: 'failed',
+                message: result.verified
+                    ? 'Payment does not match this order'
+                    : result.message || 'Payment verification failed',
+            };
+        }
+
+        if (result.verified && !this.amountsMatch(result.amount, order.pricing.total)) {
+            const message = `Paid amount (${result.amount}) does not match order total (${order.pricing.total})`;
+            console.warn(`⚠️ ${message} for order ${order.orderNumber}`);
+            await payment.markFailed(message, result.rawResponse);
+            return {
+                success: false,
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                status: 'failed',
+                message,
+            };
+        }
 
         // Update payment and order based on result
         if (result.verified) {
-            await (payment as any).markComplete(result.transactionId, result.rawResponse);
-            await (order as any).markPaymentComplete(result.transactionId);
+            // payment was found by reference, so reference is set here
+            const transactionId = result.transactionId || (reference as string);
+            await payment.markComplete(transactionId, result.rawResponse);
 
-            // Clear cart after successful online payment
-            await Cart.findOneAndUpdate({ user: order.user }, { $set: { items: [] } });
-        } else {
-            await (payment as any).markFailed(result.message, result.rawResponse);
+            // Paid after the order was cancelled (payment window expired or the
+            // order was replaced): reopen it if the stock is still available,
+            // otherwise keep the money on record and flag the order for a refund.
+            if (order.status === 'cancelled') {
+                const reopened = await this.reopenCancelledOrder(order, transactionId);
+                if (!reopened) {
+                    return {
+                        success: false,
+                        orderId: order._id,
+                        orderNumber: order.orderNumber,
+                        status: 'refund_required',
+                        message:
+                            'We received your payment, but this order had already been cancelled and the items are no longer available. We will refund you.',
+                    };
+                }
+            } else {
+                await (order as any).markPaymentComplete(transactionId);
+            }
+
+            // Remove the purchased lines from the cart; anything added since stays
+            await this.removeOrderedItemsFromCart(order);
+        } else if (result.status !== 'pending') {
+            await payment.markFailed(result.message || 'Payment verification failed', result.rawResponse);
         }
 
         return {
@@ -152,6 +247,59 @@ class PaymentService {
     }
 
     /**
+     * Reopen an order cancelled before its payment arrived. Returns false when the
+     * stock is gone; the order is then marked paid-but-cancelled for a manual refund.
+     */
+    private async reopenCancelledOrder(order: any, transactionId: string): Promise<boolean> {
+        try {
+            await reserveOrderStock(order);
+        } catch {
+            order.payment.status = 'paid';
+            order.payment.paidAt = new Date();
+            order.payment.transactionId = transactionId;
+            order.statusHistory.push({
+                status: 'cancelled',
+                note: 'Payment received after cancellation and items are out of stock - refund required',
+                changedAt: new Date(),
+            });
+            await order.save();
+            console.warn(`⚠️ Order ${order.orderNumber} paid after cancellation; refund required`);
+            return false;
+        }
+
+        order.status = 'pending';
+        order.cancelledAt = undefined;
+        order.cancellationReason = undefined;
+        order.statusHistory.push({
+            status: 'pending',
+            note: 'Reopened: payment arrived after the order was cancelled',
+            changedAt: new Date(),
+        });
+        await order.markPaymentComplete(transactionId);
+        return true;
+    }
+
+    /**
+     * Remove an order's items from the customer's cart (matched by product + variant)
+     */
+    private async removeOrderedItemsFromCart(order: any): Promise<void> {
+        const lines = order.items.map((item: any) => ({
+            product: item.product,
+            variantId: item.variantId || null,
+        }));
+        if (lines.length === 0) return;
+        await Cart.updateOne({ user: order.user }, { $pull: { items: { $or: lines } } });
+    }
+
+    /**
+     * Compare a gateway amount with the order total (rupees, tolerant of float rounding)
+     */
+    private amountsMatch(paid: number | undefined, expected: number): boolean {
+        if (typeof paid !== 'number' || !Number.isFinite(paid)) return false;
+        return Math.abs(paid - expected) < 0.01;
+    }
+
+    /**
      * Handle gateway callback
      */
     async handleCallback(gatewayName: string, callbackData: any): Promise<any> {
@@ -161,6 +309,12 @@ class PaymentService {
         if (result.success && result.orderId) {
             // Verify and update order
             return this.verifyPayment(result.orderId, gatewayName, callbackData);
+        }
+
+        // Gateways identify the order by its order number; the storefront links by id
+        if (result.orderId && !mongoose.Types.ObjectId.isValid(result.orderId)) {
+            const order = await Order.findOne({ orderNumber: result.orderId }).select('_id');
+            result.orderId = order ? String(order._id) : '';
         }
 
         return result;

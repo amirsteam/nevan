@@ -16,9 +16,12 @@ export interface ProductQueryParams {
   category?: string;
   search?: string;
   sort?: string;
-  minPrice?: number;
-  maxPrice?: number;
+  minPrice?: number | string;
+  maxPrice?: number | string;
   featured?: boolean;
+  // Sent by the shop filters, but the API has no age/gender fields yet and ignores them
+  age?: string;
+  gender?: string;
 }
 
 export const productsAPI = {

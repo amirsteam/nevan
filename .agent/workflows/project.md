@@ -2,41 +2,33 @@
 description: Project Overview
 ---
 
-Project Overview
-This is a comprehensive full-stack e-commerce solution tailored for the Nepalese market. It consists of three main components:
+# Project Overview
 
-Backend: A Node.js/Express REST API serving as the central logic and data handler.
-Frontend: A modern, responsive React web application for customers and admins.
-Mobile: A compiled React Native (Expo) mobile application for Android and iOS.
-Tech Stack
-1. Backend (Server)
-Core: Node.js, Express.js (v5)
-Database: MongoDB with Mongoose ODM
-Authentication & Security: JSON Web Tokens (JWT), Bcryptjs, Helmet (security headers), Express Rate Limit (DDOS protection), Express Validator
-Storage: Cloudinary (for image hosting) via Multer
-Utilities: Slugify (URL generation), Dotenv
-2. Frontend (Web Client)
-Core: React 19, Vite (Build tool)
-State Management: Redux Toolkit, React Redux
-Styling: Tailwind CSS v4
-Routing: React Router v7
-UI Components: Lucide React, React Icons, React Hot Toast (Notifications), Recharts (Data visualization)
-Networking: Axios
-3. Mobile (App)
-Framework: React Native with Expo (SDK 54)
-Navigation: React Navigation (Stack & Bottom Tabs)
-State Management: Redux Toolkit
-Storage: Expo Secure Store (Encrypted local storage)
-UI: Lucide React Native, React Native SVG, React Native Safe Area Context
-Recommended Improvements
-Here are some technical improvements to elevate the project's quality, maintainability, and performance:
+Full-stack e-commerce for Nevan, a Nepali baby-clothing brand. Three parts:
 
-Implement Automated Testing (High Priority)
-Backend: The current test script is empty. Integrate Jest or Mocha to write unit tests for your controllers and models.
-Frontend: Add Vitest and React Testing Library to ensure critical flows (like checkout or login) don't break during updates.
-TypeScript Migration
-The project is currently written in JavaScript. specific 
-js
- files (axios.js, server.js). Migrating to TypeScript would add type safety, reduce runtime errors, and significantly improve the developer experience with better autocomplete.
-API Documentation
-Add Swagger/OpenAPI to the backend. This will generate an interactive documentation page for your API, making it much easier to sync development between the backend and the mobile/web clients.
+- **Backend** — Node.js / Express 5 REST API + Socket.IO chat (TypeScript)
+- **Frontend** — React 19 web app: storefront and admin panel (TypeScript)
+- **Mobile** — React Native (Expo SDK 54) app for Android and iOS (TypeScript)
+
+For commands, architecture and conventions, see `CLAUDE.md` at the repository root.
+
+## Tech stack
+
+**Backend:** Express 5, MongoDB + Mongoose, JWT (access token + rotating refresh sessions), bcrypt, Helmet, express-rate-limit, express-validator, Cloudinary via Multer, Nodemailer (password-reset email), Socket.IO, Expo push notifications, Swagger UI (`/api/v1/docs`), optional Sentry. Payments: Cash on Delivery, eSewa, Khalti.
+
+**Frontend:** React 19, Vite, Redux Toolkit, Tailwind CSS v4, React Router v7, Axios, TanStack Table, Recharts, Lucide icons, React Hot Toast, optional Sentry.
+
+**Mobile:** Expo SDK 54, React Navigation (stack + tabs), Redux Toolkit / RTK Query, Expo Secure Store, expo-notifications.
+
+## Quality
+
+- Backend: Jest + mongodb-memory-server tests for auth/sessions, password reset, order stock reservation, payment verification (incl. replay/amount attacks), chat sockets, admin endpoints.
+- Frontend: Vitest + Testing Library; ESLint with typescript-eslint.
+- GitHub Actions CI runs type-checks, lint, tests and builds on every push and pull request.
+
+## Known gaps
+
+- Newsletter signup and the Contact form only simulate success; nothing is stored or sent.
+- The shop's age and gender filters are UI-only: products have no age/gender fields and the API ignores those parameters.
+- Shipping policy copy (FAQ, Shipping Info, product badge) says shipping is always free, while the API charges NPR 100–300 below NPR 5,000.
+- Mobile app has no crash reporting.

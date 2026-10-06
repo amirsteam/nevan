@@ -1,25 +1,40 @@
 /**
  * Socket.IO Configuration
- * Real-time chat server with JWT authentication
+ * Real-time support chat (namespace /chat) with JWT authentication.
+ *
+ * Model: each customer has at most one open ChatRoom; all admins share the inbox
+ * and any admin may reply. Sockets join:
+ *   user:<id>   every socket of a user (badge updates, forced disconnects)
+ *   admins      every admin socket (inbox updates)
+ *   room:<id>   the conversation currently open in that socket (one at a time)
  */
 import { Server as HttpServer } from "http";
-import { Server, Socket } from "socket.io";
+import { Server, Socket, Namespace } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 import { RateLimiterMemory } from "rate-limiter-flexible";
-import xss from "xss";
+import mongoose from "mongoose";
 import { verifyAccessToken } from "../utils/tokenUtils";
 import User from "../models/User";
-import ChatRoom from "../models/ChatRoom";
+import ChatRoom, { IChatRoom } from "../models/ChatRoom";
 import Message, { IMessage } from "../models/Message";
-import { sendPushNotification } from "../services/pushNotificationService";
 import Notification from "../models/Notification";
+import { sendPushNotification } from "../services/pushNotificationService";
+import { registerChatNamespace } from "./socketRegistry";
 
 // Extended socket interface with user data
 interface AuthenticatedSocket extends Socket {
     userId: string;
     userRole: "customer" | "admin";
 }
+
+type AckResponse = { success: boolean; error?: string; [key: string]: unknown };
+type Ack = (response: AckResponse) => void;
+
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_ATTACHMENTS = 5;
+const HISTORY_PAGE_SIZE = 50;
+const ROOM_LIST_LIMIT = 100;
 
 // In-memory connection tracking (Fallback / Local only)
 const userConnections = new Map<string, Set<string>>(); // userId -> Set of socketIds
@@ -28,7 +43,6 @@ const userConnections = new Map<string, Set<string>>(); // userId -> Set of sock
 let redisClient: Redis | null = null;
 const REDIS_CONNECTION_PREFIX = "socket:connections:";
 
-// Helper functions for connection tracking (works with both Redis and in-memory)
 const addConnection = async (userId: string, socketId: string): Promise<void> => {
     if (redisClient) {
         try {
@@ -37,7 +51,6 @@ const addConnection = async (userId: string, socketId: string): Promise<void> =>
             console.error("Redis addConnection error:", error);
         }
     }
-    // Always update local Map for fast local lookups
     if (!userConnections.has(userId)) {
         userConnections.set(userId, new Set());
     }
@@ -52,7 +65,6 @@ const removeConnection = async (userId: string, socketId: string): Promise<void>
             console.error("Redis removeConnection error:", error);
         }
     }
-    // Always update local Map
     const userSockets = userConnections.get(userId);
     if (userSockets) {
         userSockets.delete(socketId);
@@ -67,6 +79,127 @@ const rateLimiter = new RateLimiterMemory({
     points: 10,
     duration: 1,
 });
+
+/**
+ * Plain-text message content. React / React Native render text safely, so the
+ * content is stored as typed (no HTML escaping, which used to turn "<3" into
+ * "&lt;3"); only control characters other than newline/tab are removed.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const cleanContent = (value: unknown): string =>
+    typeof value === "string" ? value.replace(CONTROL_CHARS, "").trim() : "";
+
+/** Only images uploaded through /chat/upload (this shop's Cloudinary account) */
+const isAllowedAttachmentUrl = (url: unknown): url is string => {
+    const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+    return (
+        typeof url === "string" &&
+        !!cloud &&
+        url.startsWith(`https://res.cloudinary.com/${cloud}/`) &&
+        url.length <= 500
+    );
+};
+
+const isObjectId = (value: unknown): value is string =>
+    typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+
+const toMessagePayload = (message: IMessage | any) => ({
+    _id: String(message._id),
+    roomId: String(message.roomId),
+    senderId: String(message.senderId),
+    senderRole: message.senderRole,
+    content: message.content || "",
+    attachments: (message.attachments || []).map((att: any) => ({ type: att.type, url: att.url })),
+    status: message.status,
+    createdAt: message.createdAt,
+});
+
+const previewOf = (content: string, attachmentCount: number): string =>
+    content ? content.slice(0, 120) : attachmentCount > 0 ? "📷 Photo" : "";
+
+/** Unread total for a user's badge: customer → their open room, admin → whole inbox */
+const getUnreadCount = async (userId: string, role: "customer" | "admin"): Promise<number> => {
+    if (role === "customer") {
+        const room = await ChatRoom.findOne({ customerId: userId, status: "open" }).select("unreadCountCustomer");
+        return room?.unreadCountCustomer || 0;
+    }
+    const [result] = await ChatRoom.aggregate([
+        { $match: { status: "open" } },
+        { $group: { _id: null, total: { $sum: "$unreadCountAdmin" } } },
+    ]);
+    return result?.total || 0;
+};
+
+/** Room list for the admin inbox */
+const listRooms = async (status: "open" | "closed" = "open") =>
+    ChatRoom.find({ status })
+        .populate("customerId", "name email")
+        .populate("adminId", "name")
+        .sort({ lastMessageAt: -1, updatedAt: -1 })
+        .limit(ROOM_LIST_LIMIT)
+        .lean();
+
+/** Find a customer's open room or create it; safe if two tabs connect at once */
+const findOrCreateCustomerRoom = async (customerId: string): Promise<IChatRoom> => {
+    const existing = await ChatRoom.findOne({ customerId, status: "open" });
+    if (existing) return existing;
+    try {
+        return await ChatRoom.create({ customerId, status: "open" });
+    } catch (error: any) {
+        // Unique index "one open room per customer": another connection created it first
+        if (error?.code === 11000) {
+            const room = await ChatRoom.findOne({ customerId, status: "open" });
+            if (room) return room;
+        }
+        throw error;
+    }
+};
+
+/** Can this socket read/write this room? Customers: own room; admins: any room */
+const canAccessRoom = (room: IChatRoom, userId: string, role: string): boolean =>
+    role === "admin" || room.customerId.toString() === userId;
+
+const loadHistory = async (roomId: string, before?: Date) => {
+    const query: Record<string, unknown> = { roomId };
+    if (before) query.createdAt = { $lt: before };
+    const page = await Message.find(query)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(HISTORY_PAGE_SIZE + 1)
+        .lean();
+    const hasMore = page.length > HISTORY_PAGE_SIZE;
+    return {
+        messages: page.slice(0, HISTORY_PAGE_SIZE).reverse().map(toMessagePayload),
+        hasMore,
+    };
+};
+
+/**
+ * Bell/push notification for a chat message to a user who isn't connected.
+ * One unread notification per conversation: later messages update it instead of
+ * adding another bell entry, and only the first one sends a push.
+ */
+const notifyOffline = async (
+    recipientId: string,
+    title: string,
+    body: string,
+    data: { type: "chat_message"; roomId: string; senderRole: string },
+): Promise<void> => {
+    if (await isUserOnline(recipientId)) return;
+
+    const updated = await Notification.findOneAndUpdate(
+        { userId: recipientId, type: "chat_message", "data.roomId": data.roomId, isRead: false },
+        { $set: { title, body, data } },
+    );
+    if (updated) return;
+
+    await Notification.create({ userId: recipientId, type: "chat_message", title, body, data });
+    await sendPushNotification(recipientId, title, body, data, {
+        channelId: "chat",
+        sound: "default",
+        skipPersist: true,
+    });
+};
 
 /**
  * Initialize Socket.IO server with the HTTP server
@@ -88,145 +221,98 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
         try {
             const pubClient = new Redis(process.env.REDIS_URL);
             const subClient = pubClient.duplicate();
-
-            // Store redis client for connection tracking
             redisClient = pubClient;
-
             io.adapter(createAdapter(pubClient, subClient));
             console.log("✅ Redis Adapter initialized for Socket.IO");
-            console.log("✅ Redis connection tracking enabled");
         } catch (error) {
             console.error("❌ Failed to initialize Redis Adapter:", error);
         }
-    } else {
+    } else if (process.env.NODE_ENV !== "test") {
         console.log("⚠️ No REDIS_URL found. Using default in-memory adapter (Single Instance Mode).");
     }
 
-    // Chat namespace with authentication
-    const chatNamespace = io.of("/chat");
+    const chatNamespace: Namespace = io.of("/chat");
+    registerChatNamespace(chatNamespace);
+
+    /** Push fresh badge counts: one customer, and/or every admin (shared inbox) */
+    const emitUnread = async (target: { customerId?: string; admins?: boolean }) => {
+        if (target.customerId) {
+            const count = await getUnreadCount(target.customerId, "customer");
+            chatNamespace.to(`user:${target.customerId}`).emit("unread-updated", { count });
+        }
+        if (target.admins) {
+            const count = await getUnreadCount("", "admin");
+            chatNamespace.to("admins").emit("unread-updated", { count });
+            chatNamespace.to("admins").emit("rooms-updated");
+        }
+    };
 
     // Authentication middleware
     chatNamespace.use(async (socket: Socket, next) => {
         try {
             const token = socket.handshake.auth.token;
-
             if (!token) {
                 return next(new Error("Authentication required"));
             }
 
-            // Verify JWT token using existing utility
             const decoded = verifyAccessToken(token);
-
-            // Fetch user from database
             const user = await User.findById(decoded.userId);
-
             if (!user || !user.isActive) {
                 return next(new Error("User not found or inactive"));
             }
 
-            // Attach user info to socket
             (socket as AuthenticatedSocket).userId = user._id.toString();
-            (socket as AuthenticatedSocket).userRole = user.role as
-                | "customer"
-                | "admin";
-
-            console.log(
-                `🔌 Socket authenticated: ${user.name} (${user.role}) - ${socket.id}`
-            );
+            (socket as AuthenticatedSocket).userRole = user.role as "customer" | "admin";
             next();
-        } catch (error: any) {
-            console.error("Socket auth error:", error.message);
+        } catch {
             next(new Error("Invalid or expired token"));
         }
     });
 
-    // Handle connections
     chatNamespace.on("connection", async (socket: Socket) => {
-        const authSocket = socket as AuthenticatedSocket;
-        const { userId, userRole } = authSocket;
+        const { userId, userRole } = socket as AuthenticatedSocket;
 
-        // Track connection via Rooms (Scalable)
-        await socket.join(`user:${userId}`);
-
-        // Track connection (Redis if available, otherwise in-memory)
+        socket.join(`user:${userId}`);
+        if (userRole === "admin") socket.join("admins");
         await addConnection(userId, socket.id);
-        console.log(
-            `✅ User connected: ${userId} (${userRole}) - Socket: ${socket.id}`
-        );
+
+        const leaveAllRooms = () => {
+            for (const name of [...socket.rooms]) {
+                if (name.startsWith("room:")) socket.leave(name);
+            }
+        };
+
+        const isInRoom = (roomId: unknown): roomId is string =>
+            typeof roomId === "string" && socket.rooms.has(`room:${roomId}`);
 
         // ==================== JOIN CHAT ====================
-        socket.on("join-chat", async (data, callback) => {
+        // Customer: opens (or creates) their own room. Admin: opens the given room.
+        socket.on("join-chat", async (data: { roomId?: string } | undefined, callback?: Ack) => {
             try {
-                let room;
+                let room: IChatRoom | null = null;
 
                 if (userRole === "customer") {
-                    // Customer: Find or create their open room
-                    room = await ChatRoom.findOne({
-                        customerId: userId,
-                        status: "open",
-                    });
-
-                    if (!room) {
-                        room = await ChatRoom.create({
-                            customerId: userId,
-                            status: "open",
-                        });
-                        console.log(`📝 New chat room created for customer: ${userId}`);
-                    }
-                } else if (userRole === "admin") {
-                    // Admin: Join a specific room or get unassigned rooms
-                    if (data?.roomId) {
-                        // Use atomic findOneAndUpdate to prevent race condition
-                        // when multiple admins try to join the same unassigned room
-                        room = await ChatRoom.findOneAndUpdate(
-                            {
-                                _id: data.roomId,
-                                $or: [
-                                    { adminId: null },
-                                    { adminId: { $exists: false } },
-                                    { adminId: userId } // Allow if already assigned to this admin
-                                ]
-                            },
-                            { $set: { adminId: userId } },
-                            { new: true }
-                        );
-                        
-                        // If atomic update failed, try to just fetch the room (might be assigned to another admin)
-                        if (!room) {
-                            room = await ChatRoom.findById(data.roomId);
-                        } else {
-                            console.log(`👤 Admin ${userId} assigned to room: ${room._id}`);
-                        }
-                    }
+                    room = await findOrCreateCustomerRoom(userId);
+                } else if (isObjectId(data?.roomId)) {
+                    room = await ChatRoom.findById(data!.roomId);
                 }
 
-                if (!room) {
-                    return callback?.({
-                        success: false,
-                        error: "Unable to join chat room",
-                    });
+                if (!room || !canAccessRoom(room, userId, userRole)) {
+                    return callback?.({ success: false, error: "Unable to join chat room" });
                 }
 
-                // Join socket room
-                const roomName = `room:${room._id}`;
-                socket.join(roomName);
-                console.log(`🚪 Socket ${socket.id} joined room: ${roomName}`);
+                // An admin switching conversations must stop receiving the previous one
+                leaveAllRooms();
+                socket.join(`room:${room._id}`);
 
-                // Load message history (last 50 messages)
-                const messages = await Message.find({ roomId: room._id })
-                    .sort({ createdAt: -1 })
-                    .limit(50)
-                    .lean();
-
-                // Emit chat history (reversed to chronological order)
-                socket.emit("chat-history", {
-                    roomId: room._id.toString(),
-                    messages: messages.reverse(),
-                });
+                const history = await loadHistory(String(room._id));
+                socket.emit("chat-history", { roomId: String(room._id), ...history });
 
                 callback?.({
                     success: true,
-                    roomId: room._id.toString(),
+                    roomId: String(room._id),
+                    status: room.status,
+                    hasMore: history.hasMore,
                 });
             } catch (error: any) {
                 console.error("join-chat error:", error.message);
@@ -234,169 +320,128 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
             }
         });
 
-        // ==================== SEND MESSAGE ====================
-        socket.on("send-message", async (data, callback) => {
+        // ==================== LEAVE CHAT ====================
+        socket.on("leave-chat", (_data: unknown, callback?: Ack) => {
+            leaveAllRooms();
+            callback?.({ success: true });
+        });
+
+        // ==================== OLDER MESSAGES ====================
+        socket.on("load-messages", async (data: { roomId?: string; before?: string }, callback?: Ack) => {
             try {
-                const { roomId, content, attachments } = data;
+                if (!isInRoom(data?.roomId)) {
+                    return callback?.({ success: false, error: "Join the conversation first" });
+                }
+                const before = data.before ? new Date(data.before) : undefined;
+                if (before && Number.isNaN(before.getTime())) {
+                    return callback?.({ success: false, error: "Invalid cursor" });
+                }
+                const page = await loadHistory(data.roomId!, before);
+                callback?.({ success: true, ...page });
+            } catch (error: any) {
+                console.error("load-messages error:", error.message);
+                callback?.({ success: false, error: "Failed to load messages" });
+            }
+        });
 
-                // Rate Limiting Check
+        // ==================== SEND MESSAGE ====================
+        socket.on("send-message", async (data: any, callback?: Ack) => {
+            try {
                 try {
-                    await rateLimiter.consume(userId); // Consume 1 point by userId
-                } catch (rejRes) {
-                    return callback?.({ success: false, error: "Rate limit exceeded. Please slow down." });
+                    await rateLimiter.consume(userId);
+                } catch {
+                    return callback?.({ success: false, error: "You're sending messages too fast. Please slow down." });
                 }
 
-                // Validate message
-                if (!content || typeof content !== "string") {
-                    return callback?.({ success: false, error: "Message content required" });
-                }
+                const roomId = data?.roomId;
+                const content = cleanContent(data?.content);
+                const attachments = Array.isArray(data?.attachments)
+                    ? data.attachments
+                        .filter((att: any) => att?.type === "image" && isAllowedAttachmentUrl(att.url))
+                        .slice(0, MAX_ATTACHMENTS)
+                        .map((att: any) => ({ type: "image" as const, url: att.url as string }))
+                    : [];
 
-                if (content.length > 2000) {
-                    return callback?.({ success: false, error: "Message too long (max 2000 chars)" });
+                if (Array.isArray(data?.attachments) && data.attachments.length > 0 && attachments.length === 0) {
+                    return callback?.({ success: false, error: "Images must be uploaded through the chat" });
                 }
-
-                // Validate attachments if present
-                let validatedAttachments: { type: "image"; url: string }[] = [];
-                if (attachments && Array.isArray(attachments)) {
-                    validatedAttachments = attachments
-                        .filter((att: any) => 
-                            att && 
-                            att.type === "image" && 
-                            typeof att.url === "string" &&
-                            att.url.startsWith("https://") // Only allow HTTPS URLs
-                        )
-                        .slice(0, 5) // Max 5 attachments per message
-                        .map((att: any) => ({
-                            type: "image" as const,
-                            url: xss(att.url) // Sanitize URL
-                        }));
+                if (!content && attachments.length === 0) {
+                    return callback?.({ success: false, error: "Message is empty" });
                 }
-
-                // Verify room exists and user has access
-                const room = await ChatRoom.findById(roomId);
-                if (!room) {
+                if (content.length > MAX_MESSAGE_LENGTH) {
+                    return callback?.({ success: false, error: `Messages can be at most ${MAX_MESSAGE_LENGTH} characters` });
+                }
+                if (!isObjectId(roomId)) {
                     return callback?.({ success: false, error: "Room not found" });
                 }
 
-                // Check access: customer must own room, admin must be assigned or unassigned
-                const isCustomerOwner =
-                    userRole === "customer" && room.customerId.toString() === userId;
-                const isAdminAllowed =
-                    userRole === "admin" &&
-                    (!room.adminId || room.adminId.toString() === userId);
-
-                if (!isCustomerOwner && !isAdminAllowed) {
-                    return callback?.({ success: false, error: "Access denied" });
+                // Accounts deactivated after connecting can't keep chatting
+                const sender = await User.findById(userId).select("name isActive");
+                if (!sender?.isActive) {
+                    callback?.({ success: false, error: "Your account is not active" });
+                    socket.disconnect(true);
+                    return;
                 }
 
-                // Sanitize content to prevent XSS
-                const sanitizedContent = xss(content.trim());
+                const room = await ChatRoom.findById(roomId);
+                if (!room || !canAccessRoom(room, userId, userRole)) {
+                    return callback?.({ success: false, error: "Access denied" });
+                }
+                if (room.status === "closed") {
+                    return callback?.({
+                        success: false,
+                        error: "This conversation has been closed. Start a new one to continue.",
+                        code: "ROOM_CLOSED",
+                    });
+                }
 
-                // Save message to database
                 const message = await Message.create({
                     roomId: room._id,
                     senderId: userId,
                     senderRole: userRole,
-                    content: sanitizedContent,
-                    ...(validatedAttachments.length > 0 && { attachments: validatedAttachments }),
+                    content,
+                    ...(attachments.length > 0 && { attachments }),
                 });
 
-                // Update room's last message timestamp and unread counts
-                room.lastMessageAt = new Date();
-
-                // Increment unread count for the recipient
+                room.lastMessageAt = message.createdAt;
+                room.lastMessagePreview = previewOf(content, attachments.length);
                 if (userRole === "customer") {
                     room.unreadCountAdmin = (room.unreadCountAdmin || 0) + 1;
                 } else {
                     room.unreadCountCustomer = (room.unreadCountCustomer || 0) + 1;
+                    room.adminId = userId as any; // most recent responder
                 }
-
-                // Auto-assign admin if they respond to unassigned room
-                if (userRole === "admin" && !room.adminId) {
-                    room.adminId = userId as any;
-                }
-
                 await room.save();
 
-                // Prepare message for broadcast
-                const messageData = {
-                    _id: message._id.toString(),
-                    roomId: message.roomId.toString(),
-                    senderId: message.senderId.toString(),
-                    senderRole: message.senderRole,
-                    content: message.content,
-                    attachments: message.attachments || [],
-                    status: message.status,
-                    createdAt: message.createdAt,
-                };
+                const payload = toMessagePayload(message);
+                chatNamespace.to(`room:${room._id}`).emit("new-message", payload);
+                callback?.({ success: true, message: payload });
 
-                // Broadcast to all users in the room
-                const roomName = `room:${roomId}`;
-                chatNamespace.to(roomName).emit("new-message", messageData);
-
-                // ACK confirmation to sender
-                callback?.({
-                    success: true,
-                    message: messageData,
-                });
-
-                // Send push notification if recipient is offline
-                // Always persist in-app notification for the bell icon
-                try {
-                    // Determine the recipient
-                    const recipientId = userRole === "customer" 
-                        ? room.adminId?.toString() 
-                        : room.customerId.toString();
-                    
-                    if (recipientId) {
-                        // Get sender name for notification
-                        const sender = await User.findById(userId).select("name");
-                        const senderName = sender?.name || (userRole === "admin" ? "Support" : "Customer");
-                        const notifTitle = `New message from ${senderName}`;
-                        const notifBody = sanitizedContent.length > 100 
-                            ? sanitizedContent.substring(0, 97) + "..." 
-                            : sanitizedContent;
-                        const notifData = {
-                            type: "chat_message" as const,
-                            roomId: roomId.toString(),
-                            senderId: userId,
-                            senderRole: userRole,
-                        };
-
-                        const isRecipientOnline = await isUserOnline(recipientId);
-                        
-                        if (!isRecipientOnline) {
-                            // Offline: send push notification (which also persists to DB)
-                            await sendPushNotification(
-                                recipientId,
-                                notifTitle,
-                                notifBody,
-                                notifData,
-                                {
-                                    channelId: "chat",
-                                    sound: "default",
-                                }
-                            );
-                            console.log(`📱 Push notification sent to offline user ${recipientId}`);
-                        } else {
-                            // Online: just persist to DB (no push needed, they see it in real-time)
-                            await Notification.create({
-                                userId: recipientId,
-                                type: "chat_message",
-                                title: notifTitle,
-                                body: notifBody,
-                                data: notifData,
-                            });
-                        }
-                    }
-                } catch (pushError) {
-                    // Don't fail message send if notification fails
-                    console.error("Failed to send notification:", pushError);
+                const customerId = room.customerId.toString();
+                if (userRole === "customer") {
+                    await emitUnread({ admins: true });
+                } else {
+                    await emitUnread({ customerId });
+                    chatNamespace.to("admins").emit("rooms-updated");
                 }
 
-                console.log(
-                    `💬 Message sent in room ${roomId}: "${content.substring(0, 50)}..."`
-                );
+                // Bell/push for recipients who aren't connected
+                try {
+                    const title = `New message from ${sender.name || (userRole === "admin" ? "Support" : "Customer")}`;
+                    const body = room.lastMessagePreview || "";
+                    const notifData = { type: "chat_message" as const, roomId: String(room._id), senderRole: userRole };
+
+                    if (userRole === "admin") {
+                        await notifyOffline(customerId, title, body, notifData);
+                    } else {
+                        const admins = await User.find({ role: "admin", isActive: true }).select("_id");
+                        await Promise.all(
+                            admins.map((admin) => notifyOffline(String(admin._id), title, body, notifData)),
+                        );
+                    }
+                } catch (notifyError) {
+                    console.error("Failed to send chat notification:", notifyError);
+                }
             } catch (error: any) {
                 console.error("send-message error:", error.message);
                 callback?.({ success: false, error: "Failed to send message" });
@@ -405,105 +450,121 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
 
         // ==================== TYPING INDICATORS ====================
         socket.on("typing", (data) => {
-            const { roomId } = data;
-            socket.to(`room:${roomId}`).emit("typing", {
-                roomId,
-                userId,
-                userRole
-            });
+            const roomId = data?.roomId;
+            if (!isInRoom(roomId)) return;
+            socket.to(`room:${roomId}`).emit("typing", { roomId, userId, userRole });
         });
 
         socket.on("stop-typing", (data) => {
-            const { roomId } = data;
-            socket.to(`room:${roomId}`).emit("stop-typing", {
-                roomId,
-                userId
-            });
+            const roomId = data?.roomId;
+            if (!isInRoom(roomId)) return;
+            socket.to(`room:${roomId}`).emit("stop-typing", { roomId, userId });
         });
 
         // ==================== MESSAGE READ ====================
+        // Marks every message from the other side of the conversation as read
         socket.on("message-read", async (data) => {
             try {
-                const { roomId, messageIds } = data; // Expecting array of message IDs
+                const roomId = data?.roomId;
+                if (!isInRoom(roomId)) return;
 
-                if (!roomId) return;
+                const readAt = new Date();
+                const otherRole = userRole === "customer" ? "admin" : "customer";
+                await Message.updateMany(
+                    { roomId, senderRole: otherRole, status: { $ne: "read" } },
+                    { $set: { status: "read", readAt } },
+                );
 
-                const roomName = `room:${roomId}`;
-
-                // Update messages in DB
-                if (messageIds && Array.isArray(messageIds) && messageIds.length > 0) {
-                    await Message.updateMany(
-                        {
-                            _id: { $in: messageIds },
-                            roomId: roomId,
-                            senderId: { $ne: userId } // Only mark others' messages as read
-                        },
-                        {
-                            $set: {
-                                status: "read",
-                                readAt: new Date()
-                            }
-                        }
-                    );
-                }
-
-                // Reset unread count for this user in the room
-                const room = await ChatRoom.findById(roomId);
-                if (room) {
-                    if (userRole === "customer") {
-                        room.unreadCountCustomer = 0;
-                    } else {
-                        room.unreadCountAdmin = 0;
-                    }
-                    await room.save();
-                }
-
-                // Broadcast read receipt
-                socket.to(roomName).emit("message-read", {
+                const room = await ChatRoom.findByIdAndUpdate(
                     roomId,
-                    userId,
-                    userRole,
-                    readAt: new Date()
-                });
+                    { $set: userRole === "customer" ? { unreadCountCustomer: 0 } : { unreadCountAdmin: 0 } },
+                    { new: true },
+                );
+                if (!room) return;
 
+                // Read receipts for the other side's ticks
+                socket.to(`room:${roomId}`).emit("message-read", { roomId, readerRole: userRole, readAt });
+
+                if (userRole === "customer") {
+                    await emitUnread({ customerId: userId });
+                } else {
+                    await emitUnread({ admins: true });
+                }
             } catch (error: any) {
                 console.error("message-read error:", error.message);
             }
         });
 
-        // ==================== GET ROOMS (Admin only) ====================
-        socket.on("get-rooms", async (callback) => {
+        // ==================== UNREAD COUNT (badge) ====================
+        socket.on("get-unread", async (dataOrCallback: unknown, maybeCallback?: Ack) => {
+            // Supports emit("get-unread", cb) and emit("get-unread", data, cb)
+            const callback = (typeof dataOrCallback === "function" ? dataOrCallback : maybeCallback) as Ack | undefined;
+            try {
+                callback?.({ success: true, count: await getUnreadCount(userId, userRole) });
+            } catch {
+                callback?.({ success: false, error: "Failed to load unread count" });
+            }
+        });
+
+        // ==================== ROOMS (Admin only) ====================
+        socket.on("get-rooms", async (dataOrCallback: unknown, maybeCallback?: Ack) => {
+            // Supports emit("get-rooms", cb) and emit("get-rooms", { status }, cb)
+            const callback = (typeof dataOrCallback === "function" ? dataOrCallback : maybeCallback) as Ack | undefined;
+            const status = (dataOrCallback as { status?: string } | undefined)?.status === "closed" ? "closed" : "open";
             try {
                 if (userRole !== "admin") {
                     return callback?.({ success: false, error: "Admin only" });
                 }
-
-                // Get all open rooms for admin dashboard
-                const rooms = await ChatRoom.find({ status: "open" })
-                    .populate("customerId", "name email")
-                    .populate("adminId", "name")
-                    .sort({ lastMessageAt: -1 }) // Sort by most recent activity
-                    .lean();
-
-                callback?.({ success: true, rooms });
+                callback?.({ success: true, rooms: await listRooms(status) });
             } catch (error: any) {
                 console.error("get-rooms error:", error.message);
                 callback?.({ success: false, error: "Failed to get rooms" });
             }
         });
 
-        // ==================== DISCONNECT ====================
-        socket.on("disconnect", async (reason) => {
-            // Remove from connection tracking (Redis + local)
-            await removeConnection(userId, socket.id);
+        // ==================== CLOSE CONVERSATION (Admin only) ====================
+        socket.on("close-room", async (data: { roomId?: string }, callback?: Ack) => {
+            try {
+                if (userRole !== "admin") {
+                    return callback?.({ success: false, error: "Admin only" });
+                }
+                if (!isObjectId(data?.roomId)) {
+                    return callback?.({ success: false, error: "Room not found" });
+                }
+                const room = await ChatRoom.findOneAndUpdate(
+                    { _id: data.roomId, status: "open" },
+                    {
+                        $set: {
+                            status: "closed",
+                            closedAt: new Date(),
+                            closedBy: userId,
+                            unreadCountAdmin: 0,
+                        },
+                    },
+                    { new: true },
+                );
+                if (!room) {
+                    return callback?.({ success: false, error: "Conversation is already closed" });
+                }
 
-            console.log(
-                `❌ User disconnected: ${userId} - Socket: ${socket.id} - Reason: ${reason}`
-            );
+                chatNamespace.to(`room:${room._id}`).emit("room-closed", { roomId: String(room._id) });
+                callback?.({ success: true });
+                await emitUnread({ customerId: room.customerId.toString(), admins: true });
+            } catch (error: any) {
+                console.error("close-room error:", error.message);
+                callback?.({ success: false, error: "Failed to close conversation" });
+            }
+        });
+
+        // ==================== DISCONNECT ====================
+        socket.on("disconnect", async () => {
+            await removeConnection(userId, socket.id);
         });
     });
 
-    console.log("🔌 Socket.IO initialized with /chat namespace");
+    if (process.env.NODE_ENV !== "test") {
+        console.log("🔌 Socket.IO initialized with /chat namespace");
+    }
 
     return io;
 };

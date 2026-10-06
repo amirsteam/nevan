@@ -34,7 +34,8 @@ import { adminAPI } from "../../api/admin";
 import type { AdminProductEditScreenProps } from "../../navigation/types";
 import type { IProduct, ICategory, IProductVariant } from "@shared/types";
 
-// Define locally since Metro doesn't resolve path aliases for runtime imports
+// Define locally since Metro doesn't resolve path aliases for runtime imports.
+// Built-in suggestions; admins can also type a custom size (max MAX_SIZE_LENGTH).
 const PRODUCT_SIZES = [
   "Small Size (0-1 yrs)",
   "Medium Size (1-4 yrs)",
@@ -44,6 +45,10 @@ const PRODUCT_SIZES = [
   "Standard Size",
   "One Size",
 ] as const;
+
+const MAX_SIZE_LENGTH = 40;
+const isBuiltInSize = (size: string): boolean =>
+  (PRODUCT_SIZES as readonly string[]).includes(size);
 
 interface FormData {
   name: string;
@@ -65,6 +70,7 @@ interface LocalVariant {
   price: string;
   stock: string;
   image?: string; // URL for existing or local URI for new
+  customSize?: boolean; // UI only: "Custom" size chip selected
 }
 
 interface FormErrors {
@@ -195,6 +201,7 @@ const AdminProductEditScreen: React.FC<AdminProductEditScreenProps> = ({
       ...prev,
       {
         size: PRODUCT_SIZES[0],
+        customSize: false,
         color: "",
         price: formData.price,
         stock: "0",
@@ -293,6 +300,28 @@ const AdminProductEditScreen: React.FC<AdminProductEditScreenProps> = ({
     if (!hasVariants && (!formData.stock || parseInt(formData.stock) < 0))
       newErrors.stock = "Valid stock is required";
 
+    if (hasVariants) {
+      const seen = new Set<string>();
+      for (const v of variants) {
+        const size = v.size.trim();
+        const color = v.color.trim();
+        if (!size || !color) {
+          newErrors.variants = "Every variant needs a size and a color";
+          break;
+        }
+        if (size.length > MAX_SIZE_LENGTH) {
+          newErrors.variants = `Sizes can be at most ${MAX_SIZE_LENGTH} characters`;
+          break;
+        }
+        const key = `${size.toLowerCase()}|${color.toLowerCase()}`;
+        if (seen.has(key)) {
+          newErrors.variants = `Duplicate variant: ${size} / ${color}`;
+          break;
+        }
+        seen.add(key);
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -307,8 +336,8 @@ const AdminProductEditScreen: React.FC<AdminProductEditScreenProps> = ({
       const variantDataList = hasVariants
         ? variants.map((v) => {
             const variantData: any = {
-              size: v.size,
-              color: v.color,
+              size: v.size.trim(),
+              color: v.color.trim(),
               price: parseFloat(v.price),
               stock: parseInt(v.stock),
             };
@@ -712,30 +741,71 @@ const AdminProductEditScreen: React.FC<AdminProductEditScreenProps> = ({
                       <View style={[styles.field, styles.flex1]}>
                         <Text style={styles.label}>Size</Text>
                         <View style={styles.sizeOptions}>
-                          {PRODUCT_SIZES.map((size) => (
-                            <TouchableOpacity
-                              key={size}
-                              style={[
-                                styles.sizeOption,
-                                variant.size === size &&
-                                  styles.sizeOptionActive,
-                              ]}
-                              onPress={() =>
-                                handleVariantChange(index, "size", size)
-                              }
-                            >
-                              <Text
-                                style={[
-                                  styles.sizeOptionText,
-                                  variant.size === size &&
-                                    styles.sizeOptionTextActive,
-                                ]}
+                          {PRODUCT_SIZES.map((size) => {
+                            const active = !variant.customSize && variant.size === size;
+                            return (
+                              <TouchableOpacity
+                                key={size}
+                                style={[styles.sizeOption, active && styles.sizeOptionActive]}
+                                onPress={() =>
+                                  setVariants((prev) =>
+                                    prev.map((v, i) =>
+                                      i === index ? { ...v, size, customSize: false } : v,
+                                    ),
+                                  )
+                                }
                               >
-                                {size}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
+                                <Text
+                                  style={[styles.sizeOptionText, active && styles.sizeOptionTextActive]}
+                                >
+                                  {size}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                          {(() => {
+                            const customActive =
+                              Boolean(variant.customSize) ||
+                              (variant.size !== "" && !isBuiltInSize(variant.size));
+                            return (
+                              <TouchableOpacity
+                                style={[styles.sizeOption, customActive && styles.sizeOptionActive]}
+                                onPress={() =>
+                                  setVariants((prev) =>
+                                    prev.map((v, i) =>
+                                      i === index
+                                        ? {
+                                            ...v,
+                                            size: isBuiltInSize(v.size) ? "" : v.size,
+                                            customSize: true,
+                                          }
+                                        : v,
+                                    ),
+                                  )
+                                }
+                              >
+                                <Text
+                                  style={[
+                                    styles.sizeOptionText,
+                                    customActive && styles.sizeOptionTextActive,
+                                  ]}
+                                >
+                                  + Custom
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })()}
                         </View>
+                        {(variant.customSize ||
+                          (variant.size !== "" && !isBuiltInSize(variant.size))) && (
+                          <TextInput
+                            style={[styles.input, styles.customSizeInput]}
+                            value={variant.size}
+                            onChangeText={(text) => handleVariantChange(index, "size", text)}
+                            placeholder="Custom size, e.g. 3-6 Months"
+                            maxLength={MAX_SIZE_LENGTH}
+                          />
+                        )}
                       </View>
                     </View>
 
@@ -869,6 +939,9 @@ const AdminProductEditScreen: React.FC<AdminProductEditScreenProps> = ({
                   </View>
                 ))}
 
+                {errors.variants && (
+                  <Text style={styles.errorText}>{errors.variants}</Text>
+                )}
                 <TouchableOpacity
                   style={styles.addVariantButton}
                   onPress={handleAddVariant}
@@ -1114,6 +1187,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#1a1a1a",
+  },
+  customSizeInput: {
+    marginTop: 8,
   },
   sizeOptions: {
     flexDirection: "row",

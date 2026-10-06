@@ -1,8 +1,9 @@
 /**
  * ChatScreen
- * Real-time chat with customer support
+ * Real-time support chat. Customers see their own conversation; admins open a
+ * specific room from the inbox (route param `roomId`).
  */
-import React, { useEffect, useCallback, useState, useRef } from "react";
+import React, { useEffect, useCallback, useState, useRef, useLayoutEffect } from "react";
 import {
     View,
     Text,
@@ -19,277 +20,279 @@ import {
     Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import { Send, RefreshCw, Check, CheckCheck, Image as ImageIcon } from "lucide-react-native";
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from "expo-image-picker";
 import { RootState, AppDispatch } from "../../store";
 import {
-    setActiveRoomId,
+    enterRoom,
+    leaveRoom,
     setMessages,
+    prependMessages,
     addMessage,
+    markMessagesRead,
+    roomClosed,
     setConnectionStatus,
     setIsLoading,
     ChatMessage,
 } from "../../store/chatSlice";
-import socketService from "../../services/socketService";
-import { getItem } from "../../utils/storage";
-import { getApiUrl } from "../../utils/config";
+import socketService, { AckResponse } from "../../services/socketService";
+import api from "../../api/axios";
 import { playTypingSoundDebounced, playMessageSound } from "../../utils/soundUtils";
+
+interface ChatRouteParams {
+    roomId?: string;
+    customerName?: string;
+}
+
+interface JoinResponse extends AckResponse {
+    roomId?: string;
+    status?: "open" | "closed";
+    hasMore?: boolean;
+}
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 const ChatScreen = () => {
     const dispatch = useDispatch<AppDispatch>();
-    const { messages, connectionStatus, activeRoomId, isLoading } = useSelector(
-        (state: RootState) => state.chat
+    const navigation = useNavigation();
+    const route = useRoute();
+    const { roomId: requestedRoomId, customerName } = (route.params || {}) as ChatRouteParams;
+
+    const { messages, connectionStatus, activeRoomId, roomStatus, isLoading, hasMore } = useSelector(
+        (state: RootState) => state.chat,
     );
+    const user = useSelector((state: RootState) => state.auth.user);
+    const currentUserId = user?._id;
+    const isAdmin = user?.role === "admin";
+
     const [inputMessage, setInputMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
-    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const [typingText, setTypingText] = useState("");
     const flatListRef = useRef<FlatList>(null);
-    // Use ref to avoid stale closure in socket callbacks
-    const currentUserIdRef = useRef<string | null>(null);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastMessageIdRef = useRef<string | undefined>(undefined);
+    const currentUserIdRef = useRef(currentUserId);
+    const activeRoomIdRef = useRef(activeRoomId);
 
-    // Phase 2: Typing state
-    const [typingText, setTypingText] = useState<string>("");
-    const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Get current user ID before socket initialization
     useEffect(() => {
-        const getUserId = async () => {
-            const userId = await getItem("userId");
-            setCurrentUserId(userId);
-            currentUserIdRef.current = userId;
-        };
-        getUserId();
-    }, []);
+        currentUserIdRef.current = currentUserId;
+    }, [currentUserId]);
+    useEffect(() => {
+        activeRoomIdRef.current = activeRoomId;
+    }, [activeRoomId]);
 
-    // Initialize socket connection
-    const initializeChat = useCallback(async () => {
+    const joinRoom = useCallback(async () => {
         dispatch(setIsLoading(true));
-        dispatch(setConnectionStatus("connecting"));
-
-        const socket = await socketService.connect();
-
-        if (!socket) {
-            dispatch(setConnectionStatus("error"));
-            dispatch(setIsLoading(false));
-            return;
-        }
-
-        // Handle connection events
-        socket.on("connect", () => {
-            dispatch(setConnectionStatus("connected"));
-
-            // Join chat room
-            socketService.emit(
-                "join-chat",
-                {},
-                (response: { success: boolean; roomId?: string; error?: string }) => {
-                    dispatch(setIsLoading(false));
-                    if (response.success && response.roomId) {
-                        dispatch(setActiveRoomId(response.roomId));
-                    } else {
-                        console.error("Failed to join chat:", response.error);
-                    }
-                }
-            );
-        });
-
-        socket.on("connect_error", () => {
-            dispatch(setConnectionStatus("error"));
-            dispatch(setIsLoading(false));
-        });
-
-        socket.on("disconnect", () => {
-            dispatch(setConnectionStatus("disconnected"));
-        });
-
-        // Handle incoming messages
-        socket.on(
-            "chat-history",
-            (data: { roomId: string; messages: ChatMessage[] }) => {
-                dispatch(setMessages(data.messages));
-            }
+        const res = await socketService.request<JoinResponse>(
+            "join-chat",
+            requestedRoomId ? { roomId: requestedRoomId } : {},
         );
+        dispatch(setIsLoading(false));
+        if (res.success && res.roomId) {
+            dispatch(enterRoom({ roomId: res.roomId, status: res.status ?? "open", hasMore: res.hasMore }));
+            socketService.send("message-read", { roomId: res.roomId });
+        } else {
+            Alert.alert("Chat", res.error || "Could not open the conversation");
+        }
+    }, [dispatch, requestedRoomId]);
 
-        socket.on("new-message", (message: ChatMessage) => {
-            dispatch(addMessage(message));
-            // Mark as read immediately if we are in the screen
-            // Use ref to avoid stale closure issue
-            if (currentUserIdRef.current && message.senderId !== currentUserIdRef.current) {
-                socket.emit("message-read", { roomId: message.roomId, messageIds: [message._id] });
-                // Play sound/haptic for incoming message
-                playMessageSound();
-            }
-        });
-
-        // Typing events
-        socket.on("typing", (data: { userId: string; userRole: string }) => {
-            if (data.userId !== currentUserId) {
-                setTypingText("Support is typing...");
-                // Play typing sound/haptic with debounce
-                playTypingSoundDebounced();
-            }
-        });
-
-        socket.on("stop-typing", () => {
-            setTypingText("");
-        });
-
-        // Message read receipt (optional update logic here)
-        socket.on("message-read", () => { });
-
-    }, [dispatch, currentUserId]);
-
-    // Connect on focus, disconnect on blur
+    // Connect and listen while the screen is focused
     useFocusEffect(
         useCallback(() => {
-            initializeChat();
+            const socket = socketService.connect();
+            dispatch(setConnectionStatus(socket.connected ? "connected" : "connecting"));
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const handlers: Record<string, (...args: any[]) => void> = {
+                connect: () => {
+                    dispatch(setConnectionStatus("connected"));
+                    joinRoom();
+                },
+                connect_error: () => {
+                    dispatch(setConnectionStatus("error"));
+                    dispatch(setIsLoading(false));
+                },
+                disconnect: () => dispatch(setConnectionStatus("disconnected")),
+                "chat-history": (data: { roomId: string; messages: ChatMessage[]; hasMore?: boolean }) =>
+                    dispatch(setMessages(data)),
+                "new-message": (message: ChatMessage) => {
+                    if (message.roomId !== activeRoomIdRef.current) return;
+                    dispatch(addMessage(message));
+                    setTypingText("");
+                    if (message.senderId !== currentUserIdRef.current) {
+                        socketService.send("message-read", { roomId: message.roomId });
+                        playMessageSound();
+                    }
+                },
+                "message-read": (data: { roomId: string; readerRole: "customer" | "admin" }) =>
+                    dispatch(markMessagesRead(data)),
+                "room-closed": (data: { roomId: string }) => dispatch(roomClosed(data.roomId)),
+                typing: (data: { roomId: string; userRole: string }) => {
+                    if (data.roomId !== activeRoomIdRef.current) return;
+                    setTypingText(
+                        data.userRole === "admin"
+                            ? isAdmin ? "Another admin is typing..." : "Support is typing..."
+                            : `${customerName || "Customer"} is typing...`,
+                    );
+                    playTypingSoundDebounced();
+                    if (typingClearRef.current) clearTimeout(typingClearRef.current);
+                    typingClearRef.current = setTimeout(() => setTypingText(""), 5000);
+                },
+                "stop-typing": () => setTypingText(""),
+            };
+
+            for (const [event, handler] of Object.entries(handlers)) socket.on(event, handler);
+            if (socket.connected) joinRoom();
 
             return () => {
-                socketService.off("connect");
-                socketService.off("connect_error");
-                socketService.off("disconnect");
-                socketService.off("chat-history");
-                socketService.off("new-message");
-                socketService.off("typing");
-                socketService.off("stop-typing");
-                socketService.off("message-read");
-                socketService.disconnect();
+                for (const [event, handler] of Object.entries(handlers)) socket.off(event, handler);
+                if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                if (typingClearRef.current) clearTimeout(typingClearRef.current);
+                socketService.request("leave-chat");
+                dispatch(leaveRoom());
             };
-        }, [initializeChat])
+        }, [dispatch, joinRoom, isAdmin, customerName]),
     );
 
-    // Scroll to bottom on new messages
+    // Admins: "Close" conversation in the header
+    const handleCloseConversation = useCallback(() => {
+        if (!activeRoomId) return;
+        Alert.alert("Close conversation", "The customer will start a new conversation next time.", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Close",
+                style: "destructive",
+                onPress: async () => {
+                    const res = await socketService.request("close-room", { roomId: activeRoomId });
+                    if (res.success) navigation.goBack();
+                    else Alert.alert("Chat", res.error || "Could not close the conversation");
+                },
+            },
+        ]);
+    }, [activeRoomId, navigation]);
+
+    useLayoutEffect(() => {
+        navigation.setOptions({
+            title: isAdmin ? customerName || "Customer" : "Support Chat",
+            headerRight:
+                isAdmin && roomStatus === "open"
+                    ? () => (
+                        <TouchableOpacity onPress={handleCloseConversation} style={styles.headerButton}>
+                            <Text style={styles.headerButtonText}>Close</Text>
+                        </TouchableOpacity>
+                    )
+                    : undefined,
+        });
+    }, [navigation, isAdmin, customerName, roomStatus, handleCloseConversation]);
+
+    // Scroll to the bottom only when a new message arrives (not when older ones load)
     useEffect(() => {
-        if (messages.length > 0) {
-            setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
+        const lastId = messages[messages.length - 1]?._id;
+        if (lastId && lastId !== lastMessageIdRef.current) {
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
         }
+        lastMessageIdRef.current = lastId;
     }, [messages]);
 
-    // Scroll to bottom when keyboard opens so input stays visible
+    // Keep the input visible when the keyboard opens
     useEffect(() => {
         const keyboardShow = Keyboard.addListener(
             Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-            () => {
-                setTimeout(() => {
-                    flatListRef.current?.scrollToEnd({ animated: true });
-                }, 150);
-            }
+            () => setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150),
         );
         return () => keyboardShow.remove();
     }, []);
 
-    // Handle Image Pick
+    /** Send text and/or image; every failure is shown to the user */
+    const sendMessage = async (payload: { content?: string; attachments?: { type: "image"; url: string }[] }) => {
+        if (!activeRoomId) return false;
+        const res = await socketService.request("send-message", { roomId: activeRoomId, ...payload });
+        if (res.success) return true;
+        if (res.code === "ROOM_CLOSED") dispatch(roomClosed(activeRoomId));
+        Alert.alert("Message not sent", res.error || "Please try again");
+        return false;
+    };
+
     const handlePickImage = async () => {
+        if (!activeRoomId) return;
         try {
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 allowsEditing: true,
                 quality: 0.8,
             });
+            if (result.canceled || !result.assets?.length) return;
 
-            if (!result.canceled && result.assets && result.assets.length > 0 && activeRoomId) {
-                const asset = result.assets[0];
+            const asset = result.assets[0];
+            const extension = asset.uri.split(".").pop() || "jpg";
+            const formData = new FormData();
+            formData.append("image", {
+                uri: asset.uri,
+                name: `photo.${extension}`,
+                type: asset.mimeType || `image/${extension}`,
+            } as unknown as Blob);
 
-                // Upload
-                const formData = new FormData();
-                const uriParts = asset.uri.split('.');
-                const fileType = uriParts[uriParts.length - 1];
-
-                formData.append('image', {
-                    uri: asset.uri,
-                    name: `photo.${fileType}`,
-                    type: `image/${fileType}`,
-                } as any);
-
-                dispatch(setIsLoading(true));
-
-                // Use shared config for consistent URL across socket and REST API
-                const token = await getItem('accessToken');
-                const apiUrl = getApiUrl();
-                const response = await fetch(`${apiUrl}/chat/upload`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        // Do NOT set Content-Type for FormData - let fetch set it with boundary
-                    },
-                    body: formData,
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    socketService.emit(
-                        "send-message",
-                        {
-                            roomId: activeRoomId,
-                            content: "Sent an image",
-                            attachments: [{ type: 'image', url: data.url }]
-                        },
-                        (res: { success: boolean; error?: string }) => {
-                            if (!res.success) {
-                                console.error("Failed to send image msg:", res.error);
-                                Alert.alert("Error", "Failed to send image");
-                            }
-                        }
-                    );
-                } else {
-                    Alert.alert("Upload Failed", data.message || "Unknown error");
-                }
-                dispatch(setIsLoading(false));
-            }
+            setIsUploading(true);
+            // The shared axios instance refreshes an expired token automatically
+            const { data } = await api.post("/chat/upload", formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            const url: string | undefined = data?.data?.url ?? data?.url;
+            if (!url) throw new Error("Upload failed");
+            await sendMessage({ attachments: [{ type: "image", url }] });
         } catch (error) {
-            console.error(error);
-            Alert.alert("Error", "Failed to pick/upload image");
-            dispatch(setIsLoading(false));
+            const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+            Alert.alert("Upload failed", message || "Could not send the image");
+        } finally {
+            setIsUploading(false);
         }
     };
 
-    // Handle Input Change
+    const stopTyping = () => {
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+        if (activeRoomId) socketService.send("stop-typing", { roomId: activeRoomId });
+    };
+
     const handleInputChange = (text: string) => {
         setInputMessage(text);
-
         if (!activeRoomId) return;
-        const socket = socketService.getSocket();
-
-        // Emit typing
-        socket?.emit("typing", { roomId: activeRoomId });
-
+        if (!typingTimeoutRef.current) socketService.send("typing", { roomId: activeRoomId });
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-        typingTimeoutRef.current = setTimeout(() => {
-            socket?.emit("stop-typing", { roomId: activeRoomId });
-        }, 2000);
+        typingTimeoutRef.current = setTimeout(stopTyping, 2000);
     };
 
-    // Handle sending message
-    const handleSendMessage = () => {
-        const trimmedMessage = inputMessage.trim();
-
-        if (!trimmedMessage || !activeRoomId || isSending) return;
-
+    const handleSendMessage = async () => {
+        const content = inputMessage.trim();
+        if (!content || !activeRoomId || isSending) return;
         setIsSending(true);
-        // Stop typing immediately
-        socketService.getSocket()?.emit("stop-typing", { roomId: activeRoomId });
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-        socketService.emit(
-            "send-message",
-            { roomId: activeRoomId, content: trimmedMessage },
-            (response: { success: boolean; error?: string }) => {
-                setIsSending(false);
-                if (response.success) {
-                    setInputMessage("");
-                } else {
-                    console.error("Failed to send message:", response.error);
-                }
-            }
-        );
+        stopTyping();
+        if (await sendMessage({ content })) setInputMessage("");
+        setIsSending(false);
     };
 
-    // Render message item
+    const handleLoadOlder = async () => {
+        if (!activeRoomId || !messages[0] || loadingOlder) return;
+        setLoadingOlder(true);
+        const res = await socketService.request<AckResponse & { messages?: ChatMessage[]; hasMore?: boolean }>(
+            "load-messages",
+            { roomId: activeRoomId, before: messages[0].createdAt },
+        );
+        setLoadingOlder(false);
+        if (res.success && res.messages) {
+            dispatch(prependMessages({ roomId: activeRoomId, messages: res.messages, hasMore: Boolean(res.hasMore) }));
+        }
+    };
+
+    const handleStartNewConversation = () => {
+        dispatch(leaveRoom());
+        joinRoom();
+    };
+
     const renderMessage = ({ item }: { item: ChatMessage }) => {
         const isOwn = item.senderId === currentUserId;
         const formattedTime = new Date(item.createdAt).toLocaleTimeString([], {
@@ -298,46 +301,33 @@ const ChatScreen = () => {
         });
 
         return (
-            <View
-                style={[
-                    styles.messageContainer,
-                    isOwn ? styles.ownMessageContainer : styles.otherMessageContainer,
-                ]}
-            >
-                <View
-                    style={[
-                        styles.messageBubble,
-                        isOwn ? styles.ownBubble : styles.otherBubble,
-                    ]}
-                >
+            <View style={[styles.messageContainer, isOwn ? styles.ownMessageContainer : styles.otherMessageContainer]}>
+                <View style={[styles.messageBubble, isOwn ? styles.ownBubble : styles.otherBubble]}>
                     {!isOwn && (
                         <Text style={styles.senderLabel}>
-                            {item.senderRole === "admin" ? "Support" : "Customer"}
+                            {item.senderRole === "admin" ? "Support" : customerName || "Customer"}
                         </Text>
                     )}
-                    <Text style={[styles.messageText, isOwn && styles.ownMessageText]}>
-                        {item.content}
-                    </Text>
-                    {item.attachments?.map((att, idx) => (
-                        att.type === 'image' && (
+                    {!!item.content && (
+                        <Text style={[styles.messageText, isOwn && styles.ownMessageText]}>{item.content}</Text>
+                    )}
+                    {item.attachments?.map((att, idx) =>
+                        att.type === "image" ? (
                             <Image
                                 key={idx}
                                 source={{ uri: att.url }}
-                                style={{ width: 200, height: 150, borderRadius: 8, marginTop: 8 }}
+                                style={[styles.attachment, !!item.content && styles.attachmentWithText]}
                                 resizeMode="cover"
+                                accessibilityLabel="Shared image"
                             />
-                        )
-                    ))}
+                        ) : null,
+                    )}
                     <View style={styles.messageFooter}>
-                        <Text style={[styles.timestamp, isOwn && styles.ownTimestamp]}>
-                            {formattedTime}
-                        </Text>
+                        <Text style={[styles.timestamp, isOwn && styles.ownTimestamp]}>{formattedTime}</Text>
                         {isOwn && (
-                            <View style={styles.statusIcon}>
+                            <View style={styles.statusIcon} accessibilityLabel={item.status === "read" ? "Read" : "Sent"}>
                                 {item.status === "read" ? (
                                     <CheckCheck size={14} color="#93c5fd" />
-                                ) : item.status === "delivered" ? (
-                                    <CheckCheck size={14} color="rgba(255,255,255,0.7)" />
                                 ) : (
                                     <Check size={14} color="rgba(255,255,255,0.7)" />
                                 )}
@@ -349,7 +339,6 @@ const ChatScreen = () => {
         );
     };
 
-    // Render empty state
     const renderEmptyState = () => (
         <View style={styles.emptyContainer}>
             <Text style={styles.emptyEmoji}>💬</Text>
@@ -358,30 +347,32 @@ const ChatScreen = () => {
         </View>
     );
 
-    // Connection status banner
+    const renderLoadEarlier = () =>
+        hasMore ? (
+            <TouchableOpacity onPress={handleLoadOlder} disabled={loadingOlder} style={styles.loadEarlier}>
+                <Text style={styles.loadEarlierText}>{loadingOlder ? "Loading..." : "Load earlier messages"}</Text>
+            </TouchableOpacity>
+        ) : null;
+
     const renderStatusBanner = () => {
         if (connectionStatus === "connected") return null;
-
         return (
-            <View
-                style={[
-                    styles.statusBanner,
-                    connectionStatus === "error" && styles.errorBanner,
-                ]}
-            >
+            <View style={[styles.statusBanner, connectionStatus === "error" && styles.errorBanner]}>
                 <Text style={styles.statusText}>
-                    {connectionStatus === "connecting"
-                        ? "Connecting..."
-                        : "Connection lost"}
+                    {connectionStatus === "connecting" ? "Connecting..." : "Connection lost"}
                 </Text>
-                {connectionStatus === "error" && (
-                    <TouchableOpacity onPress={initializeChat} style={styles.retryButton}>
+                {connectionStatus !== "connecting" && (
+                    <TouchableOpacity onPress={() => socketService.connect()} style={styles.retryButton}>
                         <RefreshCw size={16} color="#fff" />
                     </TouchableOpacity>
                 )}
             </View>
         );
     };
+
+    const connected = connectionStatus === "connected";
+    const canWrite = connected && roomStatus === "open";
+    const sendDisabled = !inputMessage.trim() || isSending || !canWrite;
 
     return (
         <SafeAreaView style={styles.container}>
@@ -402,10 +393,8 @@ const ChatScreen = () => {
                         data={messages}
                         renderItem={renderMessage}
                         keyExtractor={(item) => item._id}
-                        contentContainerStyle={[
-                            styles.messagesList,
-                            messages.length === 0 && styles.emptyList,
-                        ]}
+                        contentContainerStyle={[styles.messagesList, messages.length === 0 && styles.emptyList]}
+                        ListHeaderComponent={renderLoadEarlier}
                         ListEmptyComponent={renderEmptyState}
                         showsVerticalScrollIndicator={false}
                         keyboardShouldPersistTaps="handled"
@@ -413,53 +402,59 @@ const ChatScreen = () => {
                     />
                 )}
 
-                {/* Typing Indicator */}
                 {typingText ? (
                     <View style={styles.typingContainer}>
                         <Text style={styles.typingText}>{typingText}</Text>
                     </View>
                 ) : null}
 
-                <View style={styles.inputContainer}>
-                    <View style={styles.inputWrapper}>
-                        <TextInput
-                            style={styles.input}
-                            value={inputMessage}
-                            onChangeText={handleInputChange}
-                            placeholder="Type a message..."
-                            placeholderTextColor="#9ca3af"
-                            multiline
-                            maxLength={2000}
-                            editable={connectionStatus === "connected"}
-                            selectionColor="#6366f1"
-                            textAlignVertical="center"
-                        />
+                {roomStatus === "closed" ? (
+                    <View style={styles.closedBanner}>
+                        <Text style={styles.closedText}>This conversation has been closed.</Text>
+                        {!isAdmin && (
+                            <TouchableOpacity onPress={handleStartNewConversation}>
+                                <Text style={styles.closedAction}>Start a new conversation</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                ) : (
+                    <View style={styles.inputContainer}>
+                        <View style={styles.inputWrapper}>
+                            <TextInput
+                                style={styles.input}
+                                value={inputMessage}
+                                onChangeText={handleInputChange}
+                                placeholder="Type a message..."
+                                placeholderTextColor="#9ca3af"
+                                multiline
+                                maxLength={MAX_MESSAGE_LENGTH}
+                                editable={canWrite}
+                                selectionColor="#6366f1"
+                                textAlignVertical="center"
+                            />
+                            <TouchableOpacity
+                                onPress={handlePickImage}
+                                disabled={!canWrite || isUploading}
+                                style={styles.attachButton}
+                                accessibilityLabel="Send image"
+                            >
+                                {isUploading ? (
+                                    <ActivityIndicator size="small" color="#6b7280" />
+                                ) : (
+                                    <ImageIcon size={20} color="#6b7280" />
+                                )}
+                            </TouchableOpacity>
+                        </View>
                         <TouchableOpacity
-                            onPress={handlePickImage}
-                            disabled={connectionStatus !== "connected"}
-                            style={styles.attachButton}
+                            onPress={handleSendMessage}
+                            disabled={sendDisabled}
+                            style={[styles.sendButton, sendDisabled && styles.sendButtonDisabled]}
+                            accessibilityLabel="Send message"
                         >
-                            <ImageIcon size={20} color="#6b7280" />
+                            <Send size={20} color="#fff" />
                         </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                        onPress={handleSendMessage}
-                        disabled={
-                            !inputMessage.trim() ||
-                            isSending ||
-                            connectionStatus !== "connected"
-                        }
-                        style={[
-                            styles.sendButton,
-                            (!inputMessage.trim() ||
-                                isSending ||
-                                connectionStatus !== "connected") &&
-                            styles.sendButtonDisabled,
-                        ]}
-                    >
-                        <Send size={20} color="#fff" />
-                    </TouchableOpacity>
-                </View>
+                )}
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -521,6 +516,16 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#9ca3af",
     },
+    loadEarlier: {
+        alignSelf: "center",
+        paddingVertical: 8,
+        marginBottom: 8,
+    },
+    loadEarlierText: {
+        color: "#6366f1",
+        fontSize: 13,
+        fontWeight: "500",
+    },
     messageContainer: {
         marginBottom: 12,
         maxWidth: "80%",
@@ -558,12 +563,20 @@ const styles = StyleSheet.create({
     ownMessageText: {
         color: "#fff",
     },
+    attachment: {
+        width: 200,
+        height: 150,
+        borderRadius: 8,
+    },
+    attachmentWithText: {
+        marginTop: 8,
+    },
     messageFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "flex-end",
         marginTop: 4,
-        gap: 4
+        gap: 4,
     },
     timestamp: {
         fontSize: 11,
@@ -574,6 +587,22 @@ const styles = StyleSheet.create({
     },
     statusIcon: {
         marginLeft: 2,
+    },
+    closedBanner: {
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: "#e5e7eb",
+        alignItems: "center",
+        gap: 8,
+    },
+    closedText: {
+        color: "#6b7280",
+        fontSize: 14,
+    },
+    closedAction: {
+        color: "#6366f1",
+        fontWeight: "600",
+        fontSize: 14,
     },
     inputContainer: {
         flexDirection: "row",
@@ -632,7 +661,16 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "#6b7280",
         fontStyle: "italic",
-    }
+    },
+    headerButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+    },
+    headerButtonText: {
+        color: "#DC2626",
+        fontWeight: "600",
+        fontSize: 15,
+    },
 });
 
 export default ChatScreen;

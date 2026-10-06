@@ -3,9 +3,50 @@
  * Handles HTTP requests for authentication
  * Delegates business logic to authService
  */
-import { Request, Response } from "express";
+import { Request, Response, CookieOptions } from "express";
 import * as authService from "../services/authService";
 import asyncHandler from "../utils/asyncHandler";
+import { getTokenExpiry } from "../utils/tokenUtils";
+
+/*
+ * Refresh-token transport
+ * - Browsers get the refresh token only as an httpOnly cookie scoped to /api/v1/auth,
+ *   so page scripts (and any XSS) can never read it.
+ * - Native apps (React Native sends no Origin header) can't use cookies reliably,
+ *   so they keep receiving it in the JSON body and send it back in the body.
+ */
+const REFRESH_COOKIE = "refreshToken";
+
+const refreshCookieOptions = (): CookieOptions => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/api/v1/auth",
+});
+
+const isBrowserRequest = (req: Request): boolean => !!req.headers.origin;
+
+const sendAuthTokens = (
+  req: Request,
+  res: Response,
+  tokens: { accessToken: string; refreshToken: string },
+): { accessToken: string; refreshToken?: string } => {
+  res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
+    ...refreshCookieOptions(),
+    expires: getTokenExpiry(tokens.refreshToken),
+  });
+
+  return isBrowserRequest(req)
+    ? { accessToken: tokens.accessToken }
+    : { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
+};
+
+const getRequestRefreshToken = (req: Request): string | undefined => {
+  const fromBody = req.body?.refreshToken;
+  if (typeof fromBody === "string" && fromBody) return fromBody;
+  const fromCookie = req.cookies?.[REFRESH_COOKIE];
+  return typeof fromCookie === "string" && fromCookie ? fromCookie : undefined;
+};
 
 /**
  * @desc    Register new user
@@ -20,8 +61,7 @@ const register = asyncHandler(async (req: Request, res: Response) => {
     message: "Registration successful",
     data: {
       user,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      ...sendAuthTokens(req, res, tokens),
     },
   });
 });
@@ -40,22 +80,26 @@ const login = asyncHandler(async (req: Request, res: Response) => {
     message: "Login successful",
     data: {
       user,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      ...sendAuthTokens(req, res, tokens),
     },
   });
 });
 
 /**
- * @desc    Logout user
+ * @desc    Logout user (ends this device's session; { allDevices: true } ends all)
  * @route   POST /api/v1/auth/logout
- * @access  Private
+ * @access  Public (uses the refresh token; access token optional)
  */
 const logout = asyncHandler(async (req: Request, res: Response) => {
-  if (req.user) {
+  const token = getRequestRefreshToken(req);
+
+  if (req.user && req.body?.allDevices) {
     await authService.logoutUser((req.user as any)._id);
+  } else if (token) {
+    await authService.revokeRefreshToken(token);
   }
 
+  res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
   res.status(200).json({
     status: "success",
     message: "Logout successful",
@@ -63,21 +107,24 @@ const logout = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * @desc    Refresh access token
+ * @desc    Refresh access token (cookie for browsers, body for native apps)
  * @route   POST /api/v1/auth/refresh-token
  * @access  Public (requires refresh token)
  */
 const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken } = req.body;
-  const tokens = await authService.refreshAccessToken(refreshToken);
+  try {
+    const tokens = await authService.refreshAccessToken(
+      getRequestRefreshToken(req) as string,
+    );
 
-  res.status(200).json({
-    status: "success",
-    data: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-    },
-  });
+    res.status(200).json({
+      status: "success",
+      data: sendAuthTokens(req, res, tokens),
+    });
+  } catch (error) {
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+    throw error;
+  }
 });
 
 /**
@@ -204,15 +251,6 @@ const unregisterPushToken = asyncHandler(
  */
 const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
   const { email } = req.body;
-
-  if (!email) {
-    res.status(400).json({
-      status: "error",
-      message: "Email is required",
-    });
-    return;
-  }
-
   const result = await authService.forgotPassword(email);
 
   res.status(200).json({
@@ -230,15 +268,6 @@ const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
  */
 const verifyResetOTP = asyncHandler(async (req: Request, res: Response) => {
   const { email, otp } = req.body;
-
-  if (!email || !otp) {
-    res.status(400).json({
-      status: "error",
-      message: "Email and OTP are required",
-    });
-    return;
-  }
-
   const result = await authService.verifyResetOTP(email, otp);
 
   res.status(200).json({
@@ -255,15 +284,6 @@ const verifyResetOTP = asyncHandler(async (req: Request, res: Response) => {
  */
 const resetPassword = asyncHandler(async (req: Request, res: Response) => {
   const { email, otp, newPassword } = req.body;
-
-  if (!email || !otp || !newPassword) {
-    res.status(400).json({
-      status: "error",
-      message: "Email, OTP, and new password are required",
-    });
-    return;
-  }
-
   const result = await authService.resetPassword(email, otp, newPassword);
 
   res.status(200).json({

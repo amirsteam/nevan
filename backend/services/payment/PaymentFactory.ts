@@ -6,6 +6,7 @@ import IPaymentGateway from './IPaymentGateway';
 import CODGateway from './CODGateway';
 import ESewaGateway from './ESewaGateway';
 import KhaltiGateway from './KhaltiGateway';
+import AppError from '../../utils/AppError';
 
 class PaymentFactory {
     private gateways: Record<string, new () => IPaymentGateway>;
@@ -30,10 +31,10 @@ class PaymentFactory {
      * Get a payment gateway instance
      */
     getGateway(gatewayName: string): IPaymentGateway {
-        const name = gatewayName.toLowerCase();
+        const name = String(gatewayName || '').toLowerCase();
 
-        if (!this.gateways[name]) {
-            throw new Error(`Payment gateway '${name}' is not supported`);
+        if (!Object.prototype.hasOwnProperty.call(this.gateways, name)) {
+            throw new AppError(`Payment gateway '${name}' is not supported`, 400);
         }
 
         // Return cached instance or create new one

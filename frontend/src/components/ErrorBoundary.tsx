@@ -4,6 +4,7 @@
  */
 import { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { captureError } from "../utils/monitoring";
 
 interface Props {
   children: ReactNode;
@@ -38,8 +39,7 @@ class ErrorBoundary extends Component<Props, State> {
       console.error("ErrorBoundary caught an error:", error, errorInfo);
     }
 
-    // TODO: Send to error reporting service (Sentry, LogRocket, etc.)
-    // reportError({ error, errorInfo });
+    captureError(error, { componentStack: errorInfo.componentStack });
   }
 
   handleReload = (): void => {

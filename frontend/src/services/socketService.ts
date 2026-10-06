@@ -1,20 +1,27 @@
 /**
  * Socket Service
- * Manages WebSocket connection for real-time chat with automatic token refresh
+ * One Socket.IO connection to the /chat namespace per signed-in session.
+ * The access token is read on every (re)connect, and an auth failure refreshes
+ * the token and reconnects the *same* socket, so listeners stay attached.
  */
 import { io, Socket } from "socket.io-client";
-import axios from "axios";
+import { API_BASE_URL, getAccessToken, refreshAccessToken } from "../api/axios";
 
-// Get API URL from env, strip /api/v1 suffix if present
+// Socket server origin: the API URL without its /api/v1 suffix.
+// A relative API URL (Vite proxy in dev) means the socket server is the page origin.
 const getSocketUrl = (): string => {
-    const apiUrl = (import.meta as any).env.VITE_API_URL || "http://localhost:5000/api/v1";
-    // Remove /api/v1 suffix to get base URL
-    return apiUrl.replace(/\/api\/v1\/?$/, "");
+    const base = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
+    return base.startsWith("http") ? base : window.location.origin;
 };
 
-const getApiUrl = (): string => {
-    return (import.meta as any).env.VITE_API_URL || "http://localhost:5000/api/v1";
-};
+const AUTH_ERRORS = ["Invalid or expired token", "Authentication required"];
+
+export interface AckResponse {
+    success: boolean;
+    error?: string;
+    code?: string;
+    [key: string]: unknown;
+}
 
 class SocketService {
     private socket: Socket | null = null;
@@ -23,162 +30,84 @@ class SocketService {
     private maxRefreshAttempts = 3;
 
     /**
-     * Attempt to refresh the access token
-     */
-    private async refreshToken(): Promise<string | null> {
-        try {
-            const refreshToken = localStorage.getItem("refreshToken");
-            if (!refreshToken) {
-                console.warn("Socket: No refresh token available");
-                return null;
-            }
-
-            const response = await axios.post(`${getApiUrl()}/auth/refresh-token`, {
-                refreshToken,
-            });
-
-            const { accessToken, refreshToken: newRefreshToken } = response.data.data;
-
-            // Store new tokens
-            localStorage.setItem("accessToken", accessToken);
-            localStorage.setItem("refreshToken", newRefreshToken);
-
-            console.log("Socket: Token refreshed successfully");
-            return accessToken;
-        } catch (error) {
-            console.error("Socket: Token refresh failed", error);
-            // Clear tokens on refresh failure
-            localStorage.removeItem("accessToken");
-            localStorage.removeItem("refreshToken");
-            return null;
-        }
-    }
-
-    /**
-     * Connect to the socket server with JWT authentication
-     * Automatically attempts token refresh on auth errors
+     * Connect (or return the existing socket). Returns null when signed out.
      */
     connect(): Socket | null {
-        const token = localStorage.getItem("accessToken");
-
-        if (!token) {
-            console.warn("Socket: No access token available");
-            return null;
-        }
-
-        if (this.socket?.connected) {
-            console.log("Socket: Already connected");
+        if (this.socket) {
+            if (!this.socket.connected) this.socket.connect();
             return this.socket;
         }
+        if (!getAccessToken()) return null;
 
-        const socketUrl = getSocketUrl();
-        console.log(`Socket: Connecting to ${socketUrl}${this.namespace}`);
-
-        this.socket = io(`${socketUrl}${this.namespace}`, {
-            auth: { token },
+        this.socket = io(`${getSocketUrl()}${this.namespace}`, {
+            // Evaluated on every connection attempt, so reconnects use the current token
+            auth: (cb) => cb({ token: getAccessToken() }),
             transports: ["websocket", "polling"],
             reconnection: true,
-            reconnectionAttempts: 5,
             reconnectionDelay: 1000,
         });
 
         this.socket.on("connect", () => {
-            console.log("Socket: Connected successfully", this.socket?.id);
-            // Reset refresh attempts on successful connection
             this.refreshAttempts = 0;
         });
 
         this.socket.on("connect_error", async (error) => {
-            console.error("Socket: Connection error", error.message);
+            const isAuthError = AUTH_ERRORS.some((msg) => error.message.includes(msg));
+            if (!isAuthError || this.refreshAttempts >= this.maxRefreshAttempts) return;
 
-            // Check if error is due to invalid/expired token
-            const isAuthError = 
-                error.message.includes("Invalid or expired token") ||
-                error.message.includes("Authentication") ||
-                error.message.includes("jwt");
-
-            if (isAuthError && this.refreshAttempts < this.maxRefreshAttempts) {
-                this.refreshAttempts++;
-                console.log(`Socket: Attempting token refresh (${this.refreshAttempts}/${this.maxRefreshAttempts})`);
-
-                const newToken = await this.refreshToken();
-                if (newToken) {
-                    // Disconnect current socket and reconnect with new token
-                    this.socket?.disconnect();
-                    this.socket = null;
-                    
-                    // Small delay before reconnecting
-                    setTimeout(() => {
-                        this.connect();
-                    }, 500);
-                }
-            }
+            this.refreshAttempts++;
+            const token = await refreshAccessToken();
+            if (token) this.socket?.connect();
         });
 
         this.socket.on("disconnect", (reason) => {
-            console.log("Socket: Disconnected", reason);
+            // The server ended the connection (e.g. account deactivated or sessions revoked).
+            // Try once more: a valid session reconnects, a revoked one fails auth.
+            if (reason === "io server disconnect") {
+                setTimeout(() => this.socket?.connect(), 1000);
+            }
         });
 
         return this.socket;
     }
 
-    /**
-     * Disconnect from the socket server
-     */
+    /** Close the connection and drop all listeners (sign-out) */
     disconnect(): void {
         if (this.socket) {
-            console.log("Socket: Disconnecting...");
+            this.socket.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
         }
-        // Reset refresh attempts on manual disconnect
         this.refreshAttempts = 0;
     }
 
     /**
-     * Emit an event to the server with optional callback
+     * Emit and wait for the server's acknowledgement. Resolves with an error
+     * response (never hangs) when offline or when the server doesn't answer.
      */
-    emit<T = any>(
-        event: string,
-        data?: any,
-        callback?: (response: T) => void
-    ): void {
-        if (!this.socket?.connected) {
-            console.warn("Socket: Not connected, cannot emit", event);
-            return;
-        }
-        this.socket.emit(event, data, callback);
+    request<T extends AckResponse = AckResponse>(event: string, data?: unknown, timeoutMs = 10000): Promise<T> {
+        return new Promise((resolve) => {
+            if (!this.socket?.connected) {
+                resolve({ success: false, error: "Not connected to chat. Please try again." } as T);
+                return;
+            }
+            this.socket
+                .timeout(timeoutMs)
+                .emit(event, data ?? {}, (err: Error | null, response: T) => {
+                    resolve(err ? ({ success: false, error: "The chat server did not respond" } as T) : response);
+                });
+        });
     }
 
-    /**
-     * Listen for an event from the server
-     */
-    on<T = any>(event: string, callback: (data: T) => void): void {
-        if (!this.socket) {
-            console.warn("Socket: Not initialized, cannot listen for", event);
-            return;
-        }
-        this.socket.on(event, callback);
+    /** Fire-and-forget event (typing, read receipts) */
+    send(event: string, data?: unknown): void {
+        if (this.socket?.connected) this.socket.emit(event, data);
     }
 
-    /**
-     * Remove event listener
-     */
-    off(event: string, callback?: (...args: any[]) => void): void {
-        if (!this.socket) return;
-        this.socket.off(event, callback);
-    }
-
-    /**
-     * Get connection status
-     */
     isConnected(): boolean {
         return this.socket?.connected ?? false;
     }
 
-    /**
-     * Get the socket instance
-     */
     getSocket(): Socket | null {
         return this.socket;
     }

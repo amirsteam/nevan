@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { initMonitoring } from "./utils/monitoring";
+
+initMonitoring();
 
 const rootElement = document.getElementById("root");
 

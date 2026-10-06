@@ -2,7 +2,9 @@
  * Router Configuration
  * Defines all routes for the application
  */
+import { lazy, Suspense, ReactNode } from "react";
 import { createBrowserRouter } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
 // Layout
 import { Layout } from "../components/layout";
@@ -33,15 +35,28 @@ import FAQ from "../pages/FAQ";
 import ShippingInfo from "../pages/ShippingInfo";
 import Returns from "../pages/Returns";
 import Privacy from "../pages/Privacy";
-import { NotFound } from "../pages/placeholders";
+import NotFound from "../pages/NotFound";
 
-// Admin Pages
-import AdminLayout from "../pages/admin/AdminLayout";
-import AdminDashboard from "../pages/admin/Dashboard";
-import AdminProducts from "../pages/admin/Products";
-import AdminCategories from "../pages/admin/Categories";
-import AdminOrders from "../pages/admin/OrdersAdvanced";
-import AdminUsers from "../pages/admin/Users";
+// Admin pages are code-split so shoppers don't download the admin panel
+// (and its charting/table libraries)
+const AdminLayout = lazy(() => import("../pages/admin/AdminLayout"));
+const AdminDashboard = lazy(() => import("../pages/admin/Dashboard"));
+const AdminProducts = lazy(() => import("../pages/admin/Products"));
+const AdminCategories = lazy(() => import("../pages/admin/Categories"));
+const AdminOrders = lazy(() => import("../pages/admin/OrdersAdvanced"));
+const AdminUsers = lazy(() => import("../pages/admin/Users"));
+
+const withSuspense = (element: ReactNode) => (
+  <Suspense
+    fallback={
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
+      </div>
+    }
+  >
+    {element}
+  </Suspense>
+);
 
 const router = createBrowserRouter([
   {
@@ -134,16 +149,14 @@ const router = createBrowserRouter([
   {
     path: "/admin",
     element: (
-      <AdminRoute>
-        <AdminLayout />
-      </AdminRoute>
+      <AdminRoute>{withSuspense(<AdminLayout />)}</AdminRoute>
     ),
     children: [
-      { index: true, element: <AdminDashboard /> },
-      { path: "products", element: <AdminProducts /> },
-      { path: "categories", element: <AdminCategories /> },
-      { path: "orders", element: <AdminOrders /> },
-      { path: "users", element: <AdminUsers /> },
+      { index: true, element: withSuspense(<AdminDashboard />) },
+      { path: "products", element: withSuspense(<AdminProducts />) },
+      { path: "categories", element: withSuspense(<AdminCategories />) },
+      { path: "orders", element: withSuspense(<AdminOrders />) },
+      { path: "users", element: withSuspense(<AdminUsers />) },
     ],
   },
 ]);

@@ -4,9 +4,23 @@
  * Separates auth logic from HTTP handling
  */
 import crypto from "crypto";
-import User, { IUser } from "../models/User";
-import { generateTokenPair, verifyRefreshToken } from "../utils/tokenUtils";
+import User, { IUser, IRefreshSession } from "../models/User";
+import {
+  generateTokenPair,
+  verifyRefreshToken,
+  hashToken,
+  getTokenExpiry,
+} from "../utils/tokenUtils";
 import AppError from "../utils/AppError";
+import { sendPasswordResetEmail } from "../utils/email";
+import { disconnectUserSockets } from "../config/socketRegistry";
+
+// Max concurrent logged-in devices per user; the oldest session is dropped first
+const MAX_SESSIONS = 5;
+// A rotated refresh token stays valid briefly so parallel refresh calls don't log the user out
+const ROTATION_GRACE_MS = 60 * 1000;
+// Wrong reset codes allowed before the code is invalidated
+const MAX_RESET_ATTEMPTS = 5;
 
 interface UserRegistrationData {
   name: string;
@@ -24,6 +38,27 @@ interface AuthResult {
   user: IUser;
   tokens: TokenPair;
 }
+
+/**
+ * Issue a token pair and record its refresh session on the user (caller saves).
+ * Expired sessions are pruned and only the newest MAX_SESSIONS are kept.
+ */
+const startSession = (user: IUser): TokenPair => {
+  const tokens = generateTokenPair(user);
+  const now = Date.now();
+
+  const sessions: IRefreshSession[] = (user.refreshSessions || []).filter(
+    (s) => new Date(s.expiresAt).getTime() > now,
+  );
+  sessions.push({
+    tokenHash: hashToken(tokens.refreshToken),
+    expiresAt: getTokenExpiry(tokens.refreshToken),
+    createdAt: new Date(),
+  });
+
+  user.refreshSessions = sessions.slice(-MAX_SESSIONS);
+  return tokens;
+};
 
 /**
  * Register a new user
@@ -47,16 +82,13 @@ const registerUser = async (
     phone,
   });
 
-  // Generate tokens
-  const tokens = generateTokenPair(user);
-
-  // Save refresh token to user
-  (user as any).refreshToken = tokens.refreshToken;
-  await (user as any).save({ validateBeforeSave: false });
+  // Generate tokens and record the session
+  const tokens = startSession(user);
+  await user.save({ validateBeforeSave: false });
 
   // Remove sensitive fields
-  (user as any).password = undefined;
-  (user as any).refreshToken = undefined;
+  user.password = undefined;
+  (user as any).refreshSessions = undefined;
 
   return { user, tokens };
 };
@@ -69,7 +101,13 @@ const loginUser = async (
   password: string,
 ): Promise<AuthResult> => {
   // Find user with password field
-  const user = await User.findOne({ email }).select("+password +refreshToken");
+  if (typeof email !== "string" || typeof password !== "string") {
+    throw new AppError("Invalid email or password", 401);
+  }
+
+  const user = await User.findOne({ email }).select(
+    "+password +refreshSessions",
+  );
 
   if (!user || !(await user.comparePassword(password))) {
     throw new AppError("Invalid email or password", 401);
@@ -79,42 +117,62 @@ const loginUser = async (
     throw new AppError("Your account has been deactivated", 401);
   }
 
-  // Generate new tokens
-  const tokens = generateTokenPair(user);
-
-  // Update refresh token and last login
-  (user as any).refreshToken = tokens.refreshToken;
-  (user as any).lastLogin = new Date();
-  await (user as any).save({ validateBeforeSave: false });
+  // Generate new tokens, record the session and last login
+  const tokens = startSession(user);
+  user.lastLogin = new Date();
+  await user.save({ validateBeforeSave: false });
 
   // Remove sensitive fields
-  (user as any).password = undefined;
-  (user as any).refreshToken = undefined;
+  user.password = undefined;
+  (user as any).refreshSessions = undefined;
 
   return { user, tokens };
 };
 
 /**
- * Logout user - Invalidates refresh token
+ * Logout user - ends the session of the given refresh token,
+ * or every session when no token is provided
  */
-const logoutUser = async (userId: string): Promise<void> => {
-  await User.findByIdAndUpdate(userId, { refreshToken: null });
+const logoutUser = async (
+  userId: string,
+  refreshToken?: string,
+): Promise<void> => {
+  if (refreshToken) {
+    await User.findByIdAndUpdate(userId, {
+      $pull: { refreshSessions: { tokenHash: hashToken(refreshToken) } },
+    });
+  } else {
+    await User.findByIdAndUpdate(userId, { refreshSessions: [] });
+    disconnectUserSockets(String(userId));
+  }
 };
 
 /**
- * Refresh access token using refresh token
+ * End the session belonging to a refresh token (no-op for invalid tokens)
+ */
+const revokeRefreshToken = async (refreshToken: string): Promise<void> => {
+  let decoded: any;
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    return;
+  }
+  await logoutUser(decoded.userId, refreshToken);
+};
+
+/**
+ * Refresh access token using refresh token (rotates the refresh token)
  */
 const refreshAccessToken = async (refreshToken: string): Promise<TokenPair> => {
-  if (!refreshToken) {
-    throw new AppError("Refresh token is required", 400);
+  if (!refreshToken || typeof refreshToken !== "string") {
+    throw new AppError("Refresh token is required", 401);
   }
 
   try {
-    // Verify refresh token
+    // Verify refresh token signature and expiry
     const decoded = verifyRefreshToken(refreshToken);
 
-    // Find user with stored refresh token
-    const user = await User.findById(decoded.userId).select("+refreshToken");
+    const user = await User.findById(decoded.userId).select("+refreshSessions");
 
     if (!user) {
       throw new AppError("User not found", 401);
@@ -124,17 +182,24 @@ const refreshAccessToken = async (refreshToken: string): Promise<TokenPair> => {
       throw new AppError("Your account has been deactivated", 401);
     }
 
-    // Verify stored refresh token matches
-    if ((user as any).refreshToken !== refreshToken) {
+    // The token must belong to a live session (revoked by logout / password change otherwise)
+    const tokenHash = hashToken(refreshToken);
+    const now = Date.now();
+    const session = (user.refreshSessions || []).find(
+      (s) => s.tokenHash === tokenHash && new Date(s.expiresAt).getTime() > now,
+    );
+
+    if (!session) {
       throw new AppError("Invalid refresh token", 401);
     }
 
-    // Generate new token pair (rotate refresh token for security)
-    const tokens = generateTokenPair(user);
-
-    // Update stored refresh token
-    (user as any).refreshToken = tokens.refreshToken;
-    await (user as any).save({ validateBeforeSave: false });
+    // Rotate: the old token expires after a short grace period
+    const graceExpiry = new Date(now + ROTATION_GRACE_MS);
+    if (new Date(session.expiresAt) > graceExpiry) {
+      session.expiresAt = graceExpiry;
+    }
+    const tokens = startSession(user);
+    await user.save({ validateBeforeSave: false });
 
     return tokens;
   } catch (error) {
@@ -151,7 +216,7 @@ const changePassword = async (
   currentPassword: string,
   newPassword: string,
 ): Promise<{ message: string }> => {
-  const user = await User.findById(userId).select("+password");
+  const user = await User.findById(userId).select("+password +refreshSessions");
 
   if (!user) {
     throw new AppError("User not found", 404);
@@ -161,9 +226,10 @@ const changePassword = async (
     throw new AppError("Current password is incorrect", 401);
   }
 
-  (user as any).password = newPassword;
-  (user as any).refreshToken = null; // Invalidate all sessions
+  user.password = newPassword;
+  user.refreshSessions = []; // Invalidate all sessions
   await user.save();
+  disconnectUserSockets(String(user._id));
 
   return { message: "Password changed successfully" };
 };
@@ -256,39 +322,95 @@ const getUserPushTokens = async (
   }));
 };
 
+const RESET_SENT_MESSAGE =
+  "If an account with that email exists, we've sent a reset code.";
+
 /**
- * Forgot password - Generate and return OTP
- * In production, this would send an email/SMS with the OTP
+ * Forgot password - generate a 6-digit code and email it.
+ * The response is the same whether or not the account exists.
+ * Outside production the code is also returned to ease local testing.
  */
 const forgotPassword = async (
   email: string,
 ): Promise<{ message: string; otp?: string }> => {
   const user = await User.findOne({ email });
 
-  if (!user) {
-    // Don't reveal if email exists for security
-    throw new AppError(
-      "If an account with that email exists, we've sent a reset code.",
-      200,
-    );
+  if (!user || !user.isActive) {
+    return { message: RESET_SENT_MESSAGE };
   }
 
-  if (!user.isActive) {
-    throw new AppError("Your account has been deactivated", 401);
-  }
-
-  // Generate OTP
   const otp = user.createPasswordResetToken();
   await user.save({ validateBeforeSave: false });
 
-  // In production, you would send this via email/SMS
-  // For development/testing, we return the OTP
-  // TODO: Integrate with email service (nodemailer, sendgrid, etc.)
+  try {
+    await sendPasswordResetEmail(user.email, user.name, otp);
+  } catch (error) {
+    // Don't leave a code that was never delivered
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save({ validateBeforeSave: false });
+    console.error("Password reset email failed:", error);
+    throw new AppError(
+      "Could not send the reset code right now. Please try again later.",
+      503,
+    );
+  }
 
   return {
-    message: "Password reset code sent to your email",
+    message: RESET_SENT_MESSAGE,
     otp: process.env.NODE_ENV === "development" ? otp : undefined,
   };
+};
+
+/**
+ * Check a reset code for a user. Wrong guesses are counted; after
+ * MAX_RESET_ATTEMPTS the code is invalidated and a new one must be requested.
+ */
+const checkResetCode = async (
+  email: string,
+  otp: string,
+  extraFields = "",
+): Promise<IUser> => {
+  if (typeof email !== "string" || typeof otp !== "string") {
+    throw new AppError("Invalid or expired reset code", 400);
+  }
+
+  const user = await User.findOne({ email }).select(
+    `+resetPasswordToken +resetPasswordExpires +resetPasswordAttempts ${extraFields}`,
+  );
+
+  if (
+    !user ||
+    !user.resetPasswordToken ||
+    !user.resetPasswordExpires ||
+    user.resetPasswordExpires.getTime() <= Date.now()
+  ) {
+    throw new AppError("Invalid or expired reset code", 400);
+  }
+
+  const expected = Buffer.from(user.resetPasswordToken, "hex");
+  const actual = crypto.createHash("sha256").update(otp.trim()).digest();
+  const matches =
+    expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+
+  if (!matches) {
+    const attempts = (user.resetPasswordAttempts || 0) + 1;
+    if (attempts >= MAX_RESET_ATTEMPTS) {
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      user.resetPasswordAttempts = 0;
+      await user.save({ validateBeforeSave: false });
+      throw new AppError(
+        "Too many incorrect attempts. Please request a new reset code.",
+        400,
+      );
+    }
+    user.resetPasswordAttempts = attempts;
+    await user.save({ validateBeforeSave: false });
+    throw new AppError("Invalid or expired reset code", 400);
+  }
+
+  return user;
 };
 
 /**
@@ -298,18 +420,7 @@ const verifyResetOTP = async (
   email: string,
   otp: string,
 ): Promise<{ valid: boolean }> => {
-  const hashedOTP = crypto.createHash("sha256").update(otp).digest("hex");
-
-  const user = await User.findOne({
-    email,
-    resetPasswordToken: hashedOTP,
-    resetPasswordExpires: { $gt: Date.now() },
-  }).select("+resetPasswordToken +resetPasswordExpires");
-
-  if (!user) {
-    throw new AppError("Invalid or expired reset code", 400);
-  }
-
+  await checkResetCode(email, otp);
   return { valid: true };
 };
 
@@ -321,24 +432,16 @@ const resetPassword = async (
   otp: string,
   newPassword: string,
 ): Promise<{ message: string }> => {
-  const hashedOTP = crypto.createHash("sha256").update(otp).digest("hex");
-
-  const user = await User.findOne({
-    email,
-    resetPasswordToken: hashedOTP,
-    resetPasswordExpires: { $gt: Date.now() },
-  }).select("+resetPasswordToken +resetPasswordExpires +password");
-
-  if (!user) {
-    throw new AppError("Invalid or expired reset code", 400);
-  }
+  const user = await checkResetCode(email, otp, "+password +refreshSessions");
 
   // Update password
-  (user as any).password = newPassword;
-  (user as any).resetPasswordToken = undefined;
-  (user as any).resetPasswordExpires = undefined;
-  (user as any).refreshToken = null; // Invalidate all sessions
+  user.password = newPassword;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  user.resetPasswordAttempts = 0;
+  user.refreshSessions = []; // Invalidate all sessions
   await user.save();
+  disconnectUserSockets(String(user._id));
 
   return {
     message:
@@ -350,6 +453,7 @@ export {
   registerUser,
   loginUser,
   logoutUser,
+  revokeRefreshToken,
   refreshAccessToken,
   changePassword,
   registerPushToken,

@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { WebView } from "react-native-webview";
+import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTypes";
 import { useAppDispatch } from "../../store/hooks";
-import { resetCart } from "../../store/cartSlice";
+import { fetchCart } from "../../store/cartSlice";
+import { baseApi } from "../../store/api";
 import type { PaymentScreenProps } from "../../navigation/types";
 
 interface WebViewNavState {
@@ -13,10 +15,21 @@ interface WebViewNavState {
   canGoForward?: boolean;
 }
 
+// After the gateway, the API verifies the payment and redirects to the storefront's
+// /order-success or /order-failed page. The app intercepts those URLs instead of
+// showing the website inside the WebView.
+const RESULT_URL = /\/order-(success|failed)(\?|$)/;
+
+const getQueryParam = (url: string, name: string): string | undefined => {
+  const match = url.match(new RegExp(`[?&]${name}=([^&#]*)`));
+  return match ? decodeURIComponent(match[1].replace(/\+/g, " ")) : undefined;
+};
+
 const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
   const { orderId, gateway, paymentData } = route.params;
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(true);
+  const handledRef = useRef(false);
 
   let html = "";
   let uri = "";
@@ -50,24 +63,49 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
       "";
   }
 
-  const handleNavigationStateChange = (navState: WebViewNavState): void => {
-    // Check for success/failure in URL
-    const url = navState.url;
+  const openOrder = (id: string) => {
+    navigation.navigate("Main", {
+      screen: "ProfileTab",
+      params: { screen: "OrderDetail", params: { orderId: id } },
+    });
+  };
 
-    // Adjust these checks based on actual backend success/fail redirect URLs
-    if (url.includes("payment/success") || url.includes("success=true")) {
-      dispatch(resetCart());
-      Alert.alert("Success", "Payment Successful!", [
-        { text: "OK", onPress: () => navigation.getParent()?.goBack() },
+  /** Returns true when `url` is the payment result page (and handles it once) */
+  const handleResultUrl = (url: string): boolean => {
+    const match = url.match(RESULT_URL);
+    if (!match) return false;
+    if (handledRef.current) return true;
+    handledRef.current = true;
+
+    const resultOrderId = getQueryParam(url, "orderId") || orderId;
+    // The API removes paid items from the cart; refresh cart and order lists either way
+    dispatch(fetchCart());
+    dispatch(baseApi.util.invalidateTags(["Cart", "Orders", "Order"]));
+
+    if (match[1] === "success") {
+      Alert.alert("Payment successful", "Your order has been placed.", [
+        { text: "View order", onPress: () => openOrder(resultOrderId) },
       ]);
-    } else if (
-      url.includes("payment/failure") ||
-      url.includes("failure=true")
-    ) {
-      Alert.alert("Failed", "Payment Failed", [
-        { text: "Try Again", onPress: () => navigation.goBack() },
-      ]);
+    } else {
+      Alert.alert(
+        "Payment not completed",
+        getQueryParam(url, "message") ||
+          "Your order is kept for 30 minutes. You can try paying again from the order.",
+        [
+          { text: "View order", onPress: () => openOrder(resultOrderId) },
+          { text: "Back to checkout", onPress: () => navigation.goBack() },
+        ],
+      );
     }
+    return true;
+  };
+
+  const handleShouldStartLoad = (request: ShouldStartLoadRequest): boolean =>
+    !handleResultUrl(request.url);
+
+  const handleNavigationStateChange = (navState: WebViewNavState): void => {
+    // Fallback for platforms/redirects that bypass onShouldStartLoadWithRequest
+    handleResultUrl(navState.url);
   };
 
   return (
@@ -76,6 +114,7 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
         source={html ? { html } : { uri }}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => setLoading(false)}
+        onShouldStartLoadWithRequest={handleShouldStartLoad}
         onNavigationStateChange={handleNavigationStateChange}
         style={{ flex: 1 }}
       />

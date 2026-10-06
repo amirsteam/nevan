@@ -3,7 +3,8 @@
  * Shared constants for the backend
  */
 
-// Product size options
+// Built-in size suggestions. Variants may also use custom sizes (any text up to
+// MAX_SIZE_LENGTH characters), so don't treat this list as exhaustive.
 export const PRODUCT_SIZES = [
   "Small Size (0-1 yrs)",
   "Medium Size (1-4 yrs)",
@@ -15,3 +16,5 @@ export const PRODUCT_SIZES = [
 ] as const;
 
 export type ProductSize = (typeof PRODUCT_SIZES)[number];
+
+export const MAX_SIZE_LENGTH = 40;

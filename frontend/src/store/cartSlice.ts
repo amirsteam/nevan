@@ -13,6 +13,9 @@ interface CartState {
   subtotal: number;
   itemCount: number;
   loading: boolean;
+  // True once the server cart has been fetched; an empty `items` before that
+  // means "not loaded yet", not "the cart is empty"
+  hasLoaded: boolean;
   error: string | null;
 }
 
@@ -126,6 +129,7 @@ const initialState: CartState = {
   subtotal: 0,
   itemCount: 0,
   loading: false,
+  hasLoaded: false,
   error: null,
 };
 
@@ -147,12 +151,14 @@ const cartSlice = createSlice({
       })
       .addCase(fetchCart.fulfilled, (state, action: PayloadAction<ICart>) => {
         state.loading = false;
+        state.hasLoaded = true;
         state.items = action.payload.items || [];
         state.subtotal = action.payload.subtotal || 0;
         state.itemCount = action.payload.itemCount || 0;
       })
       .addCase(fetchCart.rejected, (state, action) => {
         state.loading = false;
+        state.hasLoaded = true;
         state.error = action.payload ?? "Failed to fetch cart";
       })
       // Add to cart
@@ -189,7 +195,7 @@ const cartSlice = createSlice({
         },
       )
       // Clear cart
-      .addCase(clearCart.fulfilled, () => initialState);
+      .addCase(clearCart.fulfilled, () => ({ ...initialState, hasLoaded: true }));
   },
 });
 

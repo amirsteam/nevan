@@ -1,0 +1,520 @@
+/**
+ * OpenAPI 3 description of the REST API, served by Swagger UI at /api/v1/docs.
+ * Keep this in sync when adding or changing routes in routes/*.ts.
+ */
+
+type Operation = Record<string, unknown>;
+
+const ok = (description = "Success") => ({
+  200: { description, content: { "application/json": { schema: { $ref: "#/components/schemas/Envelope" } } } },
+});
+
+const errors = {
+  400: { $ref: "#/components/responses/BadRequest" },
+  401: { $ref: "#/components/responses/Unauthorized" },
+};
+
+const json = (schema: Record<string, unknown>, required = true) => ({
+  required,
+  content: { "application/json": { schema } },
+});
+
+const pathParam = (name: string, description = "MongoDB ObjectId") => ({
+  name,
+  in: "path",
+  required: true,
+  description,
+  schema: { type: "string" },
+});
+
+const pageParams = [
+  { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } },
+  { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
+];
+
+const op = (tag: string, summary: string, extra: Operation = {}, auth: "none" | "user" | "admin" = "user") => ({
+  tags: [tag],
+  summary: auth === "admin" ? `${summary} (admin)` : summary,
+  ...(auth === "none" ? { security: [] } : {}),
+  responses: { ...ok(), ...errors },
+  ...extra,
+});
+
+const shippingAddress = {
+  type: "object",
+  required: ["name", "phone", "street", "city", "district", "province"],
+  properties: {
+    name: { type: "string" },
+    phone: { type: "string", example: "9841234567" },
+    street: { type: "string" },
+    city: { type: "string" },
+    district: { type: "string", example: "Kathmandu" },
+    province: { type: "integer", minimum: 1, maximum: 7 },
+    postalCode: { type: "string" },
+  },
+};
+
+const variantSchema = {
+  type: "object",
+  required: ["size", "color"],
+  properties: {
+    _id: { type: "string", description: "Existing variant id (update only)" },
+    size: {
+      type: "string",
+      maxLength: 40,
+      description: "A built-in size (see GET /admin/products/sizes) or any custom size",
+      example: "3-6 Months",
+    },
+    color: { type: "string" },
+    price: { type: "number", minimum: 0 },
+    stock: { type: "integer", minimum: 0 },
+    image: { type: "string", nullable: true },
+  },
+};
+
+const productBody = {
+  type: "object",
+  required: ["name", "description", "price", "category"],
+  properties: {
+    name: { type: "string", maxLength: 100 },
+    description: { type: "string", maxLength: 2000 },
+    shortDescription: { type: "string", maxLength: 200, nullable: true },
+    price: { type: "number", minimum: 0 },
+    comparePrice: { type: "number", minimum: 0, nullable: true },
+    category: { type: "string" },
+    stock: { type: "integer", minimum: 0, description: "Used when the product has no variants" },
+    sku: { type: "string", maxLength: 50, nullable: true },
+    isFeatured: { type: "boolean" },
+    isActive: { type: "boolean" },
+    material: { type: "string" },
+    careInstructions: { type: "string" },
+    ageRecommendation: { type: "string" },
+    metaTitle: { type: "string" },
+    metaDescription: { type: "string" },
+    variants: {
+      type: "array",
+      description: "Size/color combinations must be unique (case-insensitive)",
+      items: variantSchema,
+    },
+  },
+};
+
+const openApiSpec = {
+  openapi: "3.0.3",
+  info: {
+    title: "Nevan / BivanHandicraft API",
+    version: "1.0.0",
+    description:
+      "REST API for the storefront, admin panel and mobile app.\n\n" +
+      "**Auth:** send `Authorization: Bearer <accessToken>`. Access tokens are short-lived; " +
+      "refresh them with `POST /auth/refresh-token`. Browsers receive the refresh token as an " +
+      "httpOnly cookie; native apps (no `Origin` header) receive it in the response body and send it back in the body.\n\n" +
+      "**Responses** use the envelope `{ status, message?, data, results?, pagination? }`.",
+  },
+  servers: [{ url: "/api/v1" }],
+  security: [{ bearerAuth: [] }],
+  tags: [
+    { name: "Auth" },
+    { name: "Products" },
+    { name: "Categories" },
+    { name: "Reviews" },
+    { name: "Cart" },
+    { name: "Wishlist" },
+    { name: "Orders" },
+    { name: "Payments" },
+    { name: "Notifications" },
+    { name: "Chat" },
+    { name: "Admin" },
+    { name: "System" },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+    },
+    schemas: {
+      Envelope: {
+        type: "object",
+        properties: {
+          status: { type: "string", enum: ["success", "fail", "error"] },
+          message: { type: "string" },
+          data: { type: "object" },
+          results: { type: "integer" },
+          pagination: { $ref: "#/components/schemas/Pagination" },
+        },
+      },
+      Pagination: {
+        type: "object",
+        properties: {
+          currentPage: { type: "integer" },
+          itemsPerPage: { type: "integer" },
+          totalPages: { type: "integer" },
+          totalItems: { type: "integer" },
+          hasNextPage: { type: "boolean" },
+          hasPrevPage: { type: "boolean" },
+        },
+      },
+      Error: {
+        type: "object",
+        properties: {
+          status: { type: "string", enum: ["fail", "error"] },
+          message: { type: "string" },
+        },
+      },
+    },
+    responses: {
+      BadRequest: {
+        description: "Validation error",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      Unauthorized: {
+        description: "Missing, invalid or expired access token",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+    },
+  },
+  paths: {
+    "/health": { get: op("System", "Health check", {}, "none") },
+
+    // ---------------- Auth ----------------
+    "/auth/register": {
+      post: op("Auth", "Register", {
+        requestBody: json({
+          type: "object",
+          required: ["name", "email", "password"],
+          properties: {
+            name: { type: "string" },
+            email: { type: "string", format: "email" },
+            password: { type: "string", minLength: 6 },
+            phone: { type: "string" },
+          },
+        }),
+      }, "none"),
+    },
+    "/auth/login": {
+      post: op("Auth", "Log in (failed attempts are rate limited)", {
+        requestBody: json({
+          type: "object",
+          required: ["email", "password"],
+          properties: { email: { type: "string", format: "email" }, password: { type: "string" } },
+        }),
+      }, "none"),
+    },
+    "/auth/refresh-token": {
+      post: op("Auth", "Exchange a refresh token (cookie or body) for a new token pair", {
+        requestBody: json({ type: "object", properties: { refreshToken: { type: "string" } } }, false),
+      }, "none"),
+    },
+    "/auth/logout": {
+      post: op("Auth", "End this session, or all sessions with allDevices", {
+        requestBody: json({
+          type: "object",
+          properties: { refreshToken: { type: "string" }, allDevices: { type: "boolean" } },
+        }, false),
+      }, "none"),
+    },
+    "/auth/forgot-password": {
+      post: op("Auth", "Email a 6-digit reset code", {
+        requestBody: json({ type: "object", required: ["email"], properties: { email: { type: "string", format: "email" } } }),
+      }, "none"),
+    },
+    "/auth/verify-reset-otp": {
+      post: op("Auth", "Check a reset code (locked after 5 wrong attempts)", {
+        requestBody: json({
+          type: "object",
+          required: ["email", "otp"],
+          properties: { email: { type: "string" }, otp: { type: "string", pattern: "^\\d{6}$" } },
+        }),
+      }, "none"),
+    },
+    "/auth/reset-password": {
+      post: op("Auth", "Set a new password with a reset code (ends all sessions)", {
+        requestBody: json({
+          type: "object",
+          required: ["email", "otp", "newPassword"],
+          properties: {
+            email: { type: "string" },
+            otp: { type: "string", pattern: "^\\d{6}$" },
+            newPassword: { type: "string", minLength: 6 },
+          },
+        }),
+      }, "none"),
+    },
+    "/auth/me": { get: op("Auth", "Current user") },
+    "/auth/change-password": {
+      put: op("Auth", "Change password (ends all sessions)", {
+        requestBody: json({
+          type: "object",
+          required: ["currentPassword", "newPassword"],
+          properties: { currentPassword: { type: "string" }, newPassword: { type: "string", minLength: 6 } },
+        }),
+      }),
+    },
+    "/auth/push-token": {
+      post: op("Auth", "Register an Expo push token", {
+        requestBody: json({
+          type: "object",
+          required: ["token", "platform"],
+          properties: {
+            token: { type: "string", example: "ExponentPushToken[xxx]" },
+            platform: { type: "string", enum: ["ios", "android", "web"] },
+            deviceName: { type: "string" },
+          },
+        }),
+      }),
+      delete: op("Auth", "Remove an Expo push token", {
+        requestBody: json({ type: "object", required: ["token"], properties: { token: { type: "string" } } }),
+      }),
+    },
+
+    // ---------------- Catalog ----------------
+    "/products": {
+      get: op("Products", "List active products", {
+        parameters: [
+          ...pageParams,
+          { name: "category", in: "query", description: "Category slug or id (includes subcategories)", schema: { type: "string" } },
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "minPrice", in: "query", schema: { type: "number" } },
+          { name: "maxPrice", in: "query", schema: { type: "number" } },
+          {
+            name: "sort",
+            in: "query",
+            schema: { type: "string", enum: ["-createdAt", "newest", "createdAt", "price", "-price", "-ratings.average", "-soldCount"] },
+          },
+        ],
+      }, "none"),
+    },
+    "/products/featured": { get: op("Products", "Featured products", {}, "none") },
+    "/products/{slug}": {
+      get: op("Products", "Product by slug", { parameters: [pathParam("slug", "Product slug")] }, "none"),
+    },
+    "/products/{productId}/reviews": {
+      get: op("Reviews", "Reviews for a product", { parameters: [pathParam("productId"), ...pageParams] }, "none"),
+      post: op("Reviews", "Write a review (one per user and product)", {
+        parameters: [pathParam("productId")],
+        requestBody: json({
+          type: "object",
+          required: ["rating"],
+          properties: { rating: { type: "integer", minimum: 1, maximum: 5 }, title: { type: "string" }, comment: { type: "string" } },
+        }),
+      }),
+    },
+    "/products/{productId}/reviews/{reviewId}": {
+      delete: op("Reviews", "Delete own review", { parameters: [pathParam("productId"), pathParam("reviewId")] }),
+    },
+    "/categories": { get: op("Categories", "Active categories", {}, "none") },
+    "/categories/all": { get: op("Categories", "Category tree", {}, "none") },
+    "/categories/{slug}": {
+      get: op("Categories", "Category by slug", { parameters: [pathParam("slug", "Category slug")] }, "none"),
+    },
+
+    // ---------------- Cart & wishlist ----------------
+    "/cart": {
+      get: op("Cart", "Current cart with live prices"),
+      delete: op("Cart", "Empty the cart"),
+    },
+    "/cart/items": {
+      post: op("Cart", "Add an item", {
+        requestBody: json({
+          type: "object",
+          required: ["productId", "quantity"],
+          properties: { productId: { type: "string" }, quantity: { type: "integer", minimum: 1 }, variantId: { type: "string" } },
+        }),
+      }),
+    },
+    "/cart/items/{itemId}": {
+      put: op("Cart", "Change quantity", {
+        parameters: [pathParam("itemId")],
+        requestBody: json({ type: "object", required: ["quantity"], properties: { quantity: { type: "integer", minimum: 1 } } }),
+      }),
+      delete: op("Cart", "Remove an item", { parameters: [pathParam("itemId")] }),
+    },
+    "/wishlist": {
+      get: op("Wishlist", "Wishlist products"),
+      delete: op("Wishlist", "Clear wishlist"),
+    },
+    "/wishlist/{productId}": {
+      post: op("Wishlist", "Add product", { parameters: [pathParam("productId")] }),
+      delete: op("Wishlist", "Remove product", { parameters: [pathParam("productId")] }),
+    },
+    "/wishlist/{productId}/check": {
+      get: op("Wishlist", "Is product in wishlist", { parameters: [pathParam("productId")] }),
+    },
+
+    // ---------------- Orders & payments ----------------
+    "/orders": {
+      post: op("Orders", "Place an order from the cart (prices and stock are checked server-side)", {
+        requestBody: json({
+          type: "object",
+          required: ["shippingAddress", "paymentMethod"],
+          properties: {
+            shippingAddress,
+            paymentMethod: { type: "string", enum: ["cod", "esewa", "khalti"] },
+            customerNotes: { type: "string", maxLength: 500 },
+          },
+        }),
+      }),
+      get: op("Orders", "My orders", { parameters: [...pageParams, { name: "status", in: "query", schema: { type: "string" } }] }),
+    },
+    "/orders/{id}": { get: op("Orders", "My order", { parameters: [pathParam("id")] }) },
+    "/orders/{id}/cancel": {
+      post: op("Orders", "Cancel my order (restores stock)", {
+        parameters: [pathParam("id")],
+        requestBody: json({ type: "object", properties: { reason: { type: "string" } } }, false),
+      }),
+    },
+    "/payments/methods": { get: op("Payments", "Enabled payment methods", {}, "none") },
+    "/payments/initiate": {
+      post: op("Payments", "Start (or retry) payment for my pending, unpaid order; gateway must match the order's payment method", {
+        requestBody: json({
+          type: "object",
+          required: ["orderId", "gateway"],
+          properties: { orderId: { type: "string" }, gateway: { type: "string", enum: ["cod", "esewa", "khalti"] } },
+        }),
+      }),
+    },
+    "/payments/verify": {
+      post: op("Payments", "Verify a gateway payment for my order (must match the initiated transaction and order total)", {
+        requestBody: json({
+          type: "object",
+          required: ["orderId", "gateway", "callbackData"],
+          properties: {
+            orderId: { type: "string", description: "Order id or order number" },
+            gateway: { type: "string", enum: ["esewa", "khalti"] },
+            callbackData: {
+              type: "object",
+              description: "eSewa: { data: <base64 from redirect> }; Khalti: { pidx }",
+            },
+          },
+        }),
+      }),
+    },
+    "/payments/esewa/success": {
+      get: op("Payments", "eSewa success redirect target (redirects to the storefront)", {
+        parameters: [{ name: "data", in: "query", required: true, schema: { type: "string" } }],
+        responses: { 302: { description: "Redirect to /order-success or /order-failed" } },
+      }, "none"),
+    },
+    "/payments/esewa/failure": {
+      get: op("Payments", "eSewa failure redirect target", { responses: { 302: { description: "Redirect to /order-failed" } } }, "none"),
+    },
+    "/payments/esewa/failure/{orderId}": {
+      get: op("Payments", "eSewa failure/cancel redirect target for an order (redirects to /order-failed?orderId=…)", {
+        parameters: [pathParam("orderId")],
+        responses: { 302: { description: "Redirect to /order-failed" } },
+      }, "none"),
+    },
+    "/payments/khalti/callback": {
+      get: op("Payments", "Khalti return URL (redirects to the storefront)", {
+        responses: { 302: { description: "Redirect to /order-success or /order-failed" } },
+      }, "none"),
+    },
+
+    // ---------------- Notifications & chat ----------------
+    "/notifications": { get: op("Notifications", "My notifications", { parameters: pageParams }) },
+    "/notifications/unread-count": { get: op("Notifications", "Unread count") },
+    "/notifications/read-all": { patch: op("Notifications", "Mark all read") },
+    "/notifications/{id}/read": { patch: op("Notifications", "Mark one read", { parameters: [pathParam("id")] }) },
+    "/notifications/{id}": { delete: op("Notifications", "Delete one", { parameters: [pathParam("id")] }) },
+    "/chat/upload": {
+      post: op("Chat", "Upload a chat image (realtime messaging uses Socket.IO namespace /chat)", {
+        requestBody: {
+          required: true,
+          content: { "multipart/form-data": { schema: { type: "object", properties: { image: { type: "string", format: "binary" } } } } },
+        },
+      }),
+    },
+
+    // ---------------- Admin ----------------
+    "/admin/dashboard": { get: op("Admin", "Store stats, 7-day sales and orders by status", {}, "admin") },
+    "/admin/products": {
+      get: op("Admin", "All products incl. inactive", {
+        parameters: [
+          ...pageParams,
+          { name: "search", in: "query", schema: { type: "string" } },
+          { name: "category", in: "query", schema: { type: "string" } },
+          { name: "isActive", in: "query", schema: { type: "boolean" } },
+        ],
+      }, "admin"),
+      post: op("Admin", "Create product", { requestBody: json(productBody) }, "admin"),
+    },
+    "/admin/products/sizes": {
+      get: op("Admin", "Size options: built-in sizes plus custom sizes already used on products", {}, "admin"),
+    },
+    "/admin/products/{id}": {
+      get: op("Admin", "Product by id", { parameters: [pathParam("id")] }, "admin"),
+      put: op("Admin", "Update product (send variant _id to update a variant in place; null clears comparePrice/sku/shortDescription)", {
+        parameters: [pathParam("id")],
+        requestBody: json({
+          ...productBody,
+          required: [],
+          properties: {
+            ...productBody.properties,
+            primaryImageId: { type: "string", description: "Existing image to mark as primary" },
+          },
+        }),
+      }, "admin"),
+      delete: op("Admin", "Delete product", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/products/{id}/images": {
+      post: op("Admin", "Upload product images (multipart: `images` files, optional `primaryIndex` to make one of them primary)", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/products/{id}/images/{imageId}": {
+      delete: op("Admin", "Delete product image", { parameters: [pathParam("id"), pathParam("imageId")] }, "admin"),
+    },
+    "/admin/products/{id}/variants/{variantId}/image": {
+      post: op("Admin", "Upload variant image (multipart, field `image`)", { parameters: [pathParam("id"), pathParam("variantId")] }, "admin"),
+    },
+    "/admin/categories": {
+      get: op("Admin", "All categories", {}, "admin"),
+      post: op("Admin", "Create category", {}, "admin"),
+    },
+    "/admin/categories/{id}": {
+      put: op("Admin", "Update category", { parameters: [pathParam("id")] }, "admin"),
+      delete: op("Admin", "Delete category", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/categories/{id}/image": {
+      post: op("Admin", "Upload category image (multipart, field `image`)", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/orders": {
+      get: op("Admin", "All orders (also returns per-status stats)", {
+        parameters: [...pageParams, { name: "status", in: "query", schema: { type: "string" } }],
+      }, "admin"),
+    },
+    "/admin/orders/{id}": { get: op("Admin", "Order by id", { parameters: [pathParam("id")] }, "admin") },
+    "/admin/orders/{id}/status": {
+      put: op("Admin", "Change order status", {
+        parameters: [pathParam("id")],
+        requestBody: json({
+          type: "object",
+          required: ["status"],
+          properties: {
+            status: { type: "string", enum: ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"] },
+            note: { type: "string" },
+          },
+        }),
+      }, "admin"),
+    },
+    "/admin/users": {
+      get: op("Admin", "Users", { parameters: [...pageParams, { name: "role", in: "query", schema: { type: "string" } }] }, "admin"),
+    },
+    "/admin/users/{id}/status": {
+      put: op("Admin", "Activate/deactivate user", {
+        parameters: [pathParam("id")],
+        requestBody: json({ type: "object", required: ["isActive"], properties: { isActive: { type: "boolean" } } }),
+      }, "admin"),
+    },
+    "/admin/users/{id}/role": {
+      put: op("Admin", "Change user role", {
+        parameters: [pathParam("id")],
+        requestBody: json({ type: "object", required: ["role"], properties: { role: { type: "string", enum: ["customer", "admin"] } } }),
+      }, "admin"),
+    },
+    "/admin/payments/cod-collected": {
+      post: op("Admin", "Mark a COD order as paid", {
+        requestBody: json({ type: "object", required: ["orderId"], properties: { orderId: { type: "string" } } }),
+      }, "admin"),
+    },
+  },
+};
+
+export default openApiSpec;

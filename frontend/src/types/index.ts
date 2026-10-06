@@ -8,25 +8,37 @@
 // ============================================
 
 export interface IImage {
+  _id?: string;
   url: string;
   publicId: string;
+  alt?: string;
+  isPrimary?: boolean;
 }
 
 export interface IApiResponse<T> {
-  success: boolean;
+  status?: "success" | "fail" | "error";
+  success?: boolean;
   message?: string;
   data: T;
+  // List endpoints also return these next to `data`
+  results?: number;
+  pagination?: IPagination;
+}
+
+// Pagination block returned by list endpoints (backend utils/helpers.ts `paginate`)
+export interface IPagination {
+  currentPage: number;
+  itemsPerPage: number;
+  totalPages: number;
+  totalItems: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
 }
 
 export interface IPaginatedResponse<T> {
   success: boolean;
   data: T;
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
-  };
+  pagination: IPagination;
 }
 
 // ============================================
@@ -47,10 +59,10 @@ export interface IUser {
   updatedAt: string;
 }
 
+// The refresh token is delivered to browsers as an httpOnly cookie, not in the body
 export interface IAuthResponse {
   user: IUser;
   accessToken: string;
-  refreshToken: string;
 }
 
 export interface ILoginCredentials {
@@ -79,6 +91,7 @@ export interface ICategory {
   order?: number;
   isActive?: boolean;
   subcategories?: ICategory[];
+  productCount?: number;
 }
 
 // ============================================
@@ -100,7 +113,12 @@ export interface IProduct {
   _id: string;
   name: string;
   slug: string;
+  sku?: string;
   description: string;
+  shortDescription?: string;
+  material?: string;
+  careInstructions?: string;
+  ageRecommendation?: string;
   price: number;
   comparePrice?: number;
   category: string | ICategory;
@@ -113,6 +131,8 @@ export interface IProduct {
   numReviews?: number;
   isFeatured?: boolean;
   isActive?: boolean;
+  metaTitle?: string;
+  metaDescription?: string;
   variants?: IProductVariant[];
   createdAt?: string;
   updatedAt?: string;
@@ -120,24 +140,25 @@ export interface IProduct {
 
 export interface IProductsResponse {
   products: IProduct[];
-  pagination?: {
-    page: number;
-    limit: number;
-    total: number;
-    pages: number;
-  };
+  pagination?: IPagination;
 }
 
 // ============================================
 // Cart Types
 // ============================================
 
+// Shape returned by GET /cart (Cart.calculateTotal on the API)
 export interface ICartItem {
   _id: string;
   product: IProduct;
   quantity: number;
-  price: number;
-  variantId?: string;
+  price?: number;
+  priceAtAdd?: number;
+  currentPrice?: number;
+  itemTotal?: number;
+  priceChanged?: boolean;
+  variantId?: string | null;
+  variant?: IProductVariant | null;
   variantDetails?: {
     size: string;
     color: string;
@@ -193,8 +214,10 @@ export interface IShippingAddress {
 }
 
 export interface IOrderItem {
+  _id?: string;
   product: string | IProduct;
   name: string;
+  slug?: string;
   price: number;
   quantity: number;
   image?: string;
@@ -240,6 +263,8 @@ export interface IOrder {
   note?: string;
   notes?: string;
   customerNotes?: string;
+  canBeCancelled?: boolean;
+  cancellationReason?: string;
   statusHistory?: {
     status: OrderStatus;
     note?: string;
@@ -257,25 +282,37 @@ export interface ICreateOrderData {
     city: string;
   };
   paymentMethod: PaymentMethod;
-  note?: string;
+  customerNotes?: string;
 }
 
 // ============================================
 // Payment Types
 // ============================================
 
+// GET /payments/methods (PaymentService.getAvailableMethods)
 export interface IPaymentMethod {
   id: PaymentMethod;
   name: string;
   description: string;
-  isEnabled: boolean;
+  icon?: string;
+  enabled?: boolean;
 }
 
+// POST /payments/initiate `data` (PaymentService.initiatePayment)
 export interface IPaymentInitiateResponse {
   success: boolean;
-  gateway: PaymentMethod;
-  paymentUrl?: string;
-  data?: Record<string, unknown>;
+  transactionId?: string;
+  status?: string;
+  requiresRedirect?: boolean;
+  redirectUrl?: string;
+  // eSewa: fields to POST to redirectUrl
+  formData?: Record<string, string | number>;
+  method?: string;
+  message?: string;
+  pidx?: string;
+  paymentId?: string;
+  orderId?: string;
+  orderNumber?: string;
 }
 
 export interface IPaymentVerifyData {
@@ -313,7 +350,9 @@ export interface IReview {
   user: string | IUser;
   product: string | IProduct;
   rating: number;
+  title?: string;
   comment?: string;
+  isVerifiedPurchase?: boolean;
   createdAt: string;
   updatedAt: string;
 }

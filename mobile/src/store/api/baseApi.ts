@@ -8,28 +8,14 @@ import type {
   FetchArgs,
   FetchBaseQueryError,
 } from "@reduxjs/toolkit/query";
-import { Platform } from "react-native";
-import { getItem, setItem, deleteItem } from "../../utils/storage";
-import { NGROK_URL, LOCAL_IP } from "../../utils/config";
+import { getItem } from "../../utils/storage";
+import { refreshTokens } from "../../api/tokenRefresh";
+import { getApiUrl } from "../../utils/config";
 import type { RootState } from "../index";
 
 // Get base URL based on environment
-// For tunnel mode, set NGROK_URL in src/utils/config.ts
-const getBaseUrl = (): string => {
-  // @ts-ignore - __DEV__ is a React Native global
-  if (!__DEV__) {
-    return "https://backend.nevanhandicraft.com.np/api/v1";
-  }
-
-  // Use ngrok URL if configured (set in config.ts)
-  if (NGROK_URL) {
-    return `${NGROK_URL}/api/v1`;
-  }
-
-  if (Platform.OS === "web") return "http://localhost:5000/api/v1";
-  if (Platform.OS === "android") return `http://${LOCAL_IP}:5000/api/v1`;
-  return `http://${LOCAL_IP}:5000/api/v1`; // iOS
-};
+// Dev server address comes from EXPO_PUBLIC_* env vars (see src/utils/config.ts)
+const getBaseUrl = (): string => getApiUrl();
 
 // Custom base query with auth header injection
 const baseQuery = fetchBaseQuery({
@@ -57,36 +43,9 @@ const baseQueryWithReauth: BaseQueryFn<
   let result = await baseQuery(args, api, extraOptions);
 
   if (result.error && result.error.status === 401) {
-    // Try to refresh the token
-    const refreshToken = await getItem("refreshToken");
-
-    if (refreshToken) {
-      const refreshResult = await baseQuery(
-        {
-          url: "/auth/refresh-token",
-          method: "POST",
-          body: { refreshToken },
-        },
-        api,
-        extraOptions,
-      );
-
-      if (refreshResult.data) {
-        const data = refreshResult.data as {
-          accessToken: string;
-          refreshToken: string;
-        };
-        // Store new tokens
-        await setItem("accessToken", data.accessToken);
-        await setItem("refreshToken", data.refreshToken);
-
-        // Retry the original request
-        result = await baseQuery(args, api, extraOptions);
-      } else {
-        // Refresh failed - clear tokens
-        await deleteItem("accessToken");
-        await deleteItem("refreshToken");
-      }
+    // Shared single-flight refresh (also used by axios and the chat socket)
+    if (await refreshTokens()) {
+      result = await baseQuery(args, api, extraOptions);
     }
   }
 

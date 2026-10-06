@@ -4,26 +4,54 @@
  */
 import express from "express";
 import * as authController from "../controllers/authController";
-import { protect } from "../middleware/auth";
-import { registerValidator, loginValidator } from "../middleware/validate";
+import { protect, optionalAuth } from "../middleware/auth";
+import {
+  registerValidator,
+  loginValidator,
+  forgotPasswordValidator,
+  verifyResetOtpValidator,
+  resetPasswordValidator,
+  changePasswordValidator,
+} from "../middleware/validate";
+import {
+  loginLimiter,
+  registerLimiter,
+  forgotPasswordLimiter,
+  resetCodeLimiter,
+} from "../config/rateLimit";
 
 const router = express.Router();
 
 // Public routes
-router.post("/register", registerValidator, authController.register);
-router.post("/login", loginValidator, authController.login);
+router.post("/register", registerLimiter, registerValidator, authController.register);
+router.post("/login", loginLimiter, loginValidator, authController.login);
 router.post("/refresh-token", authController.refreshToken);
+router.post("/logout", optionalAuth, authController.logout);
 
 // Password reset routes (public)
-router.post("/forgot-password", authController.forgotPassword);
-router.post("/verify-reset-otp", authController.verifyResetOTP);
-router.post("/reset-password", authController.resetPassword);
+router.post(
+  "/forgot-password",
+  forgotPasswordLimiter,
+  forgotPasswordValidator,
+  authController.forgotPassword,
+);
+router.post(
+  "/verify-reset-otp",
+  resetCodeLimiter,
+  verifyResetOtpValidator,
+  authController.verifyResetOTP,
+);
+router.post(
+  "/reset-password",
+  resetCodeLimiter,
+  resetPasswordValidator,
+  authController.resetPassword,
+);
 
 // Protected routes
 router.use(protect); // All routes below require authentication
-router.post("/logout", authController.logout);
 router.get("/me", authController.getMe);
-router.put("/change-password", authController.changePassword);
+router.put("/change-password", changePasswordValidator, authController.changePassword);
 
 // Push notification token management
 router.post("/push-token", authController.registerPushToken);

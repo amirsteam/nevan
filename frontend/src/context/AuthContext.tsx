@@ -12,6 +12,7 @@ import {
   ReactNode,
 } from "react";
 import { authAPI } from "../api";
+import { refreshAccessToken, setAccessToken } from "../api/axios";
 import toast from "react-hot-toast";
 import type { IUser, IRegisterData } from "../types";
 
@@ -46,6 +47,8 @@ interface ApiError {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Hook lives next to its provider; only affects Fast Refresh granularity in dev
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -61,19 +64,26 @@ export const AuthProvider = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  // Check authentication on mount
+  // Restore the session on mount: the httpOnly refresh cookie (if any) is
+  // exchanged for an in-memory access token
   useEffect(() => {
     const initAuth = async (): Promise<void> => {
-      const token = localStorage.getItem("accessToken");
+      // Tokens used to be kept in localStorage; drop any left from older versions
+      try {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+      } catch {
+        // storage unavailable - nothing to clean up
+      }
+
+      const token = await refreshAccessToken();
       if (token) {
         try {
           const response = await authAPI.getMe();
           setUser(response.data.user);
           setIsAuthenticated(true);
         } catch (error) {
-          // Token invalid - clear storage
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
+          setAccessToken(null);
         }
       }
       setLoading(false);
@@ -89,10 +99,9 @@ export const AuthProvider = ({
     ): Promise<{ success: boolean; user?: IUser; error?: string }> => {
       try {
         const response = await authAPI.register(data);
-        const { user, accessToken, refreshToken } = response.data;
+        const { user, accessToken } = response.data;
 
-        localStorage.setItem("accessToken", accessToken);
-        localStorage.setItem("refreshToken", refreshToken);
+        setAccessToken(accessToken);
 
         setUser(user);
         setIsAuthenticated(true);
@@ -117,10 +126,9 @@ export const AuthProvider = ({
     ): Promise<{ success: boolean; user?: IUser; error?: string }> => {
       try {
         const response = await authAPI.login(email, password);
-        const { user, accessToken, refreshToken } = response.data;
+        const { user, accessToken } = response.data;
 
-        localStorage.setItem("accessToken", accessToken);
-        localStorage.setItem("refreshToken", refreshToken);
+        setAccessToken(accessToken);
 
         setUser(user);
         setIsAuthenticated(true);
@@ -145,8 +153,7 @@ export const AuthProvider = ({
       // Ignore logout errors
     }
 
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
+    setAccessToken(null);
     setUser(null);
     setIsAuthenticated(false);
     toast.success("Logged out successfully");

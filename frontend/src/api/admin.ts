@@ -22,12 +22,14 @@ interface ProductQueryParams {
   category?: string;
   search?: string;
   sort?: string;
+  isActive?: boolean;
 }
 
 interface OrderQueryParams {
   page?: number;
   limit?: number;
   status?: string;
+  paymentStatus?: string;
   search?: string;
 }
 
@@ -39,6 +41,14 @@ interface UserQueryParams {
 }
 
 type ApiResponse<T> = Promise<AxiosResponse<IApiResponse<T>>>;
+
+// Build a query string, skipping empty values
+const toQueryString = (params: object): string =>
+  new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
 
 /**
  * Dashboard APIs
@@ -56,19 +66,19 @@ export const getDashboardAnalytics = (
  */
 export const getProducts = (
   params: ProductQueryParams = {},
-): ApiResponse<{
-  products: IProduct[];
-  pagination: { page: number; limit: number; total: number; pages: number };
-}> => {
-  const queryString = new URLSearchParams(
-    params as Record<string, string>,
-  ).toString();
+): ApiResponse<{ products: IProduct[] }> => {
+  const queryString = toQueryString(params);
   return api.get(`/admin/products?${queryString}`);
 };
 
 export const getProductById = (
   id: string,
 ): ApiResponse<{ product: IProduct }> => api.get(`/admin/products/${id}`);
+
+// Size choices for the product form: built-in sizes plus custom sizes already in use
+export const getProductSizeOptions = (): ApiResponse<{
+  sizes: { builtIn: string[]; custom: string[] };
+}> => api.get("/admin/products/sizes");
 
 export const createProduct = (
   data: Partial<IProduct>,
@@ -145,13 +155,8 @@ export const uploadCategoryImage = (
  */
 export const getOrders = (
   params: OrderQueryParams = {},
-): ApiResponse<{
-  orders: IOrder[];
-  pagination: { page: number; limit: number; total: number; pages: number };
-}> => {
-  const queryString = new URLSearchParams(
-    params as Record<string, string>,
-  ).toString();
+): ApiResponse<{ orders: IOrder[] }> => {
+  const queryString = toQueryString(params);
   return api.get(`/admin/orders?${queryString}`);
 };
 
@@ -175,13 +180,8 @@ export const markCODCollected = (
  */
 export const getUsers = (
   params: UserQueryParams = {},
-): ApiResponse<{
-  users: IUser[];
-  pagination: { page: number; limit: number; total: number; pages: number };
-}> => {
-  const queryString = new URLSearchParams(
-    params as Record<string, string>,
-  ).toString();
+): ApiResponse<{ users: IUser[] }> => {
+  const queryString = toQueryString(params);
   return api.get(`/admin/users?${queryString}`);
 };
 
@@ -204,6 +204,7 @@ export const adminAPI = {
   // Products
   getProducts,
   getProductById,
+  getProductSizeOptions,
   createProduct,
   updateProduct,
   deleteProduct,

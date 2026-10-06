@@ -5,7 +5,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Heart, ShoppingCart, Eye, Star } from "lucide-react";
-import { formatPrice, calculateDiscount } from "../utils/helpers";
+import { formatPrice, calculateDiscount, getAvailableStock } from "../utils/helpers";
 
 interface ProductImage {
   url: string;
@@ -56,11 +56,11 @@ const ProductCard = React.memo(
     className = "",
   }: ProductCardProps) => {
     const discount =
-      product.comparePrice && product.comparePrice > product.price
+      product.comparePrice && (product.comparePrice ?? 0) > product.price
         ? calculateDiscount(product.comparePrice, product.price)
         : 0;
 
-    const isOutOfStock = product.stock === 0;
+    const isOutOfStock = getAvailableStock(product) <= 0;
 
     // Check if product is new (created within last 7 days)
     const isNew = product.isNew;
@@ -189,7 +189,7 @@ const ProductCard = React.memo(
               <span className="text-lg font-bold text-[var(--color-primary)]">
                 {formatPrice(product.price)}
               </span>
-              {product.comparePrice && product.comparePrice > product.price && (
+              {product.comparePrice && (product.comparePrice ?? 0) > product.price && (
                 <span className="text-sm text-[var(--color-text-muted)] line-through">
                   {formatPrice(product.comparePrice)}
                 </span>

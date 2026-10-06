@@ -3,9 +3,9 @@
  * Handles order business logic
  */
 import Order, { IOrder } from "../models/Order";
+import Payment from "../models/Payment";
 import Cart from "../models/Cart";
 import Product from "../models/Product";
-import { PaymentService } from "./payment";
 import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { sendOrderStatusNotification } from "./pushNotificationService";
@@ -46,6 +46,19 @@ const createOrder = async (
   orderData: OrderData,
 ): Promise<IOrder> => {
   const { shippingAddress, paymentMethod, customerNotes } = orderData;
+
+  if (!(await Cart.exists({ user: userId, "items.0": { $exists: true } }))) {
+    throw new AppError("Cart is empty", 400);
+  }
+
+  // An earlier online-payment order the customer never paid for (e.g. they went
+  // back from eSewa and are checking out again) is replaced by the new one, so it
+  // doesn't keep holding stock or linger as a duplicate. Done before reading
+  // stock below so the released units count.
+  await cancelUnpaidOnlineOrders(
+    { user: userId },
+    "Replaced by a newer order before payment was completed",
+  );
 
   // Get user's cart
   const cart = await Cart.findOne({ user: userId }).populate({
@@ -126,65 +139,39 @@ const createOrder = async (
   const tax = 0; // Nepal doesn't have sales tax for most products
   const total = subtotal + shippingCost - discount + tax;
 
-  // Create order
-  const order = await Order.create({
-    user: userId,
-    items: orderItems,
-    shippingAddress,
-    payment: {
-      method: paymentMethod,
-      status: "pending",
-    },
-    pricing: {
-      subtotal,
-      shippingCost,
-      discount,
-      tax,
-      total,
-    },
-    customerNotes,
-    statusHistory: [
-      {
+  // Reserve stock before creating the order. The checks above are only a fast
+  // path for friendly errors; reserveStock is what prevents overselling when
+  // several orders for the same item are placed concurrently.
+  const reserved = await reserveStock(orderItems);
+
+  let order: IOrder;
+  try {
+    order = await Order.create({
+      user: userId,
+      items: orderItems,
+      shippingAddress,
+      payment: {
+        method: paymentMethod,
         status: "pending",
-        note: "Order placed",
       },
-    ],
-  });
-
-  // Reduce stock using bulkWrite for better performance (avoids N+1 queries)
-  const stockUpdates = (cart as any).items.map((item: any) => {
-    const productId = item.product._id || item.product;
-    if (item.variantId) {
-      // Update variant stock
-      return {
-        updateOne: {
-          filter: { _id: productId, "variants._id": item.variantId },
-          update: {
-            $inc: {
-              "variants.$.stock": -item.quantity,
-              soldCount: item.quantity,
-            },
-          },
+      pricing: {
+        subtotal,
+        shippingCost,
+        discount,
+        tax,
+        total,
+      },
+      customerNotes,
+      statusHistory: [
+        {
+          status: "pending",
+          note: "Order placed",
         },
-      };
-    } else {
-      // Update base product stock
-      return {
-        updateOne: {
-          filter: { _id: productId },
-          update: {
-            $inc: {
-              stock: -item.quantity,
-              soldCount: item.quantity,
-            },
-          },
-        },
-      };
-    }
-  });
-
-  if (stockUpdates.length > 0) {
-    await Product.bulkWrite(stockUpdates);
+      ],
+    });
+  } catch (error) {
+    await releaseStock(reserved);
+    throw error;
   }
 
   // Clear cart only for COD (immediate checkout)
@@ -196,6 +183,147 @@ const createOrder = async (
   return order;
 };
 
+interface StockItem {
+  product: any;
+  variantId?: any;
+  name: string;
+  quantity: number;
+}
+
+/**
+ * Atomically decrement stock for each item. Each update only matches when
+ * enough stock remains, so concurrent orders cannot drive stock negative.
+ * If any item cannot be reserved, items reserved so far are released.
+ */
+const reserveStock = async (items: StockItem[]): Promise<StockItem[]> => {
+  const reserved: StockItem[] = [];
+
+  for (const item of items) {
+    const filter: any = item.variantId
+      ? {
+          _id: item.product,
+          isActive: true,
+          variants: {
+            $elemMatch: { _id: item.variantId, stock: { $gte: item.quantity } },
+          },
+        }
+      : { _id: item.product, isActive: true, stock: { $gte: item.quantity } };
+
+    // Variant orders also move the product total, which mirrors the variants' sum
+    const inc: Record<string, number> = item.variantId
+      ? { "variants.$.stock": -item.quantity, stock: -item.quantity }
+      : { stock: -item.quantity };
+
+    const result = await Product.updateOne(filter, {
+      $inc: { ...inc, soldCount: item.quantity },
+    });
+
+    if (result.modifiedCount !== 1) {
+      await releaseStock(reserved);
+      throw new AppError(
+        `Insufficient stock for ${item.name}. Please update your cart.`,
+        400,
+      );
+    }
+
+    reserved.push(item);
+  }
+
+  return reserved;
+};
+
+/**
+ * Return stock reserved by reserveStock (used when order creation fails)
+ */
+const releaseStock = async (items: StockItem[]): Promise<void> => {
+  if (items.length === 0) return;
+
+  await Product.bulkWrite(
+    items.map((item) => ({
+      updateOne: {
+        filter: item.variantId
+          ? { _id: item.product, "variants._id": item.variantId }
+          : { _id: item.product },
+        update: {
+          $inc: {
+            ...(item.variantId
+              ? { "variants.$.stock": item.quantity, stock: item.quantity }
+              : { stock: item.quantity }),
+            soldCount: -item.quantity,
+          },
+        },
+      },
+    })),
+  );
+};
+
+const toStockItems = (order: IOrder): StockItem[] =>
+  (order as any).items.map((item: any) => ({
+    product: item.product,
+    variantId: item.variantId || undefined,
+    name: item.name,
+    quantity: item.quantity,
+  }));
+
+/** Return an order's stock (cancelled orders) */
+const releaseOrderStock = (order: IOrder): Promise<void> => releaseStock(toStockItems(order));
+
+/** Reserve an order's stock again (late payment for an order that was cancelled) */
+const reserveOrderStock = async (order: IOrder): Promise<void> => {
+  await reserveStock(toStockItems(order));
+};
+
+const ONLINE_METHODS = ["esewa", "khalti"];
+
+/**
+ * Cancel pending, unpaid eSewa/Khalti orders matching `filter` and release their stock.
+ * Each order is cancelled with a conditional update, so an order that gets paid
+ * (or cancelled elsewhere) at the same moment is left alone and stock is never
+ * released twice. Returns the number of orders cancelled.
+ */
+const cancelUnpaidOnlineOrders = async (
+  filter: Record<string, unknown>,
+  reason: string,
+): Promise<number> => {
+  const candidates = await Order.find({
+    ...filter,
+    status: "pending",
+    "payment.method": { $in: ONLINE_METHODS },
+    "payment.status": { $ne: "paid" },
+  });
+
+  let cancelled = 0;
+  for (const order of candidates) {
+    const now = new Date();
+    const result = await Order.updateOne(
+      { _id: order._id, status: "pending", "payment.status": { $ne: "paid" } },
+      {
+        $set: { status: "cancelled", cancelledAt: now, cancellationReason: reason },
+        $push: { statusHistory: { status: "cancelled", note: reason, changedAt: now } },
+      },
+    );
+    if (result.modifiedCount !== 1) continue;
+
+    await releaseOrderStock(order);
+    await Payment.updateMany(
+      { order: order._id, status: { $in: ["initiated", "pending"] } },
+      { $set: { status: "cancelled", failureReason: reason } },
+    );
+    cancelled++;
+  }
+  return cancelled;
+};
+
+/**
+ * Cancel online-payment orders that stayed unpaid longer than the payment window
+ * (abandoned or failed eSewa/Khalti checkouts), returning their stock to the shop.
+ */
+const expireUnpaidOrders = (maxAgeMinutes: number): Promise<number> =>
+  cancelUnpaidOnlineOrders(
+    { createdAt: { $lt: new Date(Date.now() - maxAgeMinutes * 60 * 1000) } },
+    "Payment was not completed in time",
+  );
+
 /**
  * Calculate shipping cost based on location
  */
@@ -206,10 +334,13 @@ const calculateShippingCost = (
   // Free shipping for orders over NPR 5000
   if (subtotal >= 5000) return 0;
 
-  // Kathmandu Valley (provinces 3): NPR 100
+  // Kathmandu Valley (province 3): NPR 100. Keep in sync with
+  // calculateShippingCost in frontend/src/utils/helpers.ts (checkout preview).
   if (
     address.province === 3 &&
-    ["Kathmandu", "Lalitpur", "Bhaktapur"].includes(address.district)
+    ["kathmandu", "lalitpur", "bhaktapur"].includes(
+      String(address.district || "").trim().toLowerCase(),
+    )
   ) {
     return 100;
   }
@@ -290,45 +421,25 @@ const cancelOrder = async (
     throw new AppError("Order cannot be cancelled at this stage", 400);
   }
 
-  await (order as any).updateOrderStatus("cancelled", userId, reason);
-
-  // Restore stock using bulkWrite for better performance (avoids N+1 queries)
-  const stockRestoreUpdates = (order as any).items.map((item: any) => {
-    if (item.variantId) {
-      // Restore variant stock
-      return {
-        updateOne: {
-          filter: { _id: item.product, "variants._id": item.variantId },
-          update: {
-            $inc: {
-              "variants.$.stock": item.quantity,
-              soldCount: -item.quantity,
-            },
-          },
-        },
-      };
-    } else {
-      // Restore base product stock
-      return {
-        updateOne: {
-          filter: { _id: item.product },
-          update: {
-            $inc: {
-              stock: item.quantity,
-              soldCount: -item.quantity,
-            },
-          },
-        },
-      };
-    }
-  });
-
-  if (stockRestoreUpdates.length > 0) {
-    await Product.bulkWrite(stockRestoreUpdates);
+  // Refunds for eSewa/Khalti are handled manually, so paid online orders are
+  // cancelled by the shop, not by the customer
+  if (order.payment.status === "paid" && order.payment.method !== "cod") {
+    throw new AppError(
+      "This order is already paid. Please contact us to cancel it and arrange a refund.",
+      400,
+    );
   }
+
+  await (order as any).updateOrderStatus("cancelled", userId, reason);
+  await releaseOrderStock(order);
+  await Payment.updateMany(
+    { order: order._id, status: { $in: ["initiated", "pending"] } },
+    { $set: { status: "cancelled", failureReason: reason } },
+  );
 
   return order;
 };
+
 
 /**
  * Get all orders (Admin)
@@ -370,6 +481,10 @@ const updateOrderStatus = async (
 
   await (order as any).updateOrderStatus(status, adminId, note);
 
+  if (status === "cancelled") {
+    await releaseOrderStock(order);
+  }
+
   // Send push notification to user about status change
   try {
     await sendOrderStatusNotification(
@@ -391,6 +506,9 @@ export {
   getUserOrders,
   getOrderById,
   cancelOrder,
+  expireUnpaidOrders,
+  releaseOrderStock,
+  reserveOrderStock,
   getAllOrders,
   updateOrderStatus,
 };

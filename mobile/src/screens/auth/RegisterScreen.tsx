@@ -164,12 +164,12 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     placeholder: string,
     icon: React.ReactNode,
     options?: {
-      ref?: React.RefObject<TextInput>;
+      ref?: React.RefObject<TextInput | null>;
       keyboardType?: TextInput["props"]["keyboardType"];
       autoComplete?: TextInput["props"]["autoComplete"];
       textContentType?: TextInput["props"]["textContentType"];
       returnKeyType?: TextInput["props"]["returnKeyType"];
-      nextRef?: React.RefObject<TextInput>;
+      nextRef?: React.RefObject<TextInput | null>;
       onSubmit?: () => void;
       secureTextEntry?: boolean;
       showToggle?: boolean;

@@ -1,30 +1,21 @@
 /**
  * ChatWidget Component
- * Floating chat button that opens/closes the chat window
+ * Floating chat button (with unread badge) that opens/closes the chat window.
+ * Also owns the chat connection, so the badge updates while the window is closed.
  */
-import { useEffect } from "react";
-import { useDispatch, useSelector } from "react-redux";
 import { MessageCircle } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { RootState, AppDispatch } from "../../store";
-import { toggleChat, clearChat } from "../../store/chatSlice";
-import socketService from "../../services/socketService";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
+import { toggleChat } from "../../store/chatSlice";
+import { useChatConnection } from "../../hooks/useChatConnection";
 import ChatWindow from "./ChatWindow";
 
 const ChatWidget = () => {
-    const dispatch = useDispatch<AppDispatch>();
-    const { isOpen, unreadCount } = useSelector((state: RootState) => state.chat);
+    const dispatch = useAppDispatch();
+    const { isOpen, unreadCount } = useAppSelector((state) => state.chat);
     const { isAuthenticated } = useAuth();
 
-    // Handle logout (cleanup socket)
-    useEffect(() => {
-        if (!isAuthenticated) {
-            if (socketService.isConnected()) {
-                socketService.disconnect();
-            }
-            dispatch(clearChat());
-        }
-    }, [isAuthenticated, dispatch]);
+    useChatConnection();
 
     // Don't show chat widget if not authenticated
     if (!isAuthenticated) {
@@ -38,25 +29,23 @@ const ChatWidget = () => {
                 onClick={() => dispatch(toggleChat())}
                 className={`fixed bottom-4 right-4 z-50 p-4 rounded-full shadow-lg transition-all duration-300 ${isOpen
                     ? "bg-gray-600 hover:bg-gray-700 scale-90"
-                    : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 animate-pulse hover:animate-none"
+                    : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90"
                     }`}
-                aria-label={isOpen ? "Close chat" : "Open chat"}
+                aria-label={
+                    isOpen
+                        ? "Close chat"
+                        : unreadCount > 0
+                            ? `Open chat, ${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`
+                            : "Open chat"
+                }
             >
-                <MessageCircle
-                    size={24}
-                    className={`text-white transition-transform ${isOpen ? "rotate-0" : ""}`}
-                />
+                <MessageCircle size={24} className="text-white" />
 
                 {/* Unread Badge */}
                 {!isOpen && unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full border-2 border-white">
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-5 h-5 px-1 bg-red-500 text-white text-xs font-bold rounded-full border-2 border-white">
                         {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
-                )}
-
-                {/* Status Dot (only if no unread messages) */}
-                {!isOpen && unreadCount === 0 && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                 )}
             </button>
 

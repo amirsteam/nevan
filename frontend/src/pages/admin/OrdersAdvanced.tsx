@@ -8,6 +8,7 @@ import { adminAPI } from "../../api";
 import { formatPrice, formatDate } from "../../utils/helpers";
 import { AdvancedDataTable } from "../../components/admin/AdvancedDataTable";
 import { StatusBadge, Modal } from "../../components/admin";
+import type { BadgeVariant } from "../../components/admin/StatusBadge";
 import OrderDetail from "./OrderDetail";
 import {
   Eye,
@@ -26,7 +27,7 @@ import type { IOrder, IUser, OrderStatus, PaymentStatus } from "../../types";
 const statusConfig: Record<
   OrderStatus,
   {
-    variant: string;
+    variant: BadgeVariant;
     icon: React.ComponentType<{ className?: string }>;
     label: string;
   }
@@ -41,7 +42,7 @@ const statusConfig: Record<
 
 const paymentStatusConfig: Record<
   PaymentStatus,
-  { variant: string; label: string }
+  { variant: BadgeVariant; label: string }
 > = {
   pending: { variant: "warning", label: "Pending" },
   paid: { variant: "success", label: "Paid" },
@@ -95,16 +96,16 @@ const AdminOrdersPage = () => {
       const ordersData = response.data.data.orders;
       setOrders(ordersData);
 
-      // Access pagination from data wrapper
-      const paginationData = response.data.data.pagination;
+      // The API returns pagination and stats next to `data`, not inside it
+      const paginationData = response.data.pagination;
       setPagination((prev) => ({
         ...prev,
-        totalPages: paginationData?.pages || 1,
-        totalItems: paginationData?.total || ordersData.length,
+        totalPages: paginationData?.totalPages || 1,
+        totalItems: paginationData?.totalItems ?? ordersData.length,
       }));
 
       // Use stats from backend response (accurate counts across all orders)
-      const backendStats = (response.data as any).stats;
+      const backendStats = (response.data as { stats?: Partial<Record<OrderStatus, number>> }).stats;
       if (backendStats) {
         setStats({
           pending: backendStats.pending || 0,

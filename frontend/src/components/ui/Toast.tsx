@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 // Custom toast styles
+// eslint-disable-next-line react-refresh/only-export-components
 export const toastConfig = {
   duration: 4000,
   position: "top-right" as const,
@@ -55,6 +56,7 @@ export const Toaster = () => (
 );
 
 // Enhanced toast functions
+// eslint-disable-next-line react-refresh/only-export-components
 export const showToast = {
   success: (message: string, options?: object) => {
     toast.custom(
@@ -218,4 +220,5 @@ export const showToast = {
   },
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export default showToast;

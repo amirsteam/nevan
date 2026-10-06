@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { authAPI } from "../api/auth";
 import { getItem, setItem, deleteItem } from "../utils/storage";
+import socketService from "../services/socketService";
+import { clearChat } from "./chatSlice";
 import {
   unregisterPushToken,
   getExpoPushToken,
@@ -77,7 +79,7 @@ export const register = createAsyncThunk<
 
 export const logout = createAsyncThunk<void, void, { rejectValue: string }>(
   "auth/logout",
-  async (_, { rejectWithValue }) => {
+  async (_, { dispatch }) => {
     try {
       // Unregister push token BEFORE deleting auth tokens
       // so the API call can still authenticate
@@ -89,6 +91,8 @@ export const logout = createAsyncThunk<void, void, { rejectValue: string }>(
     } catch (error) {
       console.error("Logout error", error);
     } finally {
+      socketService.disconnect();
+      dispatch(clearChat());
       await deleteItem("accessToken");
       await deleteItem("refreshToken");
     }

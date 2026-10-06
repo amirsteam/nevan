@@ -77,6 +77,20 @@ const createProduct = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * @desc    Size options for the product form (built-in + custom sizes in use)
+ * @route   GET /api/v1/admin/products/sizes
+ * @access  Private/Admin
+ */
+const getSizeOptions = asyncHandler(async (_req: Request, res: Response) => {
+  const sizes = await productService.getSizeOptions();
+
+  res.status(200).json({
+    status: "success",
+    data: { sizes },
+  });
+});
+
+/**
  * @desc    Update product (Admin)
  * @route   PUT /api/v1/admin/products/:id
  * @access  Private/Admin
@@ -114,9 +128,12 @@ const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private/Admin
  */
 const uploadImages = asyncHandler(async (req: Request, res: Response) => {
+  const primaryIndex =
+    req.body?.primaryIndex !== undefined ? Number(req.body.primaryIndex) : undefined;
   const product = await productService.addProductImages(
     req.params.id as string,
     (req as MulterRequest).files,
+    Number.isInteger(primaryIndex) ? primaryIndex : undefined,
   );
 
   res.status(200).json({
@@ -171,6 +188,7 @@ export {
   createProduct,
   updateProduct,
   deleteProduct,
+  getSizeOptions,
   uploadImages,
   deleteImage,
   uploadVariantImage,

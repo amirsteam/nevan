@@ -4,6 +4,7 @@
  */
 import api from "./axios";
 import type {
+  IPagination,
   IApiResponse,
   IOrder,
   ICreateOrderData,
@@ -31,12 +32,7 @@ export const ordersAPI = {
   ): Promise<
     IApiResponse<{
       orders: IOrder[];
-      pagination?: {
-        page: number;
-        limit: number;
-        total: number;
-        pages: number;
-      };
+      pagination?: IPagination;
     }>
   > => {
     const response = await api.get("/orders", { params });
@@ -70,7 +66,7 @@ export const paymentsAPI = {
   initiatePayment: async (
     orderId: string,
     gateway: PaymentMethod,
-  ): Promise<IPaymentInitiateResponse> => {
+  ): Promise<IApiResponse<IPaymentInitiateResponse>> => {
     const response = await api.post("/payments/initiate", { orderId, gateway });
     return response.data;
   },
@@ -79,7 +75,15 @@ export const paymentsAPI = {
     orderId: string,
     gateway: PaymentMethod,
     callbackData: Record<string, unknown>,
-  ): Promise<IApiResponse<{ order: IOrder }>> => {
+  ): Promise<
+    IApiResponse<{
+      success: boolean;
+      orderId: string;
+      orderNumber: string;
+      status: string;
+      message?: string;
+    }>
+  > => {
     const response = await api.post("/payments/verify", {
       orderId,
       gateway,

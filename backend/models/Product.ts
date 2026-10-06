@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
-import { PRODUCT_SIZES } from "../utils/constants";
+import { PRODUCT_SIZES, MAX_SIZE_LENGTH } from "../utils/constants";
 
 // Re-export for backward compatibility
 export const VALID_SIZES = PRODUCT_SIZES;
@@ -36,6 +36,10 @@ export interface IProduct extends Document, IProductMethods {
   slug: string;
   description: string;
   shortDescription?: string;
+  // Shown on the product page only when set
+  material?: string;
+  careInstructions?: string;
+  ageRecommendation?: string;
   price: number;
   comparePrice?: number;
   category: Types.ObjectId;
@@ -64,17 +68,17 @@ export interface IProduct extends Document, IProductMethods {
 interface IProductModel extends Model<IProduct> {
   search(query: string, options?: any): any;
   getFeatured(limit?: number): any;
+  syncVariantStock(): Promise<number>;
 }
 
 const variantSchema = new Schema<IVariant>(
   {
+    // Built-in sizes (PRODUCT_SIZES) or a custom size typed by the admin
     size: {
       type: String,
       required: true,
-      enum: {
-        values: VALID_SIZES,
-        message: "Invalid size. Must be one of: " + VALID_SIZES.join(", "),
-      },
+      trim: true,
+      maxlength: [MAX_SIZE_LENGTH, `Size cannot exceed ${MAX_SIZE_LENGTH} characters`],
     },
     color: {
       type: String,
@@ -142,6 +146,21 @@ const productSchema = new Schema<IProduct, IProductModel>(
     shortDescription: {
       type: String,
       maxlength: [200, "Short description cannot exceed 200 characters"],
+    },
+    material: {
+      type: String,
+      trim: true,
+      maxlength: [200, "Material cannot exceed 200 characters"],
+    },
+    careInstructions: {
+      type: String,
+      trim: true,
+      maxlength: [500, "Care instructions cannot exceed 500 characters"],
+    },
+    ageRecommendation: {
+      type: String,
+      trim: true,
+      maxlength: [100, "Age recommendation cannot exceed 100 characters"],
     },
     price: {
       type: Number,
@@ -262,6 +281,15 @@ productSchema.virtual("inStock").get(function (this: IProduct) {
 });
 
 // Middleware
+
+// For products with variants, `stock` is the total across variants. Listings,
+// cards and the mobile app read `stock`, so it must never drift from the variants.
+productSchema.pre("save", function (this: IProduct) {
+  if (this.variants && this.variants.length > 0) {
+    this.stock = this.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+  }
+});
+
 productSchema.pre("save", async function (this: IProduct) {
   if (this.isModified("name")) {
     let slug = createSlug(this.name);
@@ -277,6 +305,21 @@ productSchema.pre("save", async function (this: IProduct) {
 });
 
 // Statics
+
+/**
+ * Recompute `stock` for every product with variants (repairs data saved before
+ * stock was kept in sync). Returns the number of products changed.
+ */
+productSchema.statics.syncVariantStock = async function (this: IProductModel) {
+  const result = await this.updateMany(
+    { "variants.0": { $exists: true } },
+    [{ $set: { stock: { $sum: "$variants.stock" } } }],
+    // Mongoose 9 requires opting in to aggregation-pipeline updates
+    { updatePipeline: true },
+  );
+  return result.modifiedCount;
+};
+
 productSchema.statics.search = function (
   this: IProductModel,
   query: string,

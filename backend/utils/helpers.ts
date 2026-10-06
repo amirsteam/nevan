@@ -91,3 +91,10 @@ export const isValidNepaliPhone = (phone: string): boolean => {
     const pattern = /^(\+?977)?[0-9]{10}$/;
     return pattern.test(cleaned);
 };
+
+/**
+ * Base URL of the storefront for redirects (payment callbacks). FRONTEND_URL may be a
+ * comma-separated CORS list; the first entry is the canonical site.
+ */
+export const getFrontendUrl = (): string =>
+  (process.env.FRONTEND_URL || "http://localhost:5173").split(",")[0].trim().replace(/\/+$/, "");

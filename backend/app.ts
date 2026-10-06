@@ -5,10 +5,13 @@
 import express, { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 import morgan from "morgan";
 import corsOptions from "./config/cors";
+import { apiLimiter } from "./config/rateLimit";
 import routes from "./routes";
+import swaggerUi from "swagger-ui-express";
+import openApiSpec from "./docs/openapi";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 
 // Create Express app
@@ -28,33 +31,8 @@ app.use(
   }),
 );
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "900000"), // 15 minutes default
-  limit: parseInt(process.env.RATE_LIMIT_MAX || "100"), // 100 requests per window
-  message: {
-    status: "fail",
-    message:
-      "Too many requests from this IP, please try again after 15 minutes",
-  } as any,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Apply rate limiting to all API routes
-app.use("/api", limiter);
-
-// Stricter rate limit for auth routes
-const authLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: parseInt(process.env.AUTH_RATE_LIMIT_MAX || "10"), // 10 attempts per hour
-  message: {
-    status: "fail",
-    message: "Too many login attempts, please try again after an hour",
-  } as any,
-});
-app.use("/api/v1/auth/login", authLimiter);
-app.use("/api/v1/auth/register", authLimiter);
+// Rate limiting (stricter per-endpoint limiters are applied in the routers)
+app.use("/api", apiLimiter);
 
 // ==================== BODY PARSING ====================
 
@@ -64,6 +42,7 @@ app.use(cors(corsOptions as any));
 // Body parser
 app.use(express.json({ limit: "10kb" })); // Limit body size
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+app.use(cookieParser());
 
 // Custom NoSQL injection sanitizer for Express v5
 // express-mongo-sanitize doesn't work with Express v5 (req.query is read-only)
@@ -87,13 +66,17 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   if (req.body) {
     req.body = sanitizeObject(req.body);
   }
-  if (req.params) {
-    for (const key of Object.keys(req.params)) {
-      if (typeof req.params[key] === "string") {
-        req.params[key] = req.params[key].replace(/[$.]/, "_");
-      }
-    }
+  // Express 5 exposes req.query as a getter, so redefine it with the sanitized copy
+  if (req.query && typeof req.query === "object") {
+    Object.defineProperty(req, "query", {
+      value: sanitizeObject(req.query),
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
   }
+  // req.params is not populated yet at app level (routers fill it in later), and
+  // route params are always plain strings, so they cannot carry query operators.
   next();
 });
 
@@ -103,7 +86,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 if (process.env.NODE_ENV === "production") {
   // Combined format for production (includes more details)
   app.use(morgan("combined"));
-} else {
+} else if (process.env.NODE_ENV !== "test") {
   // Dev format for development (colored, concise)
   app.use(morgan("dev"));
 }
@@ -112,6 +95,14 @@ if (process.env.NODE_ENV === "production") {
 
 // API routes
 // app.use('/api/v1', routes); // routes exported as default
+// Interactive API docs (Swagger UI). Off in production unless API_DOCS=true.
+if (process.env.NODE_ENV !== "production" || process.env.API_DOCS === "true") {
+  app.get("/api/v1/docs.json", (_req: Request, res: Response) => {
+    res.json(openApiSpec);
+  });
+  app.use("/api/v1/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
+}
+
 app.use("/api/v1", routes);
 
 // Root route

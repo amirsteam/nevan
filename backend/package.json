@@ -9,7 +9,8 @@
     "build": "tsc",
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
-    "seed": "ts-node seeder.ts"
+    "seed": "ts-node seeder.ts",
+    "sync-stock": "ts-node scripts/syncStock.ts"
   },
   "keywords": [
     "ecommerce",
@@ -22,11 +23,13 @@
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
+    "@sentry/node": "^11.4.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
@@ -40,14 +43,17 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^10.0.15",
     "rate-limiter-flexible": "^9.1.0",
     "slugify": "^1.6.6",
     "socket.io": "^4.8.3",
+    "swagger-ui-express": "^5.0.1",
     "xss": "^1.0.15"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/ioredis": "^4.28.10",
@@ -56,8 +62,10 @@
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.10",
+    "@types/nodemailer": "^8.0.2",
     "@types/socket.io": "^3.0.1",
     "@types/supertest": "^6.0.3",
+    "@types/swagger-ui-express": "^4.1.8",
     "cross-env": "^10.1.0",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^11.0.1",

@@ -233,8 +233,20 @@ export type AdminTabParamList = {
   AdminProductsTab: NavigatorScreenParams<AdminProductsStackParamList>;
   AdminCategoriesTab: NavigatorScreenParams<AdminCategoriesStackParamList>;
   AdminUsersTab: undefined;
+  AdminChatTab: NavigatorScreenParams<AdminChatStackParamList>;
   AdminProfileTab: NavigatorScreenParams<ProfileStackParamList>;
 };
+
+// ==================== Admin Chat Stack ====================
+export type AdminChatStackParamList = {
+  AdminChatRooms: undefined;
+  AdminChatRoom: { roomId: string; customerName?: string };
+};
+
+export type AdminChatRoomsScreenProps = CompositeScreenProps<
+  StackScreenProps<AdminChatStackParamList, "AdminChatRooms">,
+  BottomTabScreenProps<AdminTabParamList>
+>;
 
 // ==================== Admin Orders Stack ====================
 export type AdminOrdersStackParamList = {

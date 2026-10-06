@@ -1,3 +1,12 @@
+> **Status (checked against the code on 2026-10-06):** most of this plan is implemented — baby-brand copy and palette, New Arrivals / Shop by Age / testimonials on Home, size guide, API-backed wishlist + wishlist page and header icon, review form, related products, web notification bell, gift message, forgot password, Profile, FAQ/Shipping/Returns/Privacy pages, header outside-click, breadcrumbs, skip-to-content. Material, care instructions and age recommendation are now real product fields (admin product form) and are shown only when set.
+>
+> **Still open:**
+> - Age & gender filters exist in the shop UI, but products have no age/gender fields and the API ignores those parameters.
+> - Newsletter form only simulates a subscription (`handleNewsletter` in `pages/Home.tsx`); the Contact form likewise only simulates sending.
+> - No search box at tablet widths (768–1023 px): the header search is `lg:` only and the mobile menu is hidden from `md:` up.
+>
+> The rest of this document is the original audit, kept for history.
+
 Frontend UI/UX Audit — Baby Clothes E-commerce Focus
 Current State Assessment
 The About page beautifully describes Nevan as a baby clothing brand ("Nevan Sprouts — a baby clothing brand rooted in softness, comfort, and a mother's touch"), but the rest of the site presents as a generic Nepali handicraft store. This is the single biggest disconnect.

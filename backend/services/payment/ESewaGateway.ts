@@ -41,6 +41,13 @@ class ESewaGateway implements IPaymentGateway {
     }
 
     /**
+     * Parse an eSewa amount ("1,000.0", 1000, "1000") into a number
+     */
+    private parseAmount(value: unknown): number {
+        return Number(String(value ?? '').replace(/,/g, ''));
+    }
+
+    /**
      * Initiate eSewa payment
      */
     async initiate(order: IOrder, userData: UserData): Promise<PaymentInitiateResult> {
@@ -60,7 +67,8 @@ class ESewaGateway implements IPaymentGateway {
 
             // Success and failure callback URLs
             const successUrl = `${process.env.BACKEND_URL}/api/v1/payments/esewa/success`;
-            const failureUrl = `${process.env.BACKEND_URL}/api/v1/payments/esewa/failure`;
+            // Order id in the path (not the query: eSewa appends its own query string)
+            const failureUrl = `${process.env.BACKEND_URL}/api/v1/payments/esewa/failure/${order._id}`;
 
             // Form data for eSewa
             const formData = {
@@ -159,7 +167,8 @@ class ESewaGateway implements IPaymentGateway {
                     status: 'completed',
                     transactionId: transaction_code,
                     referenceId: transaction_uuid,
-                    amount: Number(total_amount),
+                    // Prefer the amount eSewa's status API reports; eSewa may format amounts as "1,000.0"
+                    amount: this.parseAmount(verifyResponse.data.total_amount ?? total_amount),
                     rawResponse: verifyResponse.data,
                 };
             }
@@ -167,6 +176,7 @@ class ESewaGateway implements IPaymentGateway {
             return {
                 verified: false,
                 status: 'failed',
+                referenceId: transaction_uuid,
                 message: `Payment status: ${verifyResponse.data.status}`,
                 rawResponse: verifyResponse.data,
             };
@@ -198,7 +208,7 @@ class ESewaGateway implements IPaymentGateway {
                     orderId,
                     transactionId: decodedData.transaction_code,
                     status: 'completed',
-                    amount: Number(decodedData.total_amount),
+                    amount: this.parseAmount(decodedData.total_amount),
                     rawResponse: decodedData
                 };
             }

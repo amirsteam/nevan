@@ -7,9 +7,10 @@ import { adminAPI } from "../../api";
 import { ImageUploader, type ImageUploaderImage } from "../../components/admin";
 import { Plus, Trash2, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
-import { PRODUCT_SIZES } from "../../utils/constants";
+import { PRODUCT_SIZES, MAX_SIZE_LENGTH } from "../../utils/constants";
 import type { IProduct, ICategory, IProductVariant, IImage } from "../../types";
 
+import { getErrorMessage, populated } from "../../utils/helpers";
 // ============================================
 // Type Definitions
 // ============================================
@@ -25,6 +26,9 @@ interface FormData {
   name: string;
   description: string;
   shortDescription: string;
+  material: string;
+  careInstructions: string;
+  ageRecommendation: string;
   price: string;
   comparePrice: string;
   category: string;
@@ -44,7 +48,72 @@ interface LocalVariant {
   stock: number;
   image: string;
   imageFile?: File | null;
+  // UI only: the admin chose "Custom size…" for this row
+  customSize?: boolean;
 }
+
+const CUSTOM_SIZE_OPTION = "__custom__";
+const isTempId = (id: string): boolean => id.startsWith("temp-");
+const variantKey = (size: string, color: string): string =>
+  `${size.trim().toLowerCase()}|${color.trim().toLowerCase()}`;
+
+interface SizeSelectProps {
+  value: string;
+  customMode: boolean;
+  customSizes: string[];
+  onChange: (size: string, customMode: boolean) => void;
+}
+
+// Built-in sizes, custom sizes already in use, or a new custom size
+const SizeSelect = ({ value, customMode, customSizes, onChange }: SizeSelectProps) => {
+  const known = [...PRODUCT_SIZES, ...customSizes] as string[];
+  const showInput = customMode || (value !== "" && !known.includes(value));
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={showInput ? CUSTOM_SIZE_OPTION : value}
+        onChange={(e) =>
+          e.target.value === CUSTOM_SIZE_OPTION
+            ? onChange(showInput ? value : "", true)
+            : onChange(e.target.value, false)
+        }
+        className="select w-full text-sm"
+      >
+        <option value="">Select Size...</option>
+        <optgroup label="Standard sizes">
+          {PRODUCT_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </optgroup>
+        {customSizes.length > 0 && (
+          <optgroup label="Custom sizes">
+            {customSizes.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        <option value={CUSTOM_SIZE_OPTION}>+ Custom size…</option>
+      </select>
+      {showInput && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value, true)}
+          className="input w-full text-sm"
+          placeholder="e.g. 3-6 Months, 2T, 90 cm"
+          maxLength={MAX_SIZE_LENGTH}
+          autoFocus={value === ""}
+          aria-label="Custom size"
+        />
+      )}
+    </div>
+  );
+};
 
 interface ExistingImage {
   _id: string;
@@ -86,6 +155,9 @@ const ProductForm: React.FC<ProductFormProps> = ({
     name: "",
     description: "",
     shortDescription: "",
+    material: "",
+    careInstructions: "",
+    ageRecommendation: "",
     price: "",
     comparePrice: "",
     category: "",
@@ -110,13 +182,35 @@ const ProductForm: React.FC<ProductFormProps> = ({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
 
+  // Custom sizes already used on other products (built-in sizes come from PRODUCT_SIZES)
+  const [savedCustomSizes, setSavedCustomSizes] = useState<string[]>([]);
+
+  useEffect(() => {
+    adminAPI
+      .getProductSizeOptions()
+      .then((res) => setSavedCustomSizes(res.data.data.sizes.custom))
+      .catch(() => setSavedCustomSizes([]));
+  }, []);
+
+  // Offer custom sizes from other products and from other rows in this form
+  const customSizeOptions = Array.from(
+    new Set(
+      [...savedCustomSizes, ...variants.map((v) => v.size.trim())].filter(
+        (size) => size && !(PRODUCT_SIZES as readonly string[]).includes(size),
+      ),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
   // Initialize form with product data
   useEffect(() => {
     if (product) {
       setFormData({
         name: product.name || "",
         description: product.description || "",
-        shortDescription: (product as any).shortDescription || "",
+        shortDescription: product.shortDescription || "",
+        material: product.material || "",
+        careInstructions: product.careInstructions || "",
+        ageRecommendation: product.ageRecommendation || "",
         price: String(product.price || ""),
         comparePrice: String(product.comparePrice || ""),
         category:
@@ -124,11 +218,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
             ? product.category._id
             : product.category || "",
         stock: String(product.stock || ""),
-        sku: (product as any).sku || "",
+        sku: product.sku || "",
         isFeatured: product.isFeatured || false,
-        isActive: (product as any).isActive !== false,
-        metaTitle: (product as any).metaTitle || "",
-        metaDescription: (product as any).metaDescription || "",
+        isActive: product.isActive !== false,
+        metaTitle: product.metaTitle || "",
+        metaDescription: product.metaDescription || "",
       });
 
       // Map variants to local format
@@ -148,10 +242,10 @@ const ProductForm: React.FC<ProductFormProps> = ({
       // Map images
       const mappedImages: ExistingImage[] = (product.images || []).map(
         (img: IImage) => ({
-          _id: (img as any)._id || img.publicId,
+          _id: img._id || img.publicId,
           url: img.url,
           publicId: img.publicId,
-          isPrimary: (img as any).isPrimary || false,
+          isPrimary: img.isPrimary || false,
         }),
       );
       setExistingImages(mappedImages);
@@ -197,13 +291,43 @@ const ProductForm: React.FC<ProductFormProps> = ({
       newErrors.price = "Valid price is required";
     if (!formData.category) newErrors.category = "Category is required";
     if (
-      variants.length === 0 &&
-      (!formData.stock || parseInt(formData.stock) < 0)
+      formData.comparePrice &&
+      parseFloat(formData.comparePrice) > 0 &&
+      parseFloat(formData.comparePrice) <= parseFloat(formData.price)
     ) {
+      newErrors.comparePrice = "Compare price must be higher than the price";
+    }
+    if (!hasVariants && (formData.stock === "" || parseInt(formData.stock) < 0)) {
       newErrors.stock = "Stock is required when no variants";
     }
 
+    if (hasVariants) {
+      const seen = new Set<string>();
+      if (variants.length === 0) {
+        newErrors.variants = "Add at least one variant or turn variants off";
+      }
+      for (const v of variants) {
+        if (!v.size.trim() || !v.color.trim()) {
+          newErrors.variants = "Every variant needs a size and a color";
+          break;
+        }
+        if (v.size.trim().length > MAX_SIZE_LENGTH) {
+          newErrors.variants = `Sizes can be at most ${MAX_SIZE_LENGTH} characters`;
+          break;
+        }
+        const key = variantKey(v.size, v.color);
+        if (seen.has(key)) {
+          newErrors.variants = `Duplicate variant: ${v.size.trim()} / ${v.color.trim()}`;
+          break;
+        }
+        seen.add(key);
+      }
+    }
+
     setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      toast.error("Please fix the highlighted fields");
+    }
     return Object.keys(newErrors).length === 0;
   };
 
@@ -215,6 +339,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         _id: `temp-${Date.now()}`,
         size: "",
         color: "",
+        customSize: false,
         price: parseFloat(formData.price) || 0,
         stock: 0,
         image: "",
@@ -224,6 +349,19 @@ const ProductForm: React.FC<ProductFormProps> = ({
   };
 
   // Update variant field
+  const handleVariantSizeChange = (
+    index: number,
+    size: string,
+    customMode: boolean,
+  ): void => {
+    setVariants((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], size, customSize: customMode };
+      return updated;
+    });
+    if (errors.variants) setErrors((prev) => ({ ...prev, variants: undefined }));
+  };
+
   const handleVariantChange = (
     index: number,
     field: keyof LocalVariant,
@@ -310,17 +448,18 @@ const ProductForm: React.FC<ProductFormProps> = ({
           formDataUpload,
         );
 
-        const updatedProduct = (response.data as any).data.product;
-        const updatedVariant = updatedProduct.variants.find(
+        const updatedProduct = response.data.data.product;
+        const updatedVariant = updatedProduct.variants?.find(
           (v: IProductVariant) => v._id === variant._id,
         );
+        const newImage = updatedVariant?.image;
 
-        if (updatedVariant?.image) {
+        if (newImage) {
           setVariants((prev) => {
             const updated = [...prev];
             updated[index] = {
               ...updated[index],
-              image: updatedVariant.image,
+              image: newImage,
               imageFile: null,
             };
             return updated;
@@ -410,49 +549,49 @@ const ProductForm: React.FC<ProductFormProps> = ({
     try {
       // Prepare product data
       const productData: Record<string, unknown> = {
-        name: formData.name,
-        description: formData.description,
+        name: formData.name.trim(),
+        description: formData.description.trim(),
         price: parseFloat(formData.price),
         category: formData.category,
-        stock: parseInt(formData.stock) || 0,
+        stock: hasVariants ? 0 : parseInt(formData.stock) || 0,
         isFeatured: formData.isFeatured,
         isActive: formData.isActive,
+        // Always sent so clearing a field in the form clears it on the product
+        material: formData.material.trim(),
+        careInstructions: formData.careInstructions.trim(),
+        ageRecommendation: formData.ageRecommendation.trim(),
+        metaTitle: formData.metaTitle.trim(),
+        metaDescription: formData.metaDescription.trim(),
       };
 
-      // Add optional fields only if they have values
-      if (formData.shortDescription?.trim()) {
-        productData.shortDescription = formData.shortDescription.trim();
-      }
-      if (formData.comparePrice && parseFloat(formData.comparePrice) > 0) {
-        productData.comparePrice = parseFloat(formData.comparePrice);
-      }
-      if (formData.sku?.trim()) {
-        productData.sku = formData.sku.trim();
-      }
-      if (formData.metaTitle?.trim()) {
-        productData.metaTitle = formData.metaTitle.trim();
-      }
-      if (formData.metaDescription?.trim()) {
-        productData.metaDescription = formData.metaDescription.trim();
+      // Optional fields: on edit, null clears a value that was removed in the form
+      const comparePrice = parseFloat(formData.comparePrice);
+      const optionalFields: Record<string, unknown> = {
+        shortDescription: formData.shortDescription.trim() || null,
+        comparePrice: comparePrice > 0 ? comparePrice : null,
+        sku: formData.sku.trim() || null,
+      };
+      for (const [key, value] of Object.entries(optionalFields)) {
+        if (value !== null || isEdit) productData[key] = value;
       }
 
-      // Add variants only if active and valid
-      if (hasVariants) {
-        const cleanVariants = variants
-          .filter((v) => v.size && v.color && v.price >= 0)
-          .map((v) => ({
-            size: v.size,
+      // Existing variants keep their _id so the API updates them in place
+      // (carts reference variant ids); new rows have temporary ids.
+      productData.variants = hasVariants
+        ? variants.map((v) => ({
+            ...(isTempId(v._id) ? {} : { _id: v._id }),
+            size: v.size.trim(),
             color: v.color.trim(),
             price: parseFloat(String(v.price)) || 0,
             stock: parseInt(String(v.stock)) || 0,
             image: v.imageFile ? null : v.image || null,
-          }));
+          }))
+        : [];
 
-        if (cleanVariants.length > 0) {
-          productData.variants = cleanVariants;
-        }
-      } else {
-        productData.variants = [];
+      // Persist the primary image choice for images that already exist
+      const primaryExisting = existingImages.find((img) => img.isPrimary);
+      if (isEdit && primaryExisting && !newImages.some((img) => img.isPrimary)) {
+        productData.primaryImageId = primaryExisting._id;
       }
 
       let savedProduct: IProduct;
@@ -461,66 +600,66 @@ const ProductForm: React.FC<ProductFormProps> = ({
           product._id,
           productData as Partial<IProduct>,
         );
-        savedProduct = (response.data as any).data.product;
-        toast.success("Product updated successfully");
+        savedProduct = response.data.data.product;
       } else {
         const response = await adminAPI.createProduct(
           productData as Partial<IProduct>,
         );
-        savedProduct = (response.data as any).data.product;
-        toast.success("Product created successfully");
+        savedProduct = response.data.data.product;
       }
 
-      // Upload new images if any
-      if (newImages.length > 0 && savedProduct._id) {
+      // The product is saved from here on. Upload failures are reported but must
+      // not keep the form open: submitting again would create a duplicate product.
+      const failedUploads: string[] = [];
+
+      if (newImages.length > 0) {
         setUploadingImages(true);
         const formDataImages = new FormData();
-        newImages.forEach((img) => {
-          formDataImages.append("images", img.file);
-        });
-        await adminAPI.uploadProductImages(savedProduct._id, formDataImages);
+        newImages.forEach((img) => formDataImages.append("images", img.file));
+        const primaryIndex = newImages.findIndex((img) => img.isPrimary);
+        if (primaryIndex >= 0) {
+          formDataImages.append("primaryIndex", String(primaryIndex));
+        }
+        try {
+          await adminAPI.uploadProductImages(savedProduct._id, formDataImages);
+        } catch (err) {
+          console.error("Failed to upload product images", err);
+          failedUploads.push("product images");
+        }
       }
 
-      // Upload pending variant images (Create Mode)
-      const variantsWithPendingImages = variants
-        .map((v, index) => ({ ...v, index }))
-        .filter((v) => v.imageFile);
+      // Upload pending variant images, matched to the saved variants by size + color
+      const savedVariants = savedProduct.variants || [];
+      for (const pendingVar of variants.filter((v) => v.imageFile)) {
+        const savedVariant = savedVariants.find(
+          (sv: IProductVariant) =>
+            variantKey(sv.size, sv.color) === variantKey(pendingVar.size, pendingVar.color),
+        );
+        if (!savedVariant?._id || !pendingVar.imageFile) continue;
 
-      if (variantsWithPendingImages.length > 0 && savedProduct._id) {
-        const uploadToastId = toast.loading("Uploading variant images...");
-
-        const savedVariants = savedProduct.variants || [];
-
-        for (const pendingVar of variantsWithPendingImages) {
-          const savedVariant = savedVariants.find(
-            (sv: IProductVariant) =>
-              sv.size === pendingVar.size &&
-              sv.color === pendingVar.color.trim(),
-          );
-
-          if (savedVariant?._id && pendingVar.imageFile) {
-            const variantFormData = new FormData();
-            variantFormData.append("image", pendingVar.imageFile);
-
-            try {
-              await adminAPI.uploadVariantImage(
-                savedProduct._id,
-                savedVariant._id,
-                variantFormData,
-              );
-            } catch (err) {
-              console.error("Failed to upload variant image", err);
-              toast.error(`Failed to upload image for ${pendingVar.color}`);
-            }
-          }
+        const variantFormData = new FormData();
+        variantFormData.append("image", pendingVar.imageFile);
+        try {
+          await adminAPI.uploadVariantImage(savedProduct._id, savedVariant._id, variantFormData);
+        } catch (err) {
+          console.error("Failed to upload variant image", err);
+          failedUploads.push(`${pendingVar.size} / ${pendingVar.color} image`);
         }
-        toast.dismiss(uploadToastId);
+      }
+
+      if (failedUploads.length > 0) {
+        toast.error(
+          `Product saved, but these uploads failed: ${failedUploads.join(", ")}. Edit the product to try again.`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success(isEdit ? "Product updated successfully" : "Product created successfully");
       }
 
       onSuccess();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Form error:", error);
-      toast.error(error.response?.data?.message || "Failed to save product");
+      toast.error(getErrorMessage(error, "Failed to save product"));
     } finally {
       setLoading(false);
       setUploadingImages(false);
@@ -581,6 +720,48 @@ const ProductForm: React.FC<ProductFormProps> = ({
             />
           </div>
 
+          {/* Material & Care */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Material</label>
+            <input
+              type="text"
+              name="material"
+              value={formData.material}
+              onChange={handleChange}
+              className="input"
+              placeholder="e.g. 100% organic cotton"
+              maxLength={200}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Age Recommendation
+            </label>
+            <input
+              type="text"
+              name="ageRecommendation"
+              value={formData.ageRecommendation}
+              onChange={handleChange}
+              className="input"
+              placeholder="e.g. 0–12 months"
+              maxLength={100}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium mb-1">
+              Care Instructions
+            </label>
+            <input
+              type="text"
+              name="careInstructions"
+              value={formData.careInstructions}
+              onChange={handleChange}
+              className="input"
+              placeholder="e.g. Machine wash cold, gentle cycle"
+              maxLength={500}
+            />
+          </div>
+
           {/* Description */}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">
@@ -638,11 +819,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
               name="comparePrice"
               value={formData.comparePrice}
               onChange={handleChange}
-              className="input"
+              className={`input ${errors.comparePrice ? "border-red-500" : ""}`}
               placeholder="Original price (optional)"
               min="0"
               step="0.01"
             />
+            {errors.comparePrice && (
+              <p className="text-red-500 text-sm mt-1">{errors.comparePrice}</p>
+            )}
           </div>
 
           {/* SKU */}
@@ -681,7 +865,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
               <option value="">Select category</option>
               {categories.map((cat) => (
                 <option key={cat._id} value={cat._id}>
-                  {(cat as any).parent ? `${(cat as any).parent.name} → ` : ""}
+                  {populated(cat.parent) ? `${populated(cat.parent)?.name} → ` : ""}
                   {cat.name}
                 </option>
               ))}
@@ -695,7 +879,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
           <div>
             <label className="block text-sm font-medium mb-1">
               Stock{" "}
-              {variants.length === 0 && <span className="text-red-500">*</span>}
+              {!hasVariants && <span className="text-red-500">*</span>}
             </label>
             <input
               type="number"
@@ -703,14 +887,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
               value={formData.stock}
               onChange={handleChange}
               className={`input ${errors.stock ? "border-red-500" : ""}`}
-              placeholder={variants.length > 0 ? "Managed per variant" : "0"}
+              placeholder={hasVariants ? "Managed per variant" : "0"}
               min="0"
-              disabled={variants.length > 0}
+              disabled={hasVariants}
             />
             {errors.stock && (
               <p className="text-red-500 text-sm mt-1">{errors.stock}</p>
             )}
-            {variants.length > 0 && (
+            {hasVariants && (
               <p className="text-sm text-[var(--color-text-muted)] mt-1">
                 Stock is managed per variant option
               </p>
@@ -787,21 +971,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
                   <label className="md:hidden text-xs font-medium mb-1 block">
                     Size
                   </label>
-                  <select
+                  <SizeSelect
                     value={variant.size}
-                    onChange={(e) =>
-                      handleVariantChange(index, "size", e.target.value)
+                    customMode={Boolean(variant.customSize)}
+                    customSizes={customSizeOptions}
+                    onChange={(size, customMode) =>
+                      handleVariantSizeChange(index, size, customMode)
                     }
-                    className="select w-full text-sm"
-                    required
-                  >
-                    <option value="">Select Size...</option>
-                    {PRODUCT_SIZES.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* Color */}
@@ -925,6 +1102,10 @@ const ProductForm: React.FC<ProductFormProps> = ({
               </div>
             ))}
 
+            {errors.variants && (
+              <p className="text-red-500 text-sm">{errors.variants}</p>
+            )}
+
             <button
               type="button"
               onClick={handleAddVariant}
@@ -944,7 +1125,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         </h3>
 
         <ImageUploader
-          images={allImages as any}
+          images={allImages}
           onUpload={handleImageUpload}
           onDelete={(id: string) => {
             if (existingImages.find((img) => img._id === id)) {

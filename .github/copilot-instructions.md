@@ -108,8 +108,8 @@ export const productsAPI = {
 
 ### Auth Token Management
 
-- Frontend: `localStorage` with axios interceptor auto-refresh
-- Mobile: `expo-secure-store` via `utils/storage.ts`
+- Frontend: access token in memory only (`src/api/axios.ts`); refresh token is an httpOnly cookie set by the API. Never use localStorage for tokens.
+- Mobile: `expo-secure-store` via `utils/storage.ts`; refresh token sent in the request body
 
 ## Mobile-Specific
 
@@ -124,7 +124,7 @@ Navigation types defined in `navigation/types.ts` with proper typing for screen 
 
 ### Base URL Configuration
 
-Mobile uses dynamic base URL in `api/axios.ts` - update `LOCAL_IP` constant for development on real devices.
+Mobile reads its dev API address from `EXPO_PUBLIC_DEV_HOST` / `EXPO_PUBLIC_API_URL` (see `mobile/.env.example` and `src/utils/config.ts`).
 
 ## Key Files Reference
 

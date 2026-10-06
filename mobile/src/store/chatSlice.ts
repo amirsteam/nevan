@@ -1,10 +1,9 @@
 /**
  * Chat Redux Slice (Mobile)
- * Manages real-time chat state
+ * State for the conversation on screen (customer support chat, or a room an admin opened).
  */
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-// Message interface
 export interface ChatMessage {
     _id: string;
     roomId: string;
@@ -16,121 +15,141 @@ export interface ChatMessage {
     createdAt: string;
 }
 
-// Chat state interface
+/** Admin inbox entry (socket "get-rooms") */
+export interface ChatRoomSummary {
+    _id: string;
+    customerId: { _id: string; name: string; email: string } | null;
+    adminId?: { _id: string; name: string } | null;
+    status: "open" | "closed";
+    lastMessageAt?: string;
+    lastMessagePreview?: string;
+    unreadCountAdmin: number;
+    unreadCountCustomer: number;
+}
+
 interface ChatState {
     activeRoomId: string | null;
+    roomStatus: "open" | "closed" | null;
     messages: ChatMessage[];
+    hasMore: boolean;
     connectionStatus: "disconnected" | "connecting" | "connected" | "error";
     isLoading: boolean;
     error: string | null;
     unreadCount: number;
-    typingUsers: string[]; // List of user IDs currently typing
 }
 
 const initialState: ChatState = {
     activeRoomId: null,
+    roomStatus: null,
     messages: [],
+    hasMore: false,
     connectionStatus: "disconnected",
     isLoading: false,
     error: null,
     unreadCount: 0,
-    typingUsers: [],
 };
 
 const chatSlice = createSlice({
     name: "chat",
     initialState,
     reducers: {
-        // Set active room ID
+        enterRoom: (
+            state,
+            action: PayloadAction<{ roomId: string; status: "open" | "closed"; hasMore?: boolean }>,
+        ) => {
+            if (state.activeRoomId !== action.payload.roomId) state.messages = [];
+            state.activeRoomId = action.payload.roomId;
+            state.roomStatus = action.payload.status;
+            state.hasMore = Boolean(action.payload.hasMore);
+        },
+
+        leaveRoom: (state) => {
+            state.activeRoomId = null;
+            state.roomStatus = null;
+            state.messages = [];
+            state.hasMore = false;
+        },
+
         setActiveRoomId: (state, action: PayloadAction<string | null>) => {
             state.activeRoomId = action.payload;
         },
 
-        // Set all messages (for initial load)
-        setMessages: (state, action: PayloadAction<ChatMessage[]>) => {
-            state.messages = action.payload;
+        /** Initial history (ignored if another room is on screen by now) */
+        setMessages: (
+            state,
+            action: PayloadAction<{ roomId: string; messages: ChatMessage[]; hasMore?: boolean }>,
+        ) => {
+            if (action.payload.roomId !== state.activeRoomId) return;
+            state.messages = action.payload.messages;
+            state.hasMore = Boolean(action.payload.hasMore);
         },
 
-        // Add a single message
+        prependMessages: (
+            state,
+            action: PayloadAction<{ roomId: string; messages: ChatMessage[]; hasMore: boolean }>,
+        ) => {
+            if (action.payload.roomId !== state.activeRoomId) return;
+            const known = new Set(state.messages.map((m) => m._id));
+            state.messages = [...action.payload.messages.filter((m) => !known.has(m._id)), ...state.messages];
+            state.hasMore = action.payload.hasMore;
+        },
+
+        /** Live message: only for the conversation on screen */
         addMessage: (state, action: PayloadAction<ChatMessage>) => {
-            // Avoid duplicates
-            const exists = state.messages.some((m) => m._id === action.payload._id);
-            if (!exists) {
+            if (action.payload.roomId !== state.activeRoomId) return;
+            if (!state.messages.some((m) => m._id === action.payload._id)) {
                 state.messages.push(action.payload);
             }
         },
 
-        // Set connection status
-        setConnectionStatus: (
+        markMessagesRead: (
             state,
-            action: PayloadAction<ChatState["connectionStatus"]>
+            action: PayloadAction<{ roomId: string; readerRole: "customer" | "admin" }>,
         ) => {
+            if (action.payload.roomId !== state.activeRoomId) return;
+            for (const message of state.messages) {
+                if (message.senderRole !== action.payload.readerRole) message.status = "read";
+            }
+        },
+
+        roomClosed: (state, action: PayloadAction<string>) => {
+            if (state.activeRoomId === action.payload) state.roomStatus = "closed";
+        },
+
+        setConnectionStatus: (state, action: PayloadAction<ChatState["connectionStatus"]>) => {
             state.connectionStatus = action.payload;
         },
 
-        // Set loading state
         setIsLoading: (state, action: PayloadAction<boolean>) => {
             state.isLoading = action.payload;
         },
 
-        // Set error
         setError: (state, action: PayloadAction<string | null>) => {
             state.error = action.payload;
         },
 
-        // Clear chat state (on logout)
-        clearChat: (state) => {
-            state.activeRoomId = null;
-            state.messages = [];
-            state.connectionStatus = "disconnected";
-            state.isLoading = false;
-            state.error = null;
-            state.unreadCount = 0;
-            state.typingUsers = [];
-        },
-
-        // Update message status (e.g., mark as read)
-        updateMessageStatus: (state, action: PayloadAction<{ messageId: string; status: "sent" | "delivered" | "read" }>) => {
-            const msg = state.messages.find(m => m._id === action.payload.messageId);
-            if (msg) {
-                msg.status = action.payload.status;
-            }
-        },
-
-        // Update unread count
         setUnreadCount: (state, action: PayloadAction<number>) => {
             state.unreadCount = action.payload;
         },
 
-        incrementUnreadCount: (state) => {
-            state.unreadCount += 1;
-        },
-
-        // Typing indicators
-        setTypingUser: (state, action: PayloadAction<{ userId: string; isTyping: boolean }>) => {
-            if (action.payload.isTyping) {
-                if (!state.typingUsers.includes(action.payload.userId)) {
-                    state.typingUsers.push(action.payload.userId);
-                }
-            } else {
-                state.typingUsers = state.typingUsers.filter(id => id !== action.payload.userId);
-            }
-        },
+        clearChat: () => initialState,
     },
 });
 
 export const {
+    enterRoom,
+    leaveRoom,
     setActiveRoomId,
     setMessages,
+    prependMessages,
     addMessage,
+    markMessagesRead,
+    roomClosed,
     setConnectionStatus,
     setIsLoading,
     setError,
-    clearChat,
-    updateMessageStatus,
     setUnreadCount,
-    incrementUnreadCount,
-    setTypingUser,
+    clearChat,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

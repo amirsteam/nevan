@@ -13,6 +13,7 @@ import {
   FolderTree,
   Users,
   User,
+  MessageCircle,
 } from "lucide-react-native";
 
 import { AdminDashboardScreen, AdminUsersScreen } from "../screens/admin";
@@ -20,6 +21,7 @@ import AdminOrdersNavigator from "./AdminOrdersNavigator";
 import AdminProductsNavigator from "./AdminProductsNavigator";
 import AdminCategoriesNavigator from "./AdminCategoriesNavigator";
 import ProfileNavigator from "./ProfileNavigator";
+import AdminChatNavigator from "./AdminChatNavigator";
 import type { AdminTabParamList } from "./types";
 
 export type { AdminTabParamList };
@@ -101,6 +103,16 @@ const AdminTabNavigator = (): JSX.Element => {
         options={{
           title: "Users",
           tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="AdminChatTab"
+        component={AdminChatNavigator}
+        options={{
+          title: "Chats",
+          tabBarIcon: ({ color, size }) => (
+            <MessageCircle color={color} size={size} />
+          ),
         }}
       />
     </Tab.Navigator>

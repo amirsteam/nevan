@@ -3,6 +3,7 @@
  * Protected routes for admin operations
  */
 import express, { Request, Response } from "express";
+import mongoose from "mongoose";
 import * as productController from "../controllers/productController";
 import * as categoryController from "../controllers/categoryController";
 import * as orderController from "../controllers/orderController";
@@ -23,6 +24,7 @@ import User from "../models/User";
 import Product from "../models/Product";
 import Category from "../models/Category";
 import { paginate } from "../utils/helpers";
+import { disconnectUserSockets } from "../config/socketRegistry";
 
 const router = express.Router();
 
@@ -80,11 +82,24 @@ router.get(
   paginationValidator,
   asyncHandler(async (req: Request, res: Response) => {
     // Get all products including inactive for admin
-    const { page = 1, limit = 20 } = req.query;
-    const total = await Product.countDocuments();
+    const { page = 1, limit = 20, search, category, isActive } = req.query;
+
+    const filter: Record<string, unknown> = {};
+    if (typeof search === "string" && search.trim()) {
+      const pattern = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      filter.$or = [{ name: pattern }, { sku: pattern }];
+    }
+    if (typeof category === "string" && mongoose.Types.ObjectId.isValid(category)) {
+      filter.category = category;
+    }
+    if (isActive === "true" || isActive === "false") {
+      filter.isActive = isActive === "true";
+    }
+
+    const total = await Product.countDocuments(filter);
     const pagination = paginate(Number(page), Number(limit), total);
 
-    const products = await Product.find()
+    const products = await Product.find(filter)
       .sort({ createdAt: -1 })
       .skip(pagination.skip)
       .limit(pagination.itemsPerPage)
@@ -98,6 +113,9 @@ router.get(
     });
   }),
 );
+
+// Before "/products/:id" so "sizes" isn't treated as an id
+router.get("/products/sizes", productController.getSizeOptions);
 
 // Get single product by ID for admin
 router.get(
@@ -219,7 +237,7 @@ router.get(
       .sort({ createdAt: -1 })
       .skip(pagination.skip)
       .limit(pagination.itemsPerPage)
-      .select("-password -refreshToken");
+      .select("-password -refreshSessions");
 
     res.status(200).json({
       status: "success",
@@ -240,11 +258,16 @@ router.put(
       req.params.id,
       { isActive },
       { new: true },
-    ).select("-password -refreshToken");
+    ).select("-password -refreshSessions");
 
     if (!user) {
       res.status(404).json({ status: "fail", message: "User not found" });
       return;
+    }
+
+    // A deactivated user's open chat connections end immediately
+    if (!isActive) {
+      disconnectUserSockets(String(user._id));
     }
 
     res.status(200).json({
@@ -270,7 +293,7 @@ router.put(
       req.params.id,
       { role },
       { new: true },
-    ).select("-password -refreshToken");
+    ).select("-password -refreshSessions");
 
     if (!user) {
       res.status(404).json({ status: "fail", message: "User not found" });

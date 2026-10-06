@@ -146,6 +146,7 @@ class KhaltiGateway implements IPaymentGateway {
                 return {
                     verified: false,
                     status: 'pending',
+                    referenceId: pidx,
                     message: 'Payment is still pending',
                     rawResponse: response.data,
                 };
@@ -155,6 +156,7 @@ class KhaltiGateway implements IPaymentGateway {
                 return {
                     verified: false,
                     status: 'refunded',
+                    referenceId: pidx,
                     message: 'Payment was refunded',
                     rawResponse: response.data,
                 };
@@ -163,6 +165,7 @@ class KhaltiGateway implements IPaymentGateway {
             return {
                 verified: false,
                 status: 'failed',
+                referenceId: pidx,
                 message: `Payment status: ${status}`,
                 rawResponse: response.data,
             };

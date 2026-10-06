@@ -11,7 +11,7 @@ import {
   ValidationChain,
 } from "express-validator";
 import AppError from "../utils/AppError";
-import { PRODUCT_SIZES } from "../utils/constants";
+import { MAX_SIZE_LENGTH } from "../utils/constants";
 
 interface ValidationError {
   field: string;
@@ -35,9 +35,10 @@ const handleValidationErrors: RequestHandler = (
       message: err.msg,
     }));
 
+    // Lead with the first problem so clients that only show `message` are still specific
     res.status(400).json({
       status: "fail",
-      message: "Validation failed",
+      message: errorMessages[0]?.message || "Validation failed",
       errors: errorMessages,
     });
     return;
@@ -86,6 +87,100 @@ const loginValidator: (ValidationChain | RequestHandler)[] = [
   handleValidationErrors,
 ];
 
+// Email is normalized exactly like register/login so lookups match stored addresses
+const resetEmailRule = () =>
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("Please provide a valid email")
+    .normalizeEmail();
+
+const resetOtpRule = () =>
+  body("otp")
+    .isString()
+    .trim()
+    .matches(/^\d{6}$/)
+    .withMessage("Reset code must be 6 digits");
+
+const newPasswordRule = () =>
+  body("newPassword")
+    .isString()
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters");
+
+const forgotPasswordValidator: (ValidationChain | RequestHandler)[] = [
+  resetEmailRule(),
+  handleValidationErrors,
+];
+
+const verifyResetOtpValidator: (ValidationChain | RequestHandler)[] = [
+  resetEmailRule(),
+  resetOtpRule(),
+  handleValidationErrors,
+];
+
+const resetPasswordValidator: (ValidationChain | RequestHandler)[] = [
+  resetEmailRule(),
+  resetOtpRule(),
+  newPasswordRule(),
+  handleValidationErrors,
+];
+
+const changePasswordValidator: (ValidationChain | RequestHandler)[] = [
+  body("currentPassword").isString().notEmpty().withMessage("Current password is required"),
+  newPasswordRule(),
+  handleValidationErrors,
+];
+
+// Variant rules shared by create and update. Sizes are free text (built-in
+// suggestions or a custom size), so they are only trimmed and length-checked.
+const variantRules = (): ValidationChain[] => [
+  body("variants")
+    .optional()
+    .isArray()
+    .withMessage("Variants must be an array")
+    .custom((variants: { size?: unknown; color?: unknown }[]) => {
+      const seen = new Set<string>();
+      for (const v of variants) {
+        const key = `${String(v?.size ?? "").trim().toLowerCase()}|${String(v?.color ?? "").trim().toLowerCase()}`;
+        if (seen.has(key)) {
+          throw new Error(`Duplicate variant: ${String(v?.size).trim()} / ${String(v?.color).trim()}`);
+        }
+        seen.add(key);
+      }
+      return true;
+    }),
+  body("variants.*.size")
+    .isString()
+    .withMessage("Variant size is required")
+    .trim()
+    .notEmpty()
+    .withMessage("Variant size is required")
+    .isLength({ max: MAX_SIZE_LENGTH })
+    .withMessage(`Variant size cannot exceed ${MAX_SIZE_LENGTH} characters`),
+  body("variants.*.color")
+    .isString()
+    .withMessage("Variant color is required")
+    .trim()
+    .notEmpty()
+    .withMessage("Variant color is required"),
+  body("variants.*.price")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Variant price must be a positive number"),
+  body("variants.*.stock")
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage("Variant stock must be a non-negative integer"),
+  body("variants.*.sku")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("Variant SKU cannot exceed 50 characters"),
+];
+
 // =============== PRODUCT VALIDATORS ===============
 
 const createProductValidator: (ValidationChain | RequestHandler)[] = [
@@ -107,7 +202,7 @@ const createProductValidator: (ValidationChain | RequestHandler)[] = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("comparePrice")
-    .optional()
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
     .withMessage("Compare price must be a positive number"),
   body("category")
@@ -120,41 +215,11 @@ const createProductValidator: (ValidationChain | RequestHandler)[] = [
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
   body("sku")
-    .optional()
+    .optional({ values: "null" })
     .trim()
     .isLength({ max: 50 })
     .withMessage("SKU cannot exceed 50 characters"),
-  // Variant validation
-  body("variants")
-    .optional()
-    .isArray()
-    .withMessage("Variants must be an array"),
-  body("variants.*.size")
-    .optional()
-    .notEmpty()
-    .withMessage("Variant size is required")
-    .isIn(PRODUCT_SIZES)
-    .withMessage(
-      "Invalid size value. Must be one of: " + PRODUCT_SIZES.join(", "),
-    ),
-  body("variants.*.color")
-    .optional()
-    .notEmpty()
-    .withMessage("Variant color is required")
-    .trim(),
-  body("variants.*.price")
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage("Variant price must be a positive number"),
-  body("variants.*.stock")
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage("Variant stock must be a non-negative integer"),
-  body("variants.*.sku")
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage("Variant SKU cannot exceed 50 characters"),
+  ...variantRules(),
   handleValidationErrors,
 ];
 
@@ -169,30 +234,20 @@ const updateProductValidator: (ValidationChain | RequestHandler)[] = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("category").optional().isMongoId().withMessage("Invalid category ID"),
-  // Variant validation for updates
-  body("variants")
-    .optional()
-    .isArray()
-    .withMessage("Variants must be an array"),
-  body("variants.*.size")
-    .optional()
-    .notEmpty()
-    .withMessage("Variant size is required")
-    .isIn(PRODUCT_SIZES)
-    .withMessage("Invalid size value"),
-  body("variants.*.color")
-    .optional()
-    .notEmpty()
-    .withMessage("Variant color is required")
-    .trim(),
-  body("variants.*.price")
-    .optional()
+  body("comparePrice")
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
-    .withMessage("Variant price must be a positive number"),
-  body("variants.*.stock")
+    .withMessage("Compare price must be a positive number"),
+  body("stock")
     .optional()
     .isInt({ min: 0 })
-    .withMessage("Variant stock must be a non-negative integer"),
+    .withMessage("Stock must be a non-negative integer"),
+  body("sku")
+    .optional({ values: "null" })
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage("SKU cannot exceed 50 characters"),
+  ...variantRules(),
   handleValidationErrors,
 ];
 
@@ -329,6 +384,10 @@ export {
   handleValidationErrors,
   registerValidator,
   loginValidator,
+  forgotPasswordValidator,
+  verifyResetOtpValidator,
+  resetPasswordValidator,
+  changePasswordValidator,
   createProductValidator,
   updateProductValidator,
   createCategoryValidator,

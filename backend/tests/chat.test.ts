@@ -1,579 +1,370 @@
 /**
  * Chat System Integration Tests
- * Tests socket.io chat functionality with mongodb-memory-server
+ * Runs the real Socket.IO server from config/socket.ts against mongodb-memory-server.
  */
-import { createServer } from "http";
+import { createServer, Server as HttpServer } from "http";
+import { AddressInfo } from "net";
 import { Server } from "socket.io";
 import { io as Client, Socket as ClientSocket } from "socket.io-client";
-import mongoose from "mongoose";
-import jwt from "jsonwebtoken";
-import User from "../models/User";
+import request from "supertest";
+import app from "../app";
+import { initializeSocket } from "../config/socket";
+import { disconnectUserSockets } from "../config/socketRegistry";
 import ChatRoom from "../models/ChatRoom";
 import Message from "../models/Message";
+import Notification from "../models/Notification";
+import User from "../models/User";
+import { createUser } from "./helpers";
 
-// Set test environment variables
-const TEST_JWT_SECRET = "test-jwt-secret-for-chat-tests";
-process.env.JWT_ACCESS_SECRET = TEST_JWT_SECRET;
+jest.mock("../services/pushNotificationService", () => ({
+  sendPushNotification: jest.fn().mockResolvedValue([]),
+}));
 
-// Simple token generation for tests
-const generateTestToken = (userId: string): string => {
-    return jwt.sign({ userId }, TEST_JWT_SECRET, { expiresIn: "1h" });
+let httpServer: HttpServer;
+let io: Server;
+let url: string;
+const sockets: ClientSocket[] = [];
+
+const IMAGE_URL = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/chat/photo.jpg`;
+
+const connect = (token?: string): Promise<ClientSocket> =>
+  new Promise((resolve, reject) => {
+    const socket = Client(`${url}/chat`, {
+      auth: token ? { token } : {},
+      transports: ["websocket"],
+      reconnection: false,
+      forceNew: true,
+    });
+    sockets.push(socket);
+    socket.on("connect", () => resolve(socket));
+    socket.on("connect_error", reject);
+  });
+
+const emitAck = <T = any>(socket: ClientSocket, event: string, data?: unknown): Promise<T> =>
+  new Promise((resolve) => socket.emit(event, data, resolve));
+
+const nextEvent = <T = any>(socket: ClientSocket, event: string, ms = 2000): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout waiting for ${event}`)), ms);
+    socket.once(event, (payload: T) => {
+      clearTimeout(timer);
+      resolve(payload);
+    });
+  });
+
+const noEvent = (socket: ClientSocket, event: string, ms = 300): Promise<boolean> =>
+  new Promise((resolve) => {
+    const handler = () => resolve(false);
+    socket.once(event, handler);
+    setTimeout(() => {
+      socket.off(event, handler);
+      resolve(true);
+    }, ms);
+  });
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+beforeAll(async () => {
+  jest.spyOn(console, "log").mockImplementation(() => {});
+  await ChatRoom.init(); // build the "one open room per customer" index
+  httpServer = createServer();
+  io = initializeSocket(httpServer);
+  await new Promise<void>((resolve) => httpServer.listen(0, () => resolve()));
+  url = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
+});
+
+afterEach(() => {
+  sockets.splice(0).forEach((s) => s.disconnect());
+});
+
+afterAll(async () => {
+  io.close();
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+});
+
+/** A customer with an open room, an admin, and both connected */
+const setup = async () => {
+  const customer = await createUser({ name: "Asha" });
+  const admin = await createUser({ role: "admin", name: "Support Sita" });
+  const customerSocket = await connect(customer.accessToken);
+  const adminSocket = await connect(admin.accessToken);
+  const joined = await emitAck(customerSocket, "join-chat", {});
+  return { customer, admin, customerSocket, adminSocket, roomId: joined.roomId as string };
 };
 
-/**
- * Socket integration tests - skipped by default because:
- * 1. The global afterEach in setup.ts clears all collections between tests,
- *    deleting users created in beforeAll
- * 2. Requires isolated test environment or manual test execution
- * 
- * To run these tests:
- * - Run `npm test -- --testPathPattern=chat.test.ts` with SKIP_SOCKET_TESTS=false
- * - Or run manually against a real database
- */
-const shouldSkip = process.env.CI || process.env.SKIP_SOCKET_TESTS !== "false";
-const describeSocket = shouldSkip ? describe.skip : describe;
+describe("Chat authentication", () => {
+  it("accepts a valid access token", async () => {
+    const { accessToken } = await createUser();
+    const socket = await connect(accessToken);
+    expect(socket.connected).toBe(true);
+  });
 
-describeSocket("Chat System", () => {
-    let httpServer: ReturnType<typeof createServer> | null = null;
-    let io: Server | null = null;
-    let customerSocket: ClientSocket;
-    let adminSocket: ClientSocket;
-    let customerUser: any;
-    let adminUser: any;
-    let customerToken: string;
-    let adminToken: string;
-    const PORT = 5555;
+  it("rejects connections without a token or with an invalid one", async () => {
+    await expect(connect()).rejects.toThrow(/Authentication required/);
+    await expect(connect("not-a-token")).rejects.toThrow(/Invalid or expired token/);
+  });
+});
 
-    beforeAll(async () => {
-        // Create test users
-        customerUser = await User.create({
-            name: "Test Customer",
-            email: "customer@test.com",
-            password: "password123",
-            role: "customer",
-            phone: "9841234567",
-        });
+describe("Conversations", () => {
+  it("creates one room per customer and reuses it on rejoin", async () => {
+    const { customerSocket, roomId } = await setup();
+    const again = await emitAck(customerSocket, "join-chat", {});
+    expect(again.roomId).toBe(roomId);
+    expect(await ChatRoom.countDocuments()).toBe(1);
+  });
 
-        adminUser = await User.create({
-            name: "Test Admin",
-            email: "admin@test.com",
-            password: "password123",
-            role: "admin",
-            phone: "9841234568",
-        });
+  it("creates a single room when two tabs join at the same time", async () => {
+    const customer = await createUser();
+    const [tab1, tab2] = await Promise.all([connect(customer.accessToken), connect(customer.accessToken)]);
+    const [a, b] = await Promise.all([emitAck(tab1, "join-chat", {}), emitAck(tab2, "join-chat", {})]);
+    expect(a.roomId).toBe(b.roomId);
+    expect(await ChatRoom.countDocuments({ customerId: customer.user._id })).toBe(1);
+  });
 
-        // Generate tokens
-        customerToken = generateTestToken(customerUser._id.toString());
-        adminToken = generateTestToken(adminUser._id.toString());
+  it("delivers messages and keeps text exactly as typed", async () => {
+    const { adminSocket, customerSocket, roomId } = await setup();
+    await emitAck(adminSocket, "join-chat", { roomId });
 
-        // Create HTTP server and Socket.IO server
-        httpServer = createServer();
-        io = new Server(httpServer, {
-            cors: { origin: "*" },
-        });
+    const received = nextEvent(adminSocket, "new-message");
+    const ack = await emitAck(customerSocket, "send-message", { roomId, content: "I <3 this romper & size 2-3?" });
 
-        // Simple chat namespace with auth
-        const chatNamespace = io.of("/chat");
+    expect(ack.success).toBe(true);
+    expect((await received).content).toBe("I <3 this romper & size 2-3?");
+    const stored = await Message.findOne({ roomId });
+    expect(stored!.content).toBe("I <3 this romper & size 2-3?");
+  });
 
-        chatNamespace.use(async (socket, next) => {
-            try {
-                const token = socket.handshake.auth.token;
-                if (!token) return next(new Error("Authentication required"));
+  it("lets any admin reply and records the most recent responder", async () => {
+    const { customerSocket, adminSocket, roomId } = await setup();
+    const secondAdmin = await createUser({ role: "admin" });
+    const secondSocket = await connect(secondAdmin.accessToken);
 
-                // Simple token verification for tests using jwt directly
-                const decoded = jwt.verify(token, TEST_JWT_SECRET) as { userId: string };
-                const user = await User.findById(decoded.userId);
+    await emitAck(adminSocket, "join-chat", { roomId });
+    expect((await emitAck(adminSocket, "send-message", { roomId, content: "Hi from admin 1" })).success).toBe(true);
 
-                if (!user) return next(new Error("User not found"));
+    await emitAck(secondSocket, "join-chat", { roomId });
+    const reply = await emitAck(secondSocket, "send-message", { roomId, content: "Hi from admin 2" });
+    expect(reply.success).toBe(true);
 
-                (socket as any).userId = user._id.toString();
-                (socket as any).userRole = user.role;
-                next();
-            } catch {
-                next(new Error("Invalid token"));
-            }
-        });
+    const room = await ChatRoom.findById(roomId);
+    expect(String(room!.adminId)).toBe(String(secondAdmin.user._id));
+    void customerSocket;
+  });
 
-        chatNamespace.on("connection", (socket) => {
-            const userId = (socket as any).userId;
-            const userRole = (socket as any).userRole;
+  it("does not show an admin messages from the previous conversation after switching", async () => {
+    const { customerSocket: customerA, adminSocket, roomId: roomA } = await setup();
+    const customerB = await createUser();
+    const socketB = await connect(customerB.accessToken);
+    const { roomId: roomB } = await emitAck(socketB, "join-chat", {});
 
-            socket.on("join-chat", async (data, callback) => {
-                try {
-                    let room;
+    await emitAck(adminSocket, "join-chat", { roomId: roomA });
+    await emitAck(adminSocket, "join-chat", { roomId: roomB }); // switch conversations
 
-                    if (userRole === "customer") {
-                        room = await ChatRoom.findOne({
-                            customerId: userId,
-                            status: "open",
-                        });
+    const quiet = noEvent(adminSocket, "new-message", 400);
+    await emitAck(customerA, "send-message", { roomId: roomA, content: "Customer A again" });
+    expect(await quiet).toBe(true);
 
-                        if (!room) {
-                            room = await ChatRoom.create({
-                                customerId: userId,
-                                status: "open",
-                            });
-                        }
-                    } else if (userRole === "admin" && data?.roomId) {
-                        room = await ChatRoom.findById(data.roomId);
-                        if (room && !room.adminId) {
-                            room.adminId = userId;
-                            await room.save();
-                        }
-                    }
+    const fromB = nextEvent(adminSocket, "new-message");
+    await emitAck(socketB, "send-message", { roomId: roomB, content: "Customer B" });
+    expect((await fromB).roomId).toBe(roomB);
+  });
 
-                    if (!room) {
-                        return callback?.({ success: false, error: "Room not found" });
-                    }
+  it("does not let a customer post to another customer's room", async () => {
+    const { roomId } = await setup();
+    const intruder = await createUser();
+    const intruderSocket = await connect(intruder.accessToken);
 
-                    socket.join(`room:${room._id}`);
+    const res = await emitAck(intruderSocket, "send-message", { roomId, content: "hi" });
+    expect(res.success).toBe(false);
+    expect(await Message.countDocuments({ roomId })).toBe(0);
+  });
+});
 
-                    const messages = await Message.find({ roomId: room._id })
-                        .sort({ createdAt: -1 })
-                        .limit(50)
-                        .lean();
-
-                    socket.emit("chat-history", {
-                        roomId: room._id.toString(),
-                        messages: messages.reverse(),
-                    });
-
-                    callback?.({ success: true, roomId: room._id.toString() });
-                } catch (error) {
-                    callback?.({ success: false, error: "Failed to join" });
-                }
-            });
-
-            socket.on("send-message", async (data, callback) => {
-                try {
-                    const { roomId, content, attachments } = data;
-
-                    if (!content || typeof content !== "string") {
-                        return callback?.({ success: false, error: "Content required" });
-                    }
-
-                    const room = await ChatRoom.findById(roomId);
-                    if (!room) {
-                        return callback?.({ success: false, error: "Room not found" });
-                    }
-
-                    // Validate attachments
-                    let validatedAttachments: { type: "image"; url: string }[] = [];
-                    if (attachments && Array.isArray(attachments)) {
-                        validatedAttachments = attachments
-                            .filter(
-                                (att: any) =>
-                                    att &&
-                                    att.type === "image" &&
-                                    typeof att.url === "string" &&
-                                    att.url.startsWith("https://")
-                            )
-                            .slice(0, 5)
-                            .map((att: any) => ({
-                                type: "image" as const,
-                                url: att.url,
-                            }));
-                    }
-
-                    const message = await Message.create({
-                        roomId: room._id,
-                        senderId: userId,
-                        senderRole: userRole,
-                        content: content.trim(),
-                        ...(validatedAttachments.length > 0 && { attachments: validatedAttachments }),
-                    });
-
-                    room.lastMessageAt = new Date();
-                    await room.save();
-
-                    const messageData = {
-                        _id: message._id.toString(),
-                        roomId: message.roomId.toString(),
-                        senderId: message.senderId.toString(),
-                        senderRole: message.senderRole,
-                        content: message.content,
-                        attachments: message.attachments || [],
-                        status: message.status,
-                        createdAt: message.createdAt,
-                    };
-
-                    chatNamespace.to(`room:${roomId}`).emit("new-message", messageData);
-                    callback?.({ success: true, message: messageData });
-                } catch (error) {
-                    callback?.({ success: false, error: "Failed to send" });
-                }
-            });
-
-            socket.on("message-read", async (data) => {
-                const { roomId, messageIds } = data;
-                if (messageIds?.length > 0) {
-                    await Message.updateMany(
-                        { _id: { $in: messageIds }, roomId, senderId: { $ne: userId } },
-                        { $set: { status: "read", readAt: new Date() } }
-                    );
-                }
-            });
-        });
-
-        await new Promise<void>((resolve) => {
-            httpServer!.listen(PORT, () => resolve());
-        });
+describe("Messages", () => {
+  it("sends image-only messages without placeholder text", async () => {
+    const { customerSocket, roomId } = await setup();
+    const res = await emitAck(customerSocket, "send-message", {
+      roomId,
+      attachments: [{ type: "image", url: IMAGE_URL }],
     });
+    expect(res.success).toBe(true);
+    expect(res.message.content).toBe("");
+    expect(res.message.attachments).toEqual([{ type: "image", url: IMAGE_URL }]);
+    expect((await ChatRoom.findById(roomId))!.lastMessagePreview).toBe("📷 Photo");
+  });
 
-    afterAll(async () => {
-        // Cleanup sockets
-        customerSocket?.disconnect();
-        adminSocket?.disconnect();
-        io?.close();
-        httpServer?.close();
+  it("only accepts images uploaded to the shop's Cloudinary account", async () => {
+    const { customerSocket, roomId } = await setup();
+    const res = await emitAck(customerSocket, "send-message", {
+      roomId,
+      content: "look",
+      attachments: [{ type: "image", url: "https://tracker.example.com/pixel.gif" }],
     });
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/uploaded through the chat/);
+  });
 
-    // Helper function to wait for socket connection
-    const waitForConnection = (socket: ClientSocket): Promise<void> => {
-        return new Promise((resolve, reject) => {
-            if (socket.connected) {
-                resolve();
-                return;
-            }
-            socket.on("connect", () => resolve());
-            socket.on("connect_error", (err) => reject(err));
-            // Timeout after 5 seconds
-            setTimeout(() => reject(new Error("Connection timeout")), 5000);
-        });
-    };
+  it("rejects empty and over-long messages with a readable error", async () => {
+    const { customerSocket, roomId } = await setup();
+    expect((await emitAck(customerSocket, "send-message", { roomId, content: "   " })).error).toMatch(/empty/);
+    expect((await emitAck(customerSocket, "send-message", { roomId, content: "x".repeat(2001) })).error).toMatch(/2000/);
+  });
 
-    beforeEach(() => {
-        // Create new client sockets for each test
-        customerSocket = Client(`http://localhost:${PORT}/chat`, {
-            auth: { token: customerToken },
-            transports: ["websocket"],
-        });
+  it("returns history in pages", async () => {
+    const { customerSocket, roomId } = await setup();
+    const base = Date.now() - 60 * 60 * 1000;
+    await Message.insertMany(
+      Array.from({ length: 60 }, (_, i) => ({
+        roomId,
+        senderId: new (require("mongoose").Types.ObjectId)(),
+        senderRole: "customer",
+        content: `m${i}`,
+        createdAt: new Date(base + i * 1000),
+      })),
+    );
 
-        adminSocket = Client(`http://localhost:${PORT}/chat`, {
-            auth: { token: adminToken },
-            transports: ["websocket"],
-        });
-    });
+    const history = nextEvent(customerSocket, "chat-history");
+    const joined = await emitAck(customerSocket, "join-chat", {});
+    const first = await history;
+    expect(joined.hasMore).toBe(true);
+    expect(first.messages).toHaveLength(50);
+    expect(first.messages[0].content).toBe("m10");
 
-    afterEach(() => {
-        customerSocket?.disconnect();
-        adminSocket?.disconnect();
-    });
+    const older = await emitAck(customerSocket, "load-messages", { roomId, before: first.messages[0].createdAt });
+    expect(older.success).toBe(true);
+    expect(older.hasMore).toBe(false);
+    expect(older.messages.map((m: any) => m.content)).toEqual(Array.from({ length: 10 }, (_, i) => `m${i}`));
+  });
+});
 
-    describe("Socket Authentication", () => {
-        it("should connect with valid token", async () => {
-            await waitForConnection(customerSocket);
-            expect(customerSocket.connected).toBe(true);
-        });
+describe("Unread counts and read receipts", () => {
+  it("keeps badge counts up to date for customer and admins", async () => {
+    const { customerSocket, adminSocket, roomId } = await setup();
 
-        it("should reject connection with invalid token", (done) => {
-            const invalidSocket = Client(`http://localhost:${PORT}/chat`, {
-                auth: { token: "invalid-token" },
-                transports: ["websocket"],
-            });
+    const adminBadge = nextEvent(adminSocket, "unread-updated");
+    await emitAck(customerSocket, "send-message", { roomId, content: "Hello?" });
+    expect((await adminBadge).count).toBe(1);
+    expect((await emitAck(adminSocket, "get-unread")).count).toBe(1);
 
-            invalidSocket.on("connect_error", (error: Error) => {
-                expect(error.message).toContain("Invalid");
-                invalidSocket.disconnect();
-                done();
-            });
-        });
+    // The admin replies without being in the room view yet → customer badge
+    await emitAck(adminSocket, "join-chat", { roomId });
+    const customerBadge = nextEvent(customerSocket, "unread-updated");
+    await emitAck(adminSocket, "send-message", { roomId, content: "Hi Asha" });
+    expect((await customerBadge).count).toBe(1);
+  });
 
-        it("should reject connection without token", (done) => {
-            const noTokenSocket = Client(`http://localhost:${PORT}/chat`, {
-                transports: ["websocket"],
-            });
+  it("marks the other side's messages read and sends a receipt", async () => {
+    const { customerSocket, adminSocket, roomId } = await setup();
+    await emitAck(customerSocket, "send-message", { roomId, content: "one" });
+    await emitAck(customerSocket, "send-message", { roomId, content: "two" });
+    await emitAck(adminSocket, "join-chat", { roomId });
 
-            noTokenSocket.on("connect_error", (error: Error) => {
-                expect(error.message).toContain("Authentication");
-                noTokenSocket.disconnect();
-                done();
-            });
-        });
-    });
+    const receipt = nextEvent(customerSocket, "message-read");
+    const badge = nextEvent(adminSocket, "unread-updated");
+    adminSocket.emit("message-read", { roomId });
 
-    describe("Join Chat", () => {
-        it("customer should create and join a new room", async () => {
-            await waitForConnection(customerSocket);
-            
-            const response = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            
-            expect(response.success).toBe(true);
-            expect(response.roomId).toBeDefined();
-        });
+    expect((await receipt).readerRole).toBe("admin");
+    expect((await badge).count).toBe(0);
+    expect(await Message.countDocuments({ roomId, status: "read" })).toBe(2);
+  });
 
-        it("customer should rejoin existing room", async () => {
-            await waitForConnection(customerSocket);
-            
-            const firstResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const firstRoomId = firstResponse.roomId;
+  it("ignores typing and read events for rooms the socket has not joined", async () => {
+    const { customerSocket, adminSocket, roomId } = await setup();
+    await emitAck(adminSocket, "join-chat", { roomId });
+    await emitAck(customerSocket, "send-message", { roomId, content: "unread" });
 
-            // Disconnect and reconnect
-            customerSocket.disconnect();
+    const intruder = await createUser();
+    const intruderSocket = await connect(intruder.accessToken);
 
-            const newCustomerSocket = Client(`http://localhost:${PORT}/chat`, {
-                auth: { token: customerToken },
-                transports: ["websocket"],
-            });
+    const quiet = noEvent(customerSocket, "typing");
+    intruderSocket.emit("typing", { roomId });
+    expect(await quiet).toBe(true);
 
-            await waitForConnection(newCustomerSocket);
-            
-            const secondResponse = await new Promise<any>((resolve) => {
-                newCustomerSocket.emit("join-chat", {}, resolve);
-            });
-            
-            expect(secondResponse.success).toBe(true);
-            expect(secondResponse.roomId).toBe(firstRoomId);
-            newCustomerSocket.disconnect();
-        });
+    intruderSocket.emit("message-read", { roomId });
+    await wait(200);
+    expect((await ChatRoom.findById(roomId))!.unreadCountAdmin).toBe(1);
+  });
+});
 
-        it("admin should join customer room by ID", async () => {
-            await waitForConnection(customerSocket);
-            
-            const customerResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = customerResponse.roomId;
+describe("Closing conversations", () => {
+  it("lets an admin close a conversation; the customer then starts a new one", async () => {
+    const { customerSocket, adminSocket, roomId } = await setup();
+    await emitAck(adminSocket, "join-chat", { roomId });
 
-            await waitForConnection(adminSocket);
-            
-            const adminResponse = await new Promise<any>((resolve) => {
-                adminSocket.emit("join-chat", { roomId }, resolve);
-            });
-            
-            expect(adminResponse.success).toBe(true);
-            expect(adminResponse.roomId).toBe(roomId);
-        });
-    });
+    const closed = nextEvent(customerSocket, "room-closed");
+    expect((await emitAck(adminSocket, "close-room", { roomId })).success).toBe(true);
+    expect((await closed).roomId).toBe(roomId);
 
-    describe("Send Message", () => {
-        it("should send and receive text message", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
+    const blocked = await emitAck(customerSocket, "send-message", { roomId, content: "still there?" });
+    expect(blocked.code).toBe("ROOM_CLOSED");
 
-            // Set up message listener before sending
-            const messagePromise = new Promise<any>((resolve) => {
-                customerSocket.on("new-message", resolve);
-            });
+    const rejoined = await emitAck(customerSocket, "join-chat", {});
+    expect(rejoined.roomId).not.toBe(roomId);
 
-            const sendResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("send-message", { roomId, content: "Hello from customer" }, resolve);
-            });
-            
-            expect(sendResponse.success).toBe(true);
+    const open = await emitAck(adminSocket, "get-rooms", { status: "open" });
+    const closedList = await emitAck(adminSocket, "get-rooms", { status: "closed" });
+    expect(open.rooms.map((r: any) => String(r._id))).toEqual([rejoined.roomId]);
+    expect(closedList.rooms.map((r: any) => String(r._id))).toEqual([roomId]);
+  });
 
-            const receivedMessage = await messagePromise;
-            expect(receivedMessage.content).toBe("Hello from customer");
-            expect(receivedMessage.senderRole).toBe("customer");
-        });
+  it("only admins can close conversations", async () => {
+    const { customerSocket, roomId } = await setup();
+    expect((await emitAck(customerSocket, "close-room", { roomId })).success).toBe(false);
+  });
+});
 
-        it("should save and return attachments", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
+describe("Notifications", () => {
+  it("gives an offline customer one bell entry per conversation, not one per message", async () => {
+    const { customer, customerSocket, adminSocket, roomId } = await setup();
+    customerSocket.disconnect();
+    await wait(100);
 
-            const messagePromise = new Promise<any>((resolve) => {
-                customerSocket.on("new-message", resolve);
-            });
+    await emitAck(adminSocket, "join-chat", { roomId });
+    await emitAck(adminSocket, "send-message", { roomId, content: "Your order shipped" });
+    await emitAck(adminSocket, "send-message", { roomId, content: "Tracking: NP123" });
+    await wait(100);
 
-            const sendResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit(
-                    "send-message",
-                    {
-                        roomId,
-                        content: "Image message",
-                        attachments: [{ type: "image", url: "https://example.com/image.jpg" }],
-                    },
-                    resolve
-                );
-            });
-            
-            expect(sendResponse.success).toBe(true);
-            expect(sendResponse.message.attachments).toHaveLength(1);
-            
-            const message = await messagePromise;
-            expect(message.attachments).toHaveLength(1);
-            expect(message.attachments[0].type).toBe("image");
-            expect(message.attachments[0].url).toBe("https://example.com/image.jpg");
-        });
+    const notes = await Notification.find({ userId: customer.user._id, type: "chat_message" });
+    expect(notes).toHaveLength(1);
+    expect(notes[0].body).toBe("Tracking: NP123");
+    expect((notes[0].data as any).roomId).toBe(roomId);
+  });
 
-        it("should reject non-HTTPS attachment URLs", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
+  it("does not add bell entries for a customer who is connected", async () => {
+    const { customer, adminSocket, roomId } = await setup();
+    await emitAck(adminSocket, "join-chat", { roomId });
+    await emitAck(adminSocket, "send-message", { roomId, content: "Hi" });
+    await wait(100);
+    expect(await Notification.countDocuments({ userId: customer.user._id })).toBe(0);
+  });
+});
 
-            const sendResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit(
-                    "send-message",
-                    {
-                        roomId,
-                        content: "Invalid attachment",
-                        attachments: [{ type: "image", url: "http://insecure.com/image.jpg" }],
-                    },
-                    resolve
-                );
-            });
-            
-            expect(sendResponse.success).toBe(true);
-            // Attachment should be filtered out
-            expect(sendResponse.message.attachments).toHaveLength(0);
-        });
+describe("Account changes", () => {
+  it("stops a deactivated user from sending and disconnects them", async () => {
+    const { customer, customerSocket, roomId } = await setup();
+    await User.updateOne({ _id: customer.user._id }, { isActive: false });
 
-        it("should reject empty messages", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
+    const disconnected = nextEvent(customerSocket, "disconnect");
+    const res = await emitAck(customerSocket, "send-message", { roomId, content: "hi" });
+    expect(res.success).toBe(false);
+    await disconnected;
+  });
 
-            const sendResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit(
-                    "send-message",
-                    { roomId, content: "" },
-                    resolve
-                );
-            });
-            
-            expect(sendResponse.success).toBe(false);
-            expect(sendResponse.error).toContain("required");
-        });
-    });
+  it("disconnects all of a user's sockets on request (deactivation, revoked sessions)", async () => {
+    const { customer, customerSocket } = await setup();
+    const disconnected = nextEvent(customerSocket, "disconnect");
+    disconnectUserSockets(String(customer.user._id));
+    expect(await disconnected).toBe("io server disconnect");
+  });
+});
 
-    describe("Message Read", () => {
-        it("should mark messages as read", async () => {
-            // Create a room and message directly
-            const room = await ChatRoom.create({
-                customerId: customerUser._id,
-                adminId: adminUser._id,
-                status: "open",
-            });
-
-            const message = await Message.create({
-                roomId: room._id,
-                senderId: customerUser._id,
-                senderRole: "customer",
-                content: "Test message",
-                status: "sent",
-            });
-
-            await waitForConnection(adminSocket);
-            
-            await new Promise<void>((resolve) => {
-                adminSocket.emit("join-chat", { roomId: room._id.toString() }, resolve);
-            });
-            
-            adminSocket.emit("message-read", {
-                roomId: room._id.toString(),
-                messageIds: [message._id.toString()],
-            });
-
-            // Wait for DB update
-            await new Promise((resolve) => setTimeout(resolve, 200));
-
-            const updatedMessage = await Message.findById(message._id);
-            expect(updatedMessage?.status).toBe("read");
-            expect(updatedMessage?.readAt).toBeDefined();
-        });
-    });
-
-    describe("Chat History", () => {
-        it("should load message history on join", async () => {
-            // Create room and messages
-            const room = await ChatRoom.create({
-                customerId: customerUser._id,
-                status: "open",
-            });
-
-            await Message.create([
-                { roomId: room._id, senderId: customerUser._id, senderRole: "customer", content: "Message 1" },
-                { roomId: room._id, senderId: customerUser._id, senderRole: "customer", content: "Message 2" },
-                { roomId: room._id, senderId: customerUser._id, senderRole: "customer", content: "Message 3" },
-            ]);
-
-            await waitForConnection(customerSocket);
-            
-            const historyPromise = new Promise<any>((resolve) => {
-                customerSocket.on("chat-history", resolve);
-            });
-            
-            customerSocket.emit("join-chat", {});
-            
-            const data = await historyPromise;
-            expect(data.messages).toHaveLength(3);
-            expect(data.messages[0].content).toBe("Message 1");
-            expect(data.messages[2].content).toBe("Message 3");
-        });
-    });
-
-    describe("Database Integrity", () => {
-        it("should persist messages in MongoDB", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
-
-            await new Promise<any>((resolve) => {
-                customerSocket.emit(
-                    "send-message",
-                    { roomId, content: "Persistent message" },
-                    resolve
-                );
-            });
-
-            // Verify in database
-            const savedMessage = await Message.findOne({
-                roomId,
-                content: "Persistent message",
-            });
-
-            expect(savedMessage).toBeDefined();
-            expect(savedMessage?.content).toBe("Persistent message");
-            expect(savedMessage?.senderRole).toBe("customer");
-        });
-
-        it("should update room lastMessageAt on new message", async () => {
-            await waitForConnection(customerSocket);
-            
-            const joinResponse = await new Promise<any>((resolve) => {
-                customerSocket.emit("join-chat", {}, resolve);
-            });
-            const roomId = joinResponse.roomId;
-            
-            const roomBefore = await ChatRoom.findById(roomId);
-            const beforeTime = roomBefore?.lastMessageAt;
-
-            // Small delay to ensure timestamp difference
-            await new Promise((resolve) => setTimeout(resolve, 50));
-
-            await new Promise<any>((resolve) => {
-                customerSocket.emit(
-                    "send-message",
-                    { roomId, content: "Update timestamp" },
-                    resolve
-                );
-            });
-
-            const roomAfter = await ChatRoom.findById(roomId);
-            expect(roomAfter?.lastMessageAt?.getTime()).toBeGreaterThan(
-                beforeTime?.getTime() || 0
-            );
-        });
-    });
+describe("Chat image upload", () => {
+  it("returns 400 (not a server error) when no image is sent", async () => {
+    const { accessToken } = await createUser();
+    const res = await request(app)
+      .post("/api/v1/chat/upload")
+      .set("Authorization", `Bearer ${accessToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/No image/);
+  });
 });

@@ -37,9 +37,10 @@ const messageSchema = new Schema<IMessage>(
             enum: ["customer", "admin"],
             required: true,
         },
+        // May be empty when the message is only an image
         content: {
             type: String,
-            required: true,
+            default: "",
             maxlength: 2000,
             trim: true,
         },

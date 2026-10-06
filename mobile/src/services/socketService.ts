@@ -1,122 +1,96 @@
 /**
  * Socket Service for React Native
- * Manages WebSocket connection for real-time chat
+ * One Socket.IO connection to the /chat namespace. A fresh access token is fetched
+ * (refreshing it if needed) on every (re)connect, and an auth failure refreshes the
+ * token and reconnects the same socket so screen listeners stay attached.
  */
 import { io, Socket } from "socket.io-client";
-import { getItem } from "../utils/storage";
 import { getSocketUrl } from "../utils/config";
+import { getValidAccessToken, refreshTokens } from "../api/tokenRefresh";
+
+const AUTH_ERRORS = ["Invalid or expired token", "Authentication required"];
+
+export interface AckResponse {
+    success: boolean;
+    error?: string;
+    code?: string;
+    [key: string]: unknown;
+}
 
 class SocketService {
     private socket: Socket | null = null;
     private namespace = "/chat";
+    private refreshAttempts = 0;
 
-    /**
-     * Connect to the socket server with JWT authentication
-     */
-    async connect(): Promise<Socket | null> {
-        try {
-            const token = await getItem("accessToken");
-
-            if (!token) {
-                console.warn("Socket: No access token available");
-                return null;
-            }
-
-            if (this.socket?.connected) {
-                console.log("Socket: Already connected");
-                return this.socket;
-            }
-
-            const socketUrl = getSocketUrl();
-            console.log(`Socket: Connecting to ${socketUrl}${this.namespace}`);
-
-            this.socket = io(`${socketUrl}${this.namespace}`, {
-                auth: { token },
-                transports: ["websocket", "polling"],
-                reconnection: true,
-                reconnectionAttempts: 5,
-                reconnectionDelay: 1000,
-            });
-
-            this.socket.on("connect", () => {
-                console.log("Socket: Connected successfully", this.socket?.id);
-            });
-
-            this.socket.on("connect_error", (error) => {
-                console.error("Socket: Connection error", error.message);
-            });
-
-            this.socket.on("disconnect", (reason) => {
-                console.log("Socket: Disconnected", reason);
-            });
-
+    /** Connect (or reuse the existing socket) */
+    connect(): Socket {
+        if (this.socket) {
+            if (!this.socket.connected) this.socket.connect();
             return this.socket;
-        } catch (error) {
-            console.error("Socket: Connection failed", error);
-            return null;
         }
+
+        this.socket = io(`${getSocketUrl()}${this.namespace}`, {
+            // Called on every connection attempt; refreshes an expired token first
+            auth: (cb) => {
+                getValidAccessToken().then((token) => cb({ token }));
+            },
+            transports: ["websocket", "polling"],
+            reconnection: true,
+            reconnectionDelay: 1000,
+        });
+
+        this.socket.on("connect", () => {
+            this.refreshAttempts = 0;
+        });
+
+        this.socket.on("connect_error", async (error) => {
+            const isAuthError = AUTH_ERRORS.some((msg) => error.message.includes(msg));
+            if (!isAuthError || this.refreshAttempts >= 3) return;
+            this.refreshAttempts++;
+            if (await refreshTokens()) this.socket?.connect();
+        });
+
+        return this.socket;
     }
 
-    /**
-     * Disconnect from the socket server
-     */
+    /** Close the connection and drop all listeners (logout) */
     disconnect(): void {
         if (this.socket) {
-            console.log("Socket: Disconnecting...");
+            this.socket.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
         }
+        this.refreshAttempts = 0;
     }
 
-    /**
-     * Emit an event to the server with optional callback
-     */
-    emit<T = any>(
-        event: string,
-        data?: any,
-        callback?: (response: T) => void
-    ): void {
-        if (!this.socket?.connected) {
-            console.warn("Socket: Not connected, cannot emit", event);
-            return;
-        }
-        this.socket.emit(event, data, callback);
+    /** Emit and wait for the acknowledgement; resolves with an error instead of hanging */
+    request<T extends AckResponse = AckResponse>(event: string, data?: unknown, timeoutMs = 10000): Promise<T> {
+        return new Promise((resolve) => {
+            if (!this.socket?.connected) {
+                resolve({ success: false, error: "Not connected to chat. Please try again." } as T);
+                return;
+            }
+            this.socket
+                .timeout(timeoutMs)
+                .emit(event, data ?? {}, (err: Error | null, response: T) => {
+                    resolve(err ? ({ success: false, error: "The chat server did not respond" } as T) : response);
+                });
+        });
     }
 
-    /**
-     * Listen for an event from the server
-     */
-    on<T = any>(event: string, callback: (data: T) => void): void {
-        if (!this.socket) {
-            console.warn("Socket: Not initialized, cannot listen for", event);
-            return;
-        }
-        this.socket.on(event, callback);
+    /** Fire-and-forget event (typing, read receipts) */
+    send(event: string, data?: unknown): void {
+        if (this.socket?.connected) this.socket.emit(event, data);
     }
 
-    /**
-     * Remove event listener
-     */
-    off(event: string, callback?: (...args: any[]) => void): void {
-        if (!this.socket) return;
-        this.socket.off(event, callback);
-    }
-
-    /**
-     * Get connection status
-     */
     isConnected(): boolean {
         return this.socket?.connected ?? false;
     }
 
-    /**
-     * Get the socket instance
-     */
     getSocket(): Socket | null {
         return this.socket;
     }
 }
 
-// Export singleton instance
 const socketService = new SocketService();
 export default socketService;

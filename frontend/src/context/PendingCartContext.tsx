@@ -41,6 +41,8 @@ interface PendingCartProviderProps {
 
 const PendingCartContext = createContext<PendingCartContextType | null>(null);
 
+// Hook lives next to its provider; only affects Fast Refresh granularity in dev
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePendingCart = (): PendingCartContextType => {
   const context = useContext(PendingCartContext);
   if (!context) {

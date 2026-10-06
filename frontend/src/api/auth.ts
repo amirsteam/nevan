@@ -26,15 +26,9 @@ export const authAPI = {
     return response.data;
   },
 
+  // The API ends the session identified by the httpOnly refresh cookie
   logout: async (): Promise<IApiResponse<null>> => {
     const response = await api.post("/auth/logout");
-    return response.data;
-  },
-
-  refreshToken: async (
-    refreshToken: string,
-  ): Promise<IApiResponse<{ accessToken: string; refreshToken: string }>> => {
-    const response = await api.post("/auth/refresh-token", { refreshToken });
     return response.data;
   },
 

@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { generateOrderNumber } from "../utils/helpers";
+import AppError from "../utils/AppError";
 
 export interface IOrderItem {
   product: Types.ObjectId;
@@ -306,7 +307,7 @@ orderSchema.methods.updateOrderStatus = async function (
   };
 
   if (!validTransitions[this.status].includes(newStatus)) {
-    throw new Error(`Cannot transition from ${this.status} to ${newStatus}`);
+    throw new AppError(`Cannot change order status from ${this.status} to ${newStatus}`, 400);
   }
 
   this.status = newStatus as any;
@@ -374,11 +375,51 @@ orderSchema.statics.getDashboardStats = async function () {
     ]),
   ]);
 
+  // Last 7 days (Nepal time) of revenue/orders, counted the same way as totalRevenue
+  const TIMEZONE = "Asia/Kathmandu";
+  const DAYS = 7;
+  const since = new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000);
+  const [byStatus, byDay] = await Promise.all([
+    this.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+    this.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: since },
+          status: { $in: ["confirmed", "processing", "shipped", "delivered"] },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: TIMEZONE },
+          },
+          revenue: { $sum: "$pricing.total" },
+          orders: { $sum: 1 },
+        },
+      },
+    ]),
+  ]);
+
+  const ordersByStatus: Record<string, number> = {};
+  for (const row of byStatus) ordersByStatus[row._id] = row.count;
+
+  // One entry per day, oldest first, including days without sales
+  const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE });
+  const totalsByDay = new Map<string, { revenue: number; orders: number }>(
+    byDay.map((row: any) => [row._id, { revenue: row.revenue, orders: row.orders }]),
+  );
+  const salesByDay = Array.from({ length: DAYS }, (_, i) => {
+    const date = dayFormat.format(new Date(Date.now() - (DAYS - 1 - i) * 24 * 60 * 60 * 1000));
+    return { date, ...(totalsByDay.get(date) || { revenue: 0, orders: 0 }) };
+  });
+
   return {
     totalOrders,
     todayOrders,
     pendingOrders,
     totalRevenue: revenue[0]?.total || 0,
+    ordersByStatus,
+    salesByDay,
   };
 };
 

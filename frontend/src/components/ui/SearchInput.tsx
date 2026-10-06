@@ -37,11 +37,13 @@ const SearchInput = ({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const value = controlledValue !== undefined ? controlledValue : internalValue;
+  const suggestionsOpen = showSuggestions && suggestions.length > 0 && !!value;
 
   // Handle input change with debounce
   const handleChange = (newValue: string) => {
     setInternalValue(newValue);
     setSelectedIndex(-1);
+    setShowSuggestions(newValue !== "");
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -54,7 +56,7 @@ const SearchInput = ({
 
   // Handle keyboard navigation
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (!showSuggestions || suggestions.length === 0) {
+    if (!suggestionsOpen) {
       if (e.key === "Enter" && onSearch) {
         onSearch(value);
       }
@@ -113,15 +115,6 @@ const SearchInput = ({
     };
   }, []);
 
-  // Update suggestions visibility
-  useEffect(() => {
-    if (suggestions.length > 0 && value) {
-      setShowSuggestions(true);
-    } else {
-      setShowSuggestions(false);
-    }
-  }, [suggestions, value]);
-
   return (
     <div className={`relative ${className}`}>
       <div className="relative">
@@ -146,7 +139,7 @@ const SearchInput = ({
           placeholder={placeholder}
           autoFocus={autoFocus}
           className={`
-            w-full h-11 pl-11 pr-${showClear && value ? "11" : "4"} 
+            w-full h-11 pl-11 ${showClear && value ? "pr-11" : "pr-4"} 
             bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl
             text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]
             focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
@@ -154,7 +147,7 @@ const SearchInput = ({
           `}
           aria-label="Search"
           role="combobox"
-          aria-expanded={showSuggestions}
+          aria-expanded={suggestionsOpen}
           aria-haspopup="listbox"
         />
 
@@ -171,7 +164,7 @@ const SearchInput = ({
       </div>
 
       {/* Suggestions Dropdown */}
-      {showSuggestions && suggestions.length > 0 && (
+      {suggestionsOpen && (
         <ul
           role="listbox"
           className="absolute z-50 w-full mt-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-lg overflow-hidden"
