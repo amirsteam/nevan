@@ -6,6 +6,7 @@
  */
 import { io, Socket } from "socket.io-client";
 import { API_BASE_URL, getAccessToken, refreshAccessToken } from "../api/axios";
+import { loadGuestSession, clearGuestSession } from "../utils/guestChat";
 
 // Socket server origin: the API URL without its /api/v1 suffix.
 // A relative API URL (Vite proxy in dev) means the socket server is the page origin.
@@ -30,18 +31,22 @@ class SocketService {
     private maxRefreshAttempts = 3;
 
     /**
-     * Connect (or return the existing socket). Returns null when signed out.
+     * Connect (or return the existing socket) as the signed-in user, or as a chat
+     * guest when signed out. Returns null when there is neither.
      */
     connect(): Socket | null {
         if (this.socket) {
             if (!this.socket.connected) this.socket.connect();
             return this.socket;
         }
-        if (!getAccessToken()) return null;
+        if (!getAccessToken() && !loadGuestSession()) return null;
 
         this.socket = io(`${getSocketUrl()}${this.namespace}`, {
-            // Evaluated on every connection attempt, so reconnects use the current token
-            auth: (cb) => cb({ token: getAccessToken() }),
+            // Evaluated on every connection attempt, so reconnects use the current identity
+            auth: (cb) => {
+                const token = getAccessToken();
+                cb(token ? { token } : { guestToken: loadGuestSession()?.token });
+            },
             transports: ["websocket", "polling"],
             reconnection: true,
             reconnectionDelay: 1000,
@@ -52,6 +57,12 @@ class SocketService {
         });
 
         this.socket.on("connect_error", async (error) => {
+            // Expired or invalid guest session: forget it so the visitor can start a new chat
+            if (error.message.includes("Invalid guest session")) {
+                clearGuestSession();
+                window.dispatchEvent(new Event("chat-guest-expired"));
+                return;
+            }
             const isAuthError = AUTH_ERRORS.some((msg) => error.message.includes(msg));
             if (!isAuthError || this.refreshAttempts >= this.maxRefreshAttempts) return;
 

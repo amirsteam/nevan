@@ -20,7 +20,10 @@ export interface ChatMessage {
 /** Admin inbox entry (GET via socket "get-rooms") */
 export interface ChatRoomSummary {
     _id: string;
+    // null for website visitors (guests)
     customerId: { _id: string; name: string; email: string } | null;
+    guestName?: string;
+    guestEmail?: string;
     adminId?: { _id: string; name: string } | null;
     status: "open" | "closed";
     lastMessageAt?: string;
@@ -45,6 +48,8 @@ interface ChatState {
     error: string | null;
     unreadCount: number;
     typing: { roomId: string; role: "customer" | "admin" } | null;
+    // Signed-out visitor chatting as a guest (token kept in utils/guestChat)
+    guest: { id: string; name: string } | null;
 }
 
 const initialState: ChatState = {
@@ -62,6 +67,7 @@ const initialState: ChatState = {
     error: null,
     unreadCount: 0,
     typing: null,
+    guest: null,
 };
 
 const chatSlice = createSlice({
@@ -197,7 +203,12 @@ const chatSlice = createSlice({
             state.typing = action.payload;
         },
 
-        clearChat: () => initialState,
+        setGuest: (state, action: PayloadAction<{ id: string; name: string } | null>) => {
+            state.guest = action.payload;
+        },
+
+        /** Reset the conversation state; keeps the window open/closed and the guest identity */
+        clearChat: (state) => ({ ...initialState, isOpen: state.isOpen, guest: state.guest }),
     },
 });
 
@@ -222,7 +233,12 @@ export const {
     setError,
     setUnreadCount,
     setTyping,
+    setGuest,
     clearChat,
 } = chatSlice.actions;
+
+/** Display name for a conversation in the admin inbox */
+export const roomDisplayName = (room: ChatRoomSummary | undefined): string =>
+    room?.customerId?.name || (room?.guestName ? `${room.guestName} (guest)` : "Customer");
 
 export default chatSlice.reducer;

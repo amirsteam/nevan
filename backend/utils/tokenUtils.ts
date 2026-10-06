@@ -85,3 +85,33 @@ export const generateTokenPair = (user: { _id: string | any; role: string }) => 
         refreshToken: generateRefreshToken(refreshPayload),
     };
 };
+
+// ==================== Chat guest tokens ====================
+
+export interface GuestChatPayload {
+    guestId: string;
+    name: string;
+    email?: string;
+}
+
+const GUEST_AUDIENCE = 'chat-guest';
+
+/**
+ * Token identifying an anonymous website visitor in the support chat. It only
+ * grants access to that visitor's own conversation (audience `chat-guest`; it is
+ * not accepted as an access token because it carries no userId).
+ */
+export const generateGuestToken = (payload: GuestChatPayload): string => {
+    return jwt.sign(payload, process.env.JWT_ACCESS_SECRET as string, {
+        audience: GUEST_AUDIENCE,
+        expiresIn: '30d',
+    });
+};
+
+export const verifyGuestToken = (token: string): GuestChatPayload => {
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET as string, {
+        audience: GUEST_AUDIENCE,
+    }) as GuestChatPayload;
+    if (!decoded.guestId || !decoded.name) throw new Error('Invalid guest token');
+    return decoded;
+};

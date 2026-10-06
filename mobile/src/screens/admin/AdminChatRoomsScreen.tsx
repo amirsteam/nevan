@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { MessageCircle } from "lucide-react-native";
 import socketService, { AckResponse } from "../../services/socketService";
-import type { ChatRoomSummary } from "../../store/chatSlice";
+import { roomDisplayName, type ChatRoomSummary } from "../../store/chatSlice";
 import type { AdminChatRoomsScreenProps } from "../../navigation/types";
 
 const formatTime = (iso?: string) => {
@@ -75,23 +75,23 @@ const AdminChatRoomsScreen: React.FC<AdminChatRoomsScreenProps> = ({ navigation 
       onPress={() =>
         navigation.navigate("AdminChatRoom", {
           roomId: item._id,
-          customerName: item.customerId?.name || "Customer",
+          customerName: roomDisplayName(item),
         })
       }
     >
       <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{(item.customerId?.name || "?").charAt(0).toUpperCase()}</Text>
+        <Text style={styles.avatarText}>{(item.customerId?.name || item.guestName || "?").charAt(0).toUpperCase()}</Text>
       </View>
       <View style={styles.roomBody}>
         <View style={styles.roomRow}>
           <Text style={styles.name} numberOfLines={1}>
-            {item.customerId?.name || "Unknown Customer"}
+            {roomDisplayName(item)}
           </Text>
           <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
         </View>
         <View style={styles.roomRow}>
           <Text style={styles.preview} numberOfLines={1}>
-            {item.lastMessagePreview || item.customerId?.email || ""}
+            {item.lastMessagePreview || item.customerId?.email || item.guestEmail || ""}
           </Text>
           {item.unreadCountAdmin > 0 && (
             <View style={styles.badge}>

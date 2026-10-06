@@ -1,6 +1,7 @@
 /**
- * Keeps the support-chat connection alive for the signed-in user and feeds the
- * chat store: unread badge, admin inbox, live messages, read receipts, typing.
+ * Keeps the support-chat connection alive for the signed-in user — or for a
+ * signed-out visitor who started a guest chat — and feeds the chat store: unread
+ * badge, admin inbox, live messages, read receipts, typing.
  * Mounted once (ChatWidget) so badges update while the chat window is closed.
  */
 import { useEffect, useRef } from "react";
@@ -20,7 +21,9 @@ import {
     setRooms,
     setTyping,
     setUnreadCount,
+    setGuest,
 } from "../store/chatSlice";
+import { loadGuestSession, clearGuestSession } from "../utils/guestChat";
 import { playMessageSound, playTypingSoundDebounced } from "../utils/soundUtils";
 
 /** Re-fetch the admin inbox for the current filter */
@@ -34,22 +37,35 @@ export const refreshRooms = async (): Promise<void> => {
 };
 
 export const useChatConnection = (): void => {
-    const { isAuthenticated, user } = useAuth();
+    const { isAuthenticated, user, loading: authLoading } = useAuth();
     const dispatch = useAppDispatch();
     const isOpen = useAppSelector((state) => state.chat.isOpen);
-    const userIdRef = useRef<string | undefined>(user?._id);
+    const guest = useAppSelector((state) => state.chat.guest);
     const isAdmin = user?.role === "admin";
+    // Who is chatting: the signed-in user, else the visitor's guest session
+    const selfId = isAuthenticated ? user?._id : guest?.id;
+    const identity = authLoading ? null : isAuthenticated ? `user:${user?._id}` : guest ? `guest:${guest.id}` : null;
+    const selfIdRef = useRef<string | undefined>(selfId);
 
     useEffect(() => {
-        userIdRef.current = user?._id;
-    }, [user?._id]);
+        selfIdRef.current = selfId;
+    }, [selfId]);
+
+    // Pick up a guest session saved earlier (page reload), and forget an expired one
+    useEffect(() => {
+        if (authLoading || isAuthenticated) return;
+        const saved = loadGuestSession();
+        dispatch(setGuest(saved ? { id: saved.id, name: saved.name } : null));
+        const onExpired = () => dispatch(setGuest(null));
+        window.addEventListener("chat-guest-expired", onExpired);
+        return () => window.removeEventListener("chat-guest-expired", onExpired);
+    }, [authLoading, isAuthenticated, dispatch]);
 
     useEffect(() => {
-        if (!isAuthenticated) {
-            socketService.disconnect();
-            dispatch(clearChat());
-            return;
-        }
+        // Identity changed (sign-in, sign-out, guest chat started): start a fresh connection
+        socketService.disconnect();
+        dispatch(clearChat());
+        if (!identity) return;
 
         const socket = socketService.connect();
         if (!socket) return;
@@ -59,6 +75,14 @@ export const useChatConnection = (): void => {
 
         const onConnect = async () => {
             dispatch(setConnectionStatus("connected"));
+
+            // A visitor who chatted as a guest and then signed in keeps that conversation
+            const guestSession = isAuthenticated && !isAdmin ? loadGuestSession() : null;
+            if (guestSession) {
+                const claim = await socketService.request("claim-guest-chat", { guestToken: guestSession.token });
+                if (claim.success) clearGuestSession();
+            }
+
             const unread = await socketService.request<{ success: boolean; count?: number }>("get-unread");
             if (unread.success) dispatch(setUnreadCount(unread.count ?? 0));
 
@@ -76,7 +100,7 @@ export const useChatConnection = (): void => {
 
             dispatch(addMessage(message));
             dispatch(setTyping(null));
-            if (message.senderId !== userIdRef.current) {
+            if (message.senderId !== selfIdRef.current) {
                 playMessageSound();
                 if (windowOpen) socketService.send("message-read", { roomId: message.roomId });
             }
@@ -116,7 +140,8 @@ export const useChatConnection = (): void => {
             clearTimeout(typingTimer);
             for (const [event, handler] of Object.entries(handlers)) socket.off(event, handler);
         };
-    }, [isAuthenticated, isAdmin, dispatch]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [identity, dispatch]);
 
     // Closing the window leaves the conversation; the badge keeps counting via "unread-updated"
     const wasOpen = useRef(isOpen);

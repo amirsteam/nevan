@@ -415,8 +415,20 @@ const openApiSpec = {
     "/notifications/read-all": { patch: op("Notifications", "Mark all read") },
     "/notifications/{id}/read": { patch: op("Notifications", "Mark one read", { parameters: [pathParam("id")] }) },
     "/notifications/{id}": { delete: op("Notifications", "Delete one", { parameters: [pathParam("id")] }) },
+    "/chat/guest-session": {
+      post: op("Chat", "Start a support chat as a website visitor (no account). Returns a guest token for the Socket.IO handshake (`auth: { guestToken }`) and the X-Chat-Guest-Token upload header. 10 per IP per hour.", {
+        requestBody: json({
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: { type: "string", maxLength: 50 },
+            email: { type: "string", format: "email", description: "Optional: lets support email the visitor about replies" },
+          },
+        }),
+      }, "none"),
+    },
     "/chat/upload": {
-      post: op("Chat", "Upload a chat image (realtime messaging uses Socket.IO namespace /chat)", {
+      post: op("Chat", "Upload a chat image (signed-in users, or guests with the X-Chat-Guest-Token header). Realtime messaging uses Socket.IO namespace /chat", {
         requestBody: {
           required: true,
           content: { "multipart/form-data": { schema: { type: "object", properties: { image: { type: "string", format: "binary" } } } } },

@@ -61,3 +61,17 @@ export const paymentLimiter = createLimiter({
   limit: 30,
   message: message("Too many payment requests, please try again later"),
 });
+
+// Anonymous visitors starting a support chat (each session can open a conversation)
+export const guestChatLimiter = createLimiter({
+  windowMs: 60 * MINUTE,
+  limit: 10,
+  message: message("Too many chat sessions started from this network. Please try again later."),
+});
+
+// Chat image uploads (guests can upload too)
+export const chatUploadLimiter = createLimiter({
+  windowMs: 15 * MINUTE,
+  limit: 30,
+  message: message("Too many images uploaded. Please try again later."),
+});

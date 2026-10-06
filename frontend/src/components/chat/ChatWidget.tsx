@@ -1,10 +1,10 @@
 /**
  * ChatWidget Component
  * Floating chat button (with unread badge) that opens/closes the chat window.
+ * Available to every visitor: signed-out visitors can chat as guests.
  * Also owns the chat connection, so the badge updates while the window is closed.
  */
 import { MessageCircle } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { toggleChat } from "../../store/chatSlice";
 import { useChatConnection } from "../../hooks/useChatConnection";
@@ -13,14 +13,8 @@ import ChatWindow from "./ChatWindow";
 const ChatWidget = () => {
     const dispatch = useAppDispatch();
     const { isOpen, unreadCount } = useAppSelector((state) => state.chat);
-    const { isAuthenticated } = useAuth();
 
     useChatConnection();
-
-    // Don't show chat widget if not authenticated
-    if (!isAuthenticated) {
-        return null;
-    }
 
     return (
         <>

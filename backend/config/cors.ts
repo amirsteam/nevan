@@ -30,7 +30,7 @@ const corsOptions: CorsOptions = {
     },
     credentials: true, // Allow cookies and authorization headers
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Chat-Guest-Token'],
     exposedHeaders: ['X-Total-Count', 'X-Total-Pages'], // For pagination
     maxAge: 86400, // Cache preflight for 24 hours
 };

@@ -14,7 +14,9 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 import { RateLimiterMemory } from "rate-limiter-flexible";
 import mongoose from "mongoose";
-import { verifyAccessToken } from "../utils/tokenUtils";
+import { verifyAccessToken, verifyGuestToken } from "../utils/tokenUtils";
+import { sendEmail } from "../utils/email";
+import { getFrontendUrl } from "../utils/helpers";
 import User from "../models/User";
 import ChatRoom, { IChatRoom } from "../models/ChatRoom";
 import Message, { IMessage } from "../models/Message";
@@ -23,9 +25,13 @@ import { sendPushNotification } from "../services/pushNotificationService";
 import { registerChatNamespace } from "./socketRegistry";
 
 // Extended socket interface with user data
+// Signed-in users and anonymous website visitors ("guests", who chat as customers)
 interface AuthenticatedSocket extends Socket {
-    userId: string;
+    userId: string; // user id, or guest id for visitors
     userRole: "customer" | "admin";
+    isGuest: boolean;
+    displayName: string;
+    guestEmail?: string;
 }
 
 type AckResponse = { success: boolean; error?: string; [key: string]: unknown };
@@ -121,7 +127,10 @@ const previewOf = (content: string, attachmentCount: number): string =>
 /** Unread total for a user's badge: customer → their open room, admin → whole inbox */
 const getUnreadCount = async (userId: string, role: "customer" | "admin"): Promise<number> => {
     if (role === "customer") {
-        const room = await ChatRoom.findOne({ customerId: userId, status: "open" }).select("unreadCountCustomer");
+        const room = await ChatRoom.findOne({
+            status: "open",
+            $or: [{ customerId: userId }, { guestId: userId }],
+        }).select("unreadCountCustomer");
         return room?.unreadCountCustomer || 0;
     }
     const [result] = await ChatRoom.aggregate([
@@ -140,25 +149,54 @@ const listRooms = async (status: "open" | "closed" = "open") =>
         .limit(ROOM_LIST_LIMIT)
         .lean();
 
-/** Find a customer's open room or create it; safe if two tabs connect at once */
-const findOrCreateCustomerRoom = async (customerId: string): Promise<IChatRoom> => {
-    const existing = await ChatRoom.findOne({ customerId, status: "open" });
+/** The signed-in customer's or guest's id that owns a room */
+const ownerIdOf = (room: IChatRoom): string => String(room.customerId ?? room.guestId ?? "");
+
+/**
+ * Find the open room of a signed-in customer or a guest, or create it.
+ * Safe if two tabs connect at once (unique "one open room" indexes).
+ */
+const findOrCreateCustomerRoom = async (socket: AuthenticatedSocket): Promise<IChatRoom> => {
+    const owner = socket.isGuest ? { guestId: socket.userId } : { customerId: socket.userId };
+    const existing = await ChatRoom.findOne({ ...owner, status: "open" });
     if (existing) return existing;
     try {
-        return await ChatRoom.create({ customerId, status: "open" });
+        return await ChatRoom.create({
+            ...owner,
+            status: "open",
+            ...(socket.isGuest && { guestName: socket.displayName, guestEmail: socket.guestEmail }),
+        });
     } catch (error: any) {
-        // Unique index "one open room per customer": another connection created it first
+        // Another connection created it first
         if (error?.code === 11000) {
-            const room = await ChatRoom.findOne({ customerId, status: "open" });
+            const room = await ChatRoom.findOne({ ...owner, status: "open" });
             if (room) return room;
         }
         throw error;
     }
 };
 
-/** Can this socket read/write this room? Customers: own room; admins: any room */
+/** Can this socket read/write this room? Customers/guests: own room; admins: any room */
 const canAccessRoom = (room: IChatRoom, userId: string, role: string): boolean =>
-    role === "admin" || room.customerId.toString() === userId;
+    role === "admin" || ownerIdOf(room) === userId;
+
+/**
+ * Email an offline guest that support replied (they have no account, bell or push).
+ * At most once per 30 minutes per conversation.
+ */
+const GUEST_EMAIL_INTERVAL_MS = 30 * 60 * 1000;
+const emailOfflineGuest = async (room: IChatRoom, preview: string): Promise<void> => {
+    if (!room.guestId || !room.guestEmail) return;
+    if (await isUserOnline(String(room.guestId))) return;
+    if (room.guestNotifiedAt && Date.now() - room.guestNotifiedAt.getTime() < GUEST_EMAIL_INTERVAL_MS) return;
+
+    await ChatRoom.updateOne({ _id: room._id }, { $set: { guestNotifiedAt: new Date() } });
+    await sendEmail({
+        to: room.guestEmail,
+        subject: "You have a reply from Nevan support",
+        text: `Hi ${room.guestName || "there"},\n\nOur support team replied to your chat:\n\n"${preview}"\n\nContinue the conversation on ${getFrontendUrl()} (use the chat button, on the same device and browser).`,
+    });
+};
 
 const loadHistory = async (roomId: string, before?: Date) => {
     const query: Record<string, unknown> = { roomId };
@@ -249,28 +287,42 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
 
     // Authentication middleware
     chatNamespace.use(async (socket: Socket, next) => {
+        const authSocket = socket as AuthenticatedSocket;
+        const { token, guestToken } = socket.handshake.auth || {};
         try {
-            const token = socket.handshake.auth.token;
-            if (!token) {
-                return next(new Error("Authentication required"));
+            if (token) {
+                const decoded = verifyAccessToken(token);
+                const user = await User.findById(decoded.userId);
+                if (!user || !user.isActive) {
+                    return next(new Error("User not found or inactive"));
+                }
+                authSocket.userId = user._id.toString();
+                authSocket.userRole = user.role as "customer" | "admin";
+                authSocket.isGuest = false;
+                authSocket.displayName = user.name;
+                return next();
             }
 
-            const decoded = verifyAccessToken(token);
-            const user = await User.findById(decoded.userId);
-            if (!user || !user.isActive) {
-                return next(new Error("User not found or inactive"));
+            if (guestToken) {
+                // Anonymous visitor: can only use their own conversation
+                const guest = verifyGuestToken(guestToken);
+                authSocket.userId = guest.guestId;
+                authSocket.userRole = "customer";
+                authSocket.isGuest = true;
+                authSocket.displayName = guest.name;
+                authSocket.guestEmail = guest.email;
+                return next();
             }
 
-            (socket as AuthenticatedSocket).userId = user._id.toString();
-            (socket as AuthenticatedSocket).userRole = user.role as "customer" | "admin";
-            next();
+            next(new Error("Authentication required"));
         } catch {
-            next(new Error("Invalid or expired token"));
+            next(new Error(token ? "Invalid or expired token" : "Invalid guest session"));
         }
     });
 
     chatNamespace.on("connection", async (socket: Socket) => {
-        const { userId, userRole } = socket as AuthenticatedSocket;
+        const authSocket = socket as AuthenticatedSocket;
+        const { userId, userRole, isGuest } = authSocket;
 
         socket.join(`user:${userId}`);
         if (userRole === "admin") socket.join("admins");
@@ -292,7 +344,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 let room: IChatRoom | null = null;
 
                 if (userRole === "customer") {
-                    room = await findOrCreateCustomerRoom(userId);
+                    room = await findOrCreateCustomerRoom(authSocket);
                 } else if (isObjectId(data?.roomId)) {
                     room = await ChatRoom.findById(data!.roomId);
                 }
@@ -375,12 +427,16 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     return callback?.({ success: false, error: "Room not found" });
                 }
 
-                // Accounts deactivated after connecting can't keep chatting
-                const sender = await User.findById(userId).select("name isActive");
-                if (!sender?.isActive) {
-                    callback?.({ success: false, error: "Your account is not active" });
-                    socket.disconnect(true);
-                    return;
+                // Accounts deactivated after connecting can't keep chatting (guests have no account)
+                let senderName = authSocket.displayName;
+                if (!isGuest) {
+                    const sender = await User.findById(userId).select("name isActive");
+                    if (!sender?.isActive) {
+                        callback?.({ success: false, error: "Your account is not active" });
+                        socket.disconnect(true);
+                        return;
+                    }
+                    senderName = sender.name;
                 }
 
                 const room = await ChatRoom.findById(roomId);
@@ -417,7 +473,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 chatNamespace.to(`room:${room._id}`).emit("new-message", payload);
                 callback?.({ success: true, message: payload });
 
-                const customerId = room.customerId.toString();
+                const customerId = ownerIdOf(room);
                 if (userRole === "customer") {
                     await emitUnread({ admins: true });
                 } else {
@@ -425,13 +481,16 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                     chatNamespace.to("admins").emit("rooms-updated");
                 }
 
-                // Bell/push for recipients who aren't connected
+                // Bell/push (signed-in) or email (guests) for recipients who aren't connected
                 try {
-                    const title = `New message from ${sender.name || (userRole === "admin" ? "Support" : "Customer")}`;
+                    const fallbackName = userRole === "admin" ? "Support" : isGuest ? "a visitor" : "Customer";
+                    const title = `New message from ${senderName || fallbackName}${isGuest ? " (guest)" : ""}`;
                     const body = room.lastMessagePreview || "";
                     const notifData = { type: "chat_message" as const, roomId: String(room._id), senderRole: userRole };
 
-                    if (userRole === "admin") {
+                    if (userRole === "admin" && room.guestId) {
+                        await emailOfflineGuest(room, body);
+                    } else if (userRole === "admin") {
                         await notifyOffline(customerId, title, body, notifData);
                     } else {
                         const admins = await User.find({ role: "admin", isActive: true }).select("_id");
@@ -549,10 +608,64 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
 
                 chatNamespace.to(`room:${room._id}`).emit("room-closed", { roomId: String(room._id) });
                 callback?.({ success: true });
-                await emitUnread({ customerId: room.customerId.toString(), admins: true });
+                await emitUnread({ customerId: ownerIdOf(room), admins: true });
             } catch (error: any) {
                 console.error("close-room error:", error.message);
                 callback?.({ success: false, error: "Failed to close conversation" });
+            }
+        });
+
+        // ==================== CLAIM GUEST CONVERSATION ====================
+        // A visitor who chatted as a guest and then signed in keeps their conversation:
+        // it becomes (or is merged into) their customer conversation.
+        socket.on("claim-guest-chat", async (data: { guestToken?: string }, callback?: Ack) => {
+            try {
+                if (isGuest || userRole !== "customer") {
+                    return callback?.({ success: false, error: "Only signed-in customers can claim a guest chat" });
+                }
+                let guestId: string;
+                try {
+                    guestId = verifyGuestToken(String(data?.guestToken || "")).guestId;
+                } catch {
+                    return callback?.({ success: false, error: "Invalid guest session" });
+                }
+
+                const guestRoom = await ChatRoom.findOne({ guestId, status: "open" });
+                if (!guestRoom) return callback?.({ success: true, claimed: false });
+
+                const userRoom = await ChatRoom.findOne({ customerId: userId, status: "open" });
+                // The guest's messages become the user's messages
+                const reassignSender = { $set: { senderId: userId } };
+
+                if (userRoom) {
+                    await Message.updateMany({ roomId: guestRoom._id, senderId: guestId }, reassignSender);
+                    await Message.updateMany({ roomId: guestRoom._id }, { $set: { roomId: userRoom._id } });
+                    userRoom.unreadCountAdmin += guestRoom.unreadCountAdmin;
+                    userRoom.unreadCountCustomer += guestRoom.unreadCountCustomer;
+                    if (!userRoom.lastMessageAt || (guestRoom.lastMessageAt && guestRoom.lastMessageAt > userRoom.lastMessageAt)) {
+                        userRoom.lastMessageAt = guestRoom.lastMessageAt;
+                        userRoom.lastMessagePreview = guestRoom.lastMessagePreview;
+                    }
+                    await userRoom.save();
+                    await guestRoom.deleteOne();
+                } else {
+                    await Message.updateMany({ roomId: guestRoom._id, senderId: guestId }, reassignSender);
+                    await ChatRoom.updateOne(
+                        { _id: guestRoom._id },
+                        {
+                            $set: { customerId: userId },
+                            $unset: { guestId: "", guestName: "", guestEmail: "", guestNotifiedAt: "" },
+                        },
+                    );
+                }
+
+                // The guest's own connection (other tab) no longer owns anything
+                chatNamespace.in(`user:${guestId}`).disconnectSockets(true);
+                callback?.({ success: true, claimed: true, roomId: String(userRoom?._id ?? guestRoom._id) });
+                await emitUnread({ customerId: userId, admins: true });
+            } catch (error: any) {
+                console.error("claim-guest-chat error:", error.message);
+                callback?.({ success: false, error: "Failed to move your guest conversation" });
             }
         });
 

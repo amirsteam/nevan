@@ -18,7 +18,10 @@ export interface ChatMessage {
 /** Admin inbox entry (socket "get-rooms") */
 export interface ChatRoomSummary {
     _id: string;
+    // null for website visitors (guests)
     customerId: { _id: string; name: string; email: string } | null;
+    guestName?: string;
+    guestEmail?: string;
     adminId?: { _id: string; name: string } | null;
     status: "open" | "closed";
     lastMessageAt?: string;
@@ -151,5 +154,9 @@ export const {
     setUnreadCount,
     clearChat,
 } = chatSlice.actions;
+
+/** Display name for a conversation in the admin inbox */
+export const roomDisplayName = (room: ChatRoomSummary): string =>
+    room.customerId?.name || (room.guestName ? `${room.guestName} (guest)` : "Customer");
 
 export default chatSlice.reducer;

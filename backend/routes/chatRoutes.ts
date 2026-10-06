@@ -1,20 +1,43 @@
 /**
  * Chat Routes
- * API endpoints for chat features
+ * API endpoints for chat features (realtime messaging is Socket.IO, see config/socket.ts)
  */
 import express from "express";
-import { protect } from "../middleware/auth";
+import { body } from "express-validator";
 import { uploadChatImage } from "../config/cloudinary";
-import { uploadChatAttachment } from "../controllers/chatController";
+import { uploadChatAttachment, createGuestSession, chatUploadAuth } from "../controllers/chatController";
+import { handleValidationErrors } from "../middleware/validate";
+import { guestChatLimiter, chatUploadLimiter } from "../config/rateLimit";
 
 const router = express.Router();
 
-// Upload image attachment
+// Anonymous visitors: get a guest token to chat without an account
+router.post(
+    "/guest-session",
+    guestChatLimiter,
+    body("name")
+        .isString()
+        .withMessage("Please tell us your name")
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage("Name must be 1-50 characters"),
+    body("email")
+        .optional({ values: "falsy" })
+        .trim()
+        .isEmail()
+        .withMessage("Please enter a valid email address")
+        .normalizeEmail(),
+    handleValidationErrors,
+    createGuestSession,
+);
+
+// Upload image attachment (signed-in users and chat guests)
 router.post(
     "/upload",
-    protect,
+    chatUploadLimiter,
+    chatUploadAuth,
     uploadChatImage.single("image"),
-    uploadChatAttachment
+    uploadChatAttachment,
 );
 
 export default router;

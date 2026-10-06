@@ -17,7 +17,9 @@ interface MessageListProps {
 const MessageList = ({ customerName }: MessageListProps) => {
     const dispatch = useAppDispatch();
     const { messages, isLoading, hasMore, loadingOlder, activeRoomId } = useAppSelector((state) => state.chat);
-    const { user } = useAuth();
+    const { user, isAuthenticated } = useAuth();
+    const guestId = useAppSelector((state) => state.chat.guest?.id);
+    const selfId = isAuthenticated ? user?._id : guestId;
     const containerRef = useRef<HTMLDivElement>(null);
     const lastMessageIdRef = useRef<string | undefined>(undefined);
     const scrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
@@ -91,7 +93,7 @@ const MessageList = ({ customerName }: MessageListProps) => {
                 <MessageBubble
                     key={message._id}
                     content={message.content}
-                    isOwn={message.senderId === user?._id}
+                    isOwn={message.senderId === selfId}
                     timestamp={message.createdAt}
                     senderLabel={
                         message.senderRole === "admin" ? "Support" : customerName || "Customer"

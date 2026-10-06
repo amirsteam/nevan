@@ -17,11 +17,14 @@ import {
     setRoomFilter,
     clearPendingRoom,
     roomClosed,
+    roomDisplayName,
 } from "../../store/chatSlice";
 import socketService, { AckResponse } from "../../services/socketService";
 import { refreshRooms } from "../../hooks/useChatConnection";
 import { getErrorMessage } from "../../utils/helpers";
 import MessageList from "./MessageList";
+import GuestChatStart from "./GuestChatStart";
+import { loadGuestSession } from "../../utils/guestChat";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -41,8 +44,11 @@ const formatRoomTime = (iso?: string) => {
 
 const ChatWindow = () => {
     const dispatch = useAppDispatch();
-    const { user } = useAuth();
-    const isAdmin = user?.role === "admin";
+    const { user, isAuthenticated, loading: authLoading } = useAuth();
+    const isAdmin = isAuthenticated && user?.role === "admin";
+    const guest = useAppSelector((state) => state.chat.guest);
+    // Signed-out visitors first start a guest chat
+    const needsGuestStart = !authLoading && !isAuthenticated && !guest;
     const {
         connectionStatus,
         activeRoomId,
@@ -156,8 +162,12 @@ const ChatWindow = () => {
         formData.append("image", file);
         setIsUploading(true);
         try {
+            const guestToken = isAuthenticated ? undefined : loadGuestSession()?.token;
             const { data } = await api.post("/chat/upload", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
+                headers: {
+                    "Content-Type": "multipart/form-data",
+                    ...(guestToken && { "X-Chat-Guest-Token": guestToken }),
+                },
             });
             const url: string | undefined = data?.data?.url ?? data?.url;
             if (!url) throw new Error("Upload failed");
@@ -197,7 +207,7 @@ const ChatWindow = () => {
     };
 
     const showInbox = isAdmin && !activeRoomId;
-    const customerName = activeRoom?.customerId?.name;
+    const customerName = activeRoom ? roomDisplayName(activeRoom) : undefined;
     const canWrite = connected && roomStatus === "open";
 
     return (
@@ -221,12 +231,16 @@ const ChatWindow = () => {
                         <h3 className="font-semibold text-sm truncate">
                             {showInbox ? "Conversations" : isAdmin ? customerName || "Customer" : "Support Chat"}
                         </h3>
-                        <div className="flex items-center gap-1">
-                            <span
-                                className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : connectionStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-red-400"}`}
-                            />
-                            <span className="text-xs opacity-80 capitalize">{connectionStatus}</span>
-                        </div>
+                        {needsGuestStart ? (
+                            <span className="text-xs opacity-80">We're here to help</span>
+                        ) : (
+                            <div className="flex items-center gap-1">
+                                <span
+                                    className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : connectionStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-red-400"}`}
+                                />
+                                <span className="text-xs opacity-80 capitalize">{connectionStatus}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -240,7 +254,7 @@ const ChatWindow = () => {
                             <CheckCircle2 size={18} />
                         </button>
                     )}
-                    {(connectionStatus === "error" || connectionStatus === "disconnected") && (
+                    {!needsGuestStart && (connectionStatus === "error" || connectionStatus === "disconnected") && (
                         <button onClick={handleReconnect} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors" title="Reconnect" aria-label="Reconnect">
                             <RefreshCw size={18} />
                         </button>
@@ -251,7 +265,9 @@ const ChatWindow = () => {
                 </div>
             </div>
 
-            {showInbox ? (
+            {needsGuestStart ? (
+                <GuestChatStart />
+            ) : showInbox ? (
                 <>
                     {/* Admin inbox */}
                     <div className="flex border-b border-gray-200 dark:border-gray-700 text-sm">
@@ -279,13 +295,13 @@ const ChatWindow = () => {
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-1">
                                         <span className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                            {room.customerId?.name || "Unknown Customer"}
+                                            {roomDisplayName(room)}
                                         </span>
                                         <span className="text-xs text-gray-500 shrink-0">{formatRoomTime(room.lastMessageAt)}</span>
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
                                         <p className="text-xs text-gray-500 truncate">
-                                            {room.lastMessagePreview || room.customerId?.email}
+                                            {room.lastMessagePreview || room.customerId?.email || room.guestEmail}
                                         </p>
                                         {room.unreadCountAdmin > 0 && (
                                             <span className="shrink-0 px-2 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
