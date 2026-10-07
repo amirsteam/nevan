@@ -9,6 +9,9 @@ export interface IOrderItem {
   slug?: string;
   image?: string;
   price: number;
+  // Price before a campaign sale (absent on orders without one)
+  originalPrice?: number;
+  campaign?: Types.ObjectId | null;
   quantity: number;
   variant?: {
     size?: string;
@@ -58,6 +61,8 @@ export interface IOrder extends Document, IOrderMethods {
     subtotal: number;
     shippingCost: number;
     discount: number;
+    // Saved by campaign sale prices (already reflected in subtotal)
+    savings?: number;
     tax: number;
     total: number;
   };
@@ -104,6 +109,12 @@ const orderItemSchema = new Schema<IOrderItem>(
     price: {
       type: Number,
       required: true,
+    },
+    originalPrice: Number,
+    campaign: {
+      type: Schema.Types.ObjectId,
+      ref: "Campaign",
+      default: undefined,
     },
     quantity: {
       type: Number,
@@ -227,6 +238,10 @@ const orderSchema = new Schema<IOrder, IOrderModel>(
         type: Number,
         default: 0,
       },
+      savings: {
+        type: Number,
+        default: 0,
+      },
       tax: {
         type: Number,
         default: 0,
@@ -263,6 +278,7 @@ const orderSchema = new Schema<IOrder, IOrderModel>(
 );
 
 // Indexes
+orderSchema.index({ "items.campaign": 1 }, { sparse: true });
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ "payment.status": 1 });

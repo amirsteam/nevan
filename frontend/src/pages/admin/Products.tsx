@@ -3,6 +3,7 @@
  * List, create, edit, delete products with full CRUD operations
  */
 import { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { adminAPI } from '../../api';
 import { formatPrice, getErrorMessage } from '../../utils/helpers';
 import {
@@ -11,9 +12,9 @@ import {
     SearchInput,
     StatusBadge,
     ConfirmDialog,
-    Modal,
 } from '../../components/admin';
-import ProductForm from './ProductForm';
+import { usePageTitle } from '../../hooks/usePageTitle';
+import { LOW_STOCK_DISPLAY } from '../../config/store';
 import {
     Plus,
     Edit,
@@ -26,26 +27,48 @@ import toast from 'react-hot-toast';
 import type { DataTableColumn, DataTableAction } from '../../components/admin/DataTable';
 import type { ICategory, IProduct } from '../../types';
 
+const STOCK_FILTERS = ['low', 'out'] as const;
+type StockFilter = (typeof STOCK_FILTERS)[number];
+
 const Products = () => {
+    usePageTitle('Products');
+    const navigate = useNavigate();
+
     // State
     const [products, setProducts] = useState<IProduct[]>([]);
     const [categories, setCategories] = useState<ICategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [pagination, setPagination] = useState({
-        currentPage: 1,
         totalPages: 1,
         totalItems: 0,
         itemsPerPage: 20,
     });
 
-    // Filters
-    const [search, setSearch] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
+    // Filters live in the URL so they survive edits/back and the dashboard
+    // can link to e.g. ?stock=low
+    const [searchParams, setSearchParams] = useSearchParams();
+    const search = searchParams.get('search') || '';
+    const categoryFilter = searchParams.get('category') || '';
+    const statusFilter = searchParams.get('status') || '';
+    const stockParam = searchParams.get('stock') || '';
+    const stockFilter: StockFilter | '' = (STOCK_FILTERS as readonly string[]).includes(stockParam)
+        ? (stockParam as StockFilter)
+        : '';
+    const currentPage = Math.max(1, Number(searchParams.get('page')) || 1);
 
-    // Modals
-    const [showProductForm, setShowProductForm] = useState(false);
-    const [editingProduct, setEditingProduct] = useState<IProduct | null>(null);
+    const setFilter = (key: string, value: string) => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                if (value) next.set(key, value);
+                else next.delete(key);
+                if (key !== 'page') next.delete('page');
+                return next;
+            },
+            { replace: true },
+        );
+    };
+
     const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; product: IProduct | null }>({ open: false, product: null });
     const [deleting, setDeleting] = useState(false);
 
@@ -54,11 +77,12 @@ const Products = () => {
         setLoading(true);
         try {
             const params = {
-                page: pagination.currentPage,
+                page: currentPage,
                 limit: pagination.itemsPerPage,
                 search: search || undefined,
                 category: categoryFilter || undefined,
                 isActive: statusFilter ? statusFilter === 'active' : undefined,
+                stock: stockFilter || undefined,
             };
 
             const response = await adminAPI.getProducts(params);
@@ -74,7 +98,7 @@ const Products = () => {
         } finally {
             setLoading(false);
         }
-    }, [pagination.currentPage, pagination.itemsPerPage, search, categoryFilter, statusFilter]);
+    }, [currentPage, pagination.itemsPerPage, search, categoryFilter, statusFilter, stockFilter]);
 
     // Fetch categories for filter dropdown
     const fetchCategories = async () => {
@@ -94,28 +118,9 @@ const Products = () => {
         fetchCategories();
     }, []);
 
-    // Handle search with reset pagination
-    const handleSearch = (value: string) => {
-        setSearch(value);
-        setPagination((prev) => ({ ...prev, currentPage: 1 }));
-    };
-
-    // Handle page change
-    const handlePageChange = (page: number) => {
-        setPagination((prev) => ({ ...prev, currentPage: page }));
-    };
-
-    // Open create form
-    const handleCreate = () => {
-        setEditingProduct(null);
-        setShowProductForm(true);
-    };
-
-    // Open edit form
-    const handleEdit = (product: IProduct) => {
-        setEditingProduct(product);
-        setShowProductForm(true);
-    };
+    const handleSearch = (value: string) => setFilter('search', value);
+    const handlePageChange = (page: number) => setFilter('page', page > 1 ? String(page) : '');
+    const handleEdit = (product: IProduct) => navigate(`/admin/products/${product._id}/edit`);
 
     // Handle delete confirmation
     const handleDeleteClick = (product: IProduct) => {
@@ -137,13 +142,6 @@ const Products = () => {
             setDeleting(false);
             setDeleteDialog({ open: false, product: null });
         }
-    };
-
-    // Handle form submit success
-    const handleFormSuccess = () => {
-        setShowProductForm(false);
-        setEditingProduct(null);
-        fetchProducts();
     };
 
     // Table columns
@@ -210,9 +208,13 @@ const Products = () => {
                 const totalStock = product.variants?.length
                     ? product.variants.reduce((sum, v) => sum + (v.stock || 0), 0)
                     : stock;
+                if (totalStock <= 0) {
+                    return <StatusBadge status="Out of stock" variant="error" />;
+                }
                 return (
-                    <span className={totalStock < 10 ? 'text-[var(--color-error)]' : ''}>
+                    <span className={totalStock <= LOW_STOCK_DISPLAY ? 'font-semibold text-[var(--color-warning)]' : ''}>
                         {totalStock}
+                        {totalStock <= LOW_STOCK_DISPLAY && <span className="block text-xs font-normal">Low</span>}
                     </span>
                 );
             },
@@ -265,10 +267,10 @@ const Products = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <h1 className="text-2xl font-bold">Products</h1>
-                <button onClick={handleCreate} className="btn btn-primary">
-                    <Plus className="w-5 h-5" />
+                <Link to="/admin/products/new" className="btn btn-primary">
+                    <Plus className="w-5 h-5" aria-hidden="true" />
                     Add Product
-                </button>
+                </Link>
             </div>
 
             {/* Filters */}
@@ -281,14 +283,12 @@ const Products = () => {
                         className="flex-1"
                     />
 
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <select
                             value={categoryFilter}
-                            onChange={(e) => {
-                                setCategoryFilter(e.target.value);
-                                setPagination((prev) => ({ ...prev, currentPage: 1 }));
-                            }}
+                            onChange={(e) => setFilter('category', e.target.value)}
                             className="select w-auto"
+                            aria-label="Filter by category"
                         >
                             <option value="">All Categories</option>
                             {categories.map((cat) => (
@@ -300,15 +300,24 @@ const Products = () => {
 
                         <select
                             value={statusFilter}
-                            onChange={(e) => {
-                                setStatusFilter(e.target.value);
-                                setPagination((prev) => ({ ...prev, currentPage: 1 }));
-                            }}
+                            onChange={(e) => setFilter('status', e.target.value)}
                             className="select w-auto"
+                            aria-label="Filter by status"
                         >
                             <option value="">All Status</option>
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
+                        </select>
+
+                        <select
+                            value={stockFilter}
+                            onChange={(e) => setFilter('stock', e.target.value)}
+                            className="select w-auto"
+                            aria-label="Filter by stock"
+                        >
+                            <option value="">All Stock</option>
+                            <option value="low">Low stock</option>
+                            <option value="out">Out of stock</option>
                         </select>
                     </div>
                 </div>
@@ -328,7 +337,7 @@ const Products = () => {
                 {!loading && products.length > 0 && (
                     <div className="p-4 border-t border-[var(--color-border)]">
                         <Pagination
-                            currentPage={pagination.currentPage}
+                            currentPage={currentPage}
                             totalPages={pagination.totalPages}
                             totalItems={pagination.totalItems}
                             itemsPerPage={pagination.itemsPerPage}
@@ -337,27 +346,6 @@ const Products = () => {
                     </div>
                 )}
             </div>
-
-            {/* Product Form Modal */}
-            <Modal
-                isOpen={showProductForm}
-                onClose={() => {
-                    setShowProductForm(false);
-                    setEditingProduct(null);
-                }}
-                title={editingProduct ? 'Edit Product' : 'Create Product'}
-                size="xl"
-            >
-                <ProductForm
-                    product={editingProduct}
-                    categories={categories}
-                    onSuccess={handleFormSuccess}
-                    onCancel={() => {
-                        setShowProductForm(false);
-                        setEditingProduct(null);
-                    }}
-                />
-            </Modal>
 
             {/* Delete Confirmation */}
             <ConfirmDialog

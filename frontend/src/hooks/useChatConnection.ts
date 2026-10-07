@@ -4,7 +4,8 @@
  * badge, admin inbox, live messages, read receipts, typing.
  * Mounted once (ChatWidget) so badges update while the chat window is closed.
  */
-import { useEffect, useRef } from "react";
+import { createElement, useEffect, useRef } from "react";
+import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { store } from "../store";
@@ -12,6 +13,7 @@ import socketService from "../services/socketService";
 import {
     addMessage,
     clearChat,
+    openChat,
     ChatMessage,
     ChatRoomSummary,
     markMessagesRead,
@@ -72,6 +74,8 @@ export const useChatConnection = (): void => {
         dispatch(setConnectionStatus(socket.connected ? "connected" : "connecting"));
 
         let typingTimer: ReturnType<typeof setTimeout> | undefined;
+        // Admins: the inbox unread total, to notice when a customer writes
+        let lastUnread: number | null = null;
 
         const onConnect = async () => {
             dispatch(setConnectionStatus("connected"));
@@ -84,12 +88,24 @@ export const useChatConnection = (): void => {
             }
 
             const unread = await socketService.request<{ success: boolean; count?: number }>("get-unread");
-            if (unread.success) dispatch(setUnreadCount(unread.count ?? 0));
+            if (unread.success) {
+                dispatch(setUnreadCount(unread.count ?? 0));
+                lastUnread = unread.count ?? 0;
+            }
 
             // After a reconnect, re-open the conversation that was on screen
             const { activeRoomId, isOpen: windowOpen } = store.getState().chat;
             if (windowOpen && activeRoomId) {
-                socketService.request("join-chat", isAdmin ? { roomId: activeRoomId } : {});
+                const rejoined = await socketService.request<{
+                    success: boolean;
+                    roomId?: string;
+                    messages?: ChatMessage[];
+                    hasMore?: boolean;
+                }>("join-chat", isAdmin ? { roomId: activeRoomId } : {});
+                // Messages sent while we were offline
+                if (rejoined.success && rejoined.roomId && rejoined.messages) {
+                    dispatch(setMessages({ roomId: rejoined.roomId, messages: rejoined.messages, hasMore: rejoined.hasMore }));
+                }
             }
             if (isAdmin) refreshRooms();
         };
@@ -117,7 +133,38 @@ export const useChatConnection = (): void => {
             "new-message": onNewMessage,
             "message-read": (data: { roomId: string; readerRole: "customer" | "admin" }) =>
                 dispatch(markMessagesRead(data)),
-            "unread-updated": (data: { count: number }) => dispatch(setUnreadCount(data.count)),
+            "unread-updated": (data: { count: number }) => {
+                dispatch(setUnreadCount(data.count));
+                // A customer wrote to the shared inbox: alert admins who aren't in
+                // that conversation (messages in the open one already play a sound)
+                const increased = lastUnread !== null && data.count > lastUnread;
+                lastUnread = data.count;
+                const { isOpen: windowOpen, activeRoomId } = store.getState().chat;
+                if (isAdmin && increased && !(windowOpen && activeRoomId)) {
+                    playMessageSound();
+                    toast(
+                        (t) =>
+                            createElement(
+                                "span",
+                                { className: "flex items-center gap-3" },
+                                createElement("span", null, "💬 New chat message"),
+                                createElement(
+                                    "button",
+                                    {
+                                        type: "button",
+                                        className: "font-semibold text-[var(--color-primary)] hover:underline",
+                                        onClick: () => {
+                                            toast.dismiss(t.id);
+                                            if (!window.location.pathname.startsWith("/admin/chat")) dispatch(openChat());
+                                        },
+                                    },
+                                    "Open",
+                                ),
+                            ),
+                        { id: "admin-new-chat", duration: 6000 },
+                    );
+                }
+            },
             "rooms-updated": () => {
                 if (isAdmin && store.getState().chat.isOpen) refreshRooms();
             },

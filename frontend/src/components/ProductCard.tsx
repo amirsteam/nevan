@@ -7,7 +7,9 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import { Heart, ShoppingBag, Star, Loader2 } from "lucide-react";
-import { formatPrice, calculateDiscount, getAvailableStock, populated } from "../utils/helpers";
+import { formatPrice, getAvailableStock, populated } from "../utils/helpers";
+import { cardPrice } from "../utils/pricing";
+import { useCampaign } from "../context/CampaignContext";
 import { imageUrl, imageSrcSet, onImageError } from "../utils/image";
 import { LOW_STOCK_DISPLAY } from "../config/store";
 import { useWishlist } from "../hooks/useWishlist";
@@ -25,14 +27,6 @@ interface ProductCardProps {
 
 const CARD_IMAGE_WIDTH = 360;
 
-/** Lowest price across variants ("From NPR …") when prices differ */
-const getPriceInfo = (product: IProduct) => {
-  const prices = (product.variants || []).map((v) => v.price).filter((p) => typeof p === "number");
-  if (prices.length === 0) return { price: product.price, from: false };
-  const min = Math.min(...prices);
-  return { price: min, from: Math.max(...prices) > min };
-};
-
 const ProductCard = memo(
   ({ product, priority = false, showQuickAdd = true, showCategory = true, className = "" }: ProductCardProps) => {
     const { isWishlisted, toggle } = useWishlist();
@@ -41,8 +35,11 @@ const ProductCard = memo(
     const images = product.images || [];
     const primary = images.find((img) => img.isPrimary) || images[0];
     const secondary = images.find((img) => img !== primary);
-    const { price, from } = getPriceInfo(product);
-    const discount = calculateDiscount(product.comparePrice, price);
+    // Lowest current price ("From …" when variant prices differ), including
+    // festival/event sale prices from the API
+    const { price, from, was, percentOff: discount, campaign: saleCampaign } = cardPrice(product);
+    const { campaign: liveCampaign } = useCampaign();
+    const saleTheme = saleCampaign && liveCampaign?.slug === saleCampaign.slug ? liveCampaign.theme : null;
     const stock = getAvailableStock(product);
     const isOutOfStock = stock <= 0;
     const hasOptions = !!product.variants?.length;
@@ -101,6 +98,14 @@ const ProductCard = memo(
           {discount > 0 && (
             <span className="px-2 py-0.5 bg-red-700 text-white text-xs font-bold rounded-full">-{discount}%</span>
           )}
+          {saleCampaign && (
+            <span
+              className="px-2 py-0.5 text-xs font-semibold rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)]"
+              style={saleTheme ? { backgroundColor: saleTheme.accent, color: saleTheme.onAccent } : undefined}
+            >
+              {saleCampaign.name}
+            </span>
+          )}
           {!isOutOfStock && stock <= LOW_STOCK_DISPLAY && (
             <span className="px-2 py-0.5 bg-amber-100 text-amber-900 text-xs font-semibold rounded-full">
               Only {stock} left
@@ -157,10 +162,10 @@ const ProductCard = memo(
                 {from && <span className="text-xs font-medium text-[var(--color-text-muted)] mr-1">From</span>}
                 {formatPrice(price)}
               </p>
-              {discount > 0 && (
+              {was && (
                 <p className="text-xs text-[var(--color-text-muted)] line-through">
                   <span className="sr-only">Was </span>
-                  {formatPrice(product.comparePrice)}
+                  {formatPrice(was)}
                 </p>
               )}
             </div>

@@ -18,6 +18,7 @@ import { MessageCircle } from "lucide-react-native";
 import socketService, { AckResponse } from "../../services/socketService";
 import { roomDisplayName, type ChatRoomSummary } from "../../store/chatSlice";
 import type { AdminChatRoomsScreenProps } from "../../navigation/types";
+import { colors } from "../../theme";
 
 const formatTime = (iso?: string) => {
   if (!iso) return "";
@@ -171,7 +172,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#6366f1",
+    backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
   },

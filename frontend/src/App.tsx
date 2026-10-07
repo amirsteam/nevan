@@ -7,16 +7,18 @@ import { RouterProvider } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 import { PendingCartProvider } from "./context/PendingCartContext";
+import { CampaignProvider } from "./context/CampaignContext";
 import { store } from "./store";
 import router from "./routes";
-import { ChatWidget } from "./components/chat";
 
 function App(): React.ReactElement {
   return (
     <Provider store={store}>
       <AuthProvider>
         <PendingCartProvider>
-          <RouterProvider router={router} />
+          <CampaignProvider>
+            <RouterProvider router={router} />
+          </CampaignProvider>
           <Toaster
             position="top-right"
             toastOptions={{
@@ -40,8 +42,8 @@ function App(): React.ReactElement {
               },
             }}
           />
-          {/* Floating Chat Widget - shows for logged-in users */}
-          <ChatWidget />
+          {/* The floating chat widget is rendered by the router's root route
+              (components/layout/AppShell.tsx) so it can use links */}
         </PendingCartProvider>
       </AuthProvider>
     </Provider>

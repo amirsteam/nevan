@@ -11,7 +11,8 @@
     "test:watch": "cross-env NODE_ENV=test jest --watch",
     "seed": "ts-node seeder.ts",
     "sync-stock": "ts-node scripts/syncStock.ts",
-    "fix-chat-rooms": "ts-node scripts/fixChatRooms.ts"
+    "fix-chat-rooms": "ts-node scripts/fixChatRooms.ts",
+    "test-email": "ts-node scripts/testEmail.ts"
   },
   "keywords": [
     "ecommerce",

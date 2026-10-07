@@ -16,11 +16,14 @@ import { Search } from "lucide-react-native";
 import {
   useGetCategoriesQuery,
   useGetFeaturedProductsQuery,
+  useGetLiveCampaignQuery,
 } from "../../store/api";
 import ProductCard from "../../components/ProductCard";
+import CampaignBanner from "../../components/CampaignBanner";
 import NotificationBell from "../../components/NotificationBell";
 import type { HomeScreenProps } from "../../navigation/types";
 import type { ICategory, IProduct } from "@shared/types";
+import { colors } from "../../theme";
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   // RTK Query hooks with automatic caching
@@ -36,13 +39,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     refetch: refetchProducts,
   } = useGetFeaturedProductsQuery(8);
 
+  // Festival/event campaign running now (null most of the year)
+  const { data: campaign, refetch: refetchCampaign } = useGetLiveCampaignQuery();
+
   const featuredProducts = featuredData?.products || [];
   const loading = categoriesLoading || productsLoading;
 
   const handleRefresh = useCallback((): void => {
     refetchCategories();
     refetchProducts();
-  }, [refetchCategories, refetchProducts]);
+    refetchCampaign();
+  }, [refetchCategories, refetchProducts, refetchCampaign]);
 
   const handleProductPress = useCallback(
     (slug: string) => {
@@ -139,6 +146,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <Text style={styles.searchText}>Search products...</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Festival/event campaign */}
+        {campaign && campaign.state === "live" && (
+          <CampaignBanner
+            campaign={campaign}
+            onPress={() =>
+              navigation.navigate("ProductList", { campaignSlug: campaign.slug, campaignName: campaign.name })
+            }
+          />
+        )}
 
         {/* Categories */}
         <View style={styles.section}>
@@ -272,7 +289,7 @@ const styles = StyleSheet.create({
   categoryInitial: {
     fontSize: 28,
     fontWeight: "600",
-    color: "#FF9999",
+    color: colors.primary,
   },
   categoryName: {
     fontSize: 13,

@@ -13,6 +13,7 @@ import adminRoutes from "./adminRoutes";
 import wishlistRoutes from "./wishlistRoutes";
 import chatRoutes from "./chatRoutes";
 import notificationRoutes from "./notificationRoutes";
+import campaignRoutes from "./campaignRoutes";
 import { contactRouter, newsletterRouter } from "./contactRoutes";
 import { getFeaturedReviews } from "../controllers/reviewController";
 
@@ -29,6 +30,7 @@ router.use("/admin", adminRoutes);
 router.use("/wishlist", wishlistRoutes);
 router.use("/chat", chatRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/campaigns", campaignRoutes);
 router.use("/contact", contactRouter);
 router.use("/newsletter", newsletterRouter);
 router.get("/reviews/featured", getFeaturedReviews);

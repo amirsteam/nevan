@@ -58,3 +58,5 @@ export {
   useDeleteNotificationMutation,
 } from "./notificationsApi";
 export type { INotification } from "./notificationsApi";
+
+export { campaignsApi, useGetLiveCampaignQuery } from "./campaignsApi";

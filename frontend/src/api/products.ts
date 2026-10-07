@@ -19,9 +19,11 @@ export interface ProductQueryParams {
   minPrice?: number | string;
   maxPrice?: number | string;
   featured?: boolean;
-  // Sent by the shop filters, but the API has no age/gender fields yet and ignores them
+  // Shop filters: age band and boy/girl/unisex
   age?: string;
   gender?: string;
+  // Campaign slug: only the products its sale/collection covers (sale page)
+  campaign?: string;
 }
 
 export const productsAPI = {

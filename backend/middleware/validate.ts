@@ -12,6 +12,7 @@ import {
 } from "express-validator";
 import AppError from "../utils/AppError";
 import { MAX_SIZE_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { FESTIVAL_KEYS, PALETTE_KEYS } from "../utils/festivals";
 
 interface ValidationError {
   field: string;
@@ -476,7 +477,36 @@ const paginationValidator: (ValidationChain | RequestHandler)[] = [
   handleValidationErrors,
 ];
 
+/**
+ * Campaign create/update. Shapes only; date order, discount limits, scope and
+ * overlap rules live in campaignService (they depend on other fields/campaigns).
+ */
+const campaignValidator = (isCreate: boolean): (ValidationChain | RequestHandler)[] => {
+  const required = (chain: ValidationChain) => (isCreate ? chain : chain.optional());
+  return [
+    body("name").optional().trim().isLength({ min: 2, max: 80 }).withMessage("Name must be 2-80 characters"),
+    body("festival").optional().isIn(FESTIVAL_KEYS).withMessage("Unknown festival"),
+    body("palette").optional().isIn(PALETTE_KEYS).withMessage("Unknown colour palette"),
+    body("headline").optional().trim().isLength({ max: 80 }).withMessage("Headline cannot exceed 80 characters"),
+    body("subheadline").optional().trim().isLength({ max: 160 }).withMessage("Subheading cannot exceed 160 characters"),
+    body("greeting").optional().trim().isLength({ max: 80 }).withMessage("Greeting cannot exceed 80 characters"),
+    body("emoji").optional().trim().isLength({ max: 16 }),
+    body("ctaLabel").optional().trim().isLength({ max: 30 }).withMessage("Button text cannot exceed 30 characters"),
+    required(body("startsAt").isISO8601().withMessage("Start date is required")),
+    required(body("endsAt").isISO8601().withMessage("End date is required")),
+    body("status").optional().isIn(["draft", "published"]),
+    body("sale.type").optional().isIn(["none", "percent", "fixed"]),
+    body("sale.value").optional().isFloat({ min: 0, max: 100000 }).withMessage("Invalid discount"),
+    body("sale.scope").optional().isIn(["all", "categories", "products"]),
+    body(["sale.categories", "sale.products", "sale.excludeProducts"]).optional().isArray({ max: 500 }),
+    body(["sale.categories.*", "sale.products.*", "sale.excludeProducts.*"]).optional().isMongoId(),
+    body("notify.pushOnLaunch").optional().isBoolean(),
+    handleValidationErrors,
+  ];
+};
+
 export {
+  campaignValidator,
   handleValidationErrors,
   registerValidator,
   loginValidator,

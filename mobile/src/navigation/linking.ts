@@ -27,7 +27,11 @@ export const linking: LinkingOptions<RootStackParamList> = {
               HomeTab: {
                 screens: {
                   HomeScreen: "",
-                  ProductList: "products",
+                  ProductList: {
+                    path: "products",
+                    // nevanhandicraft://sale/tihar-sale opens that campaign's sale
+                    alias: ["sale/:campaignSlug"],
+                  },
                   ProductDetail: "product/:slug",
                   Search: "search",
                 },

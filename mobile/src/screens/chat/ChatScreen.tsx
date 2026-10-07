@@ -39,6 +39,7 @@ import {
 import socketService, { AckResponse } from "../../services/socketService";
 import api from "../../api/axios";
 import { playTypingSoundDebounced, playMessageSound } from "../../utils/soundUtils";
+import { colors } from "../../theme";
 
 interface ChatRouteParams {
     roomId?: string;
@@ -48,6 +49,8 @@ interface ChatRouteParams {
 interface JoinResponse extends AckResponse {
     roomId?: string;
     status?: "open" | "closed";
+    // The conversation's latest messages come with the join itself
+    messages?: ChatMessage[];
     hasMore?: boolean;
 }
 
@@ -94,6 +97,9 @@ const ChatScreen = () => {
         dispatch(setIsLoading(false));
         if (res.success && res.roomId) {
             dispatch(enterRoom({ roomId: res.roomId, status: res.status ?? "open", hasMore: res.hasMore }));
+            // History arrives with the join: a separate "chat-history" event can
+            // reach us before the room is active and would be dropped
+            if (res.messages) dispatch(setMessages({ roomId: res.roomId, messages: res.messages, hasMore: res.hasMore }));
             socketService.send("message-read", { roomId: res.roomId });
         } else {
             Alert.alert("Chat", res.error || "Could not open the conversation");
@@ -385,7 +391,7 @@ const ChatScreen = () => {
 
                 {isLoading ? (
                     <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#6366f1" />
+                        <ActivityIndicator size="large" color={colors.primary} />
                     </View>
                 ) : (
                     <FlatList
@@ -429,7 +435,7 @@ const ChatScreen = () => {
                                 multiline
                                 maxLength={MAX_MESSAGE_LENGTH}
                                 editable={canWrite}
-                                selectionColor="#6366f1"
+                                selectionColor={colors.primary}
                                 textAlignVertical="center"
                             />
                             <TouchableOpacity
@@ -522,7 +528,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     loadEarlierText: {
-        color: "#6366f1",
+        color: colors.primary,
         fontSize: 13,
         fontWeight: "500",
     },
@@ -542,7 +548,7 @@ const styles = StyleSheet.create({
         paddingBottom: 8,
     },
     ownBubble: {
-        backgroundColor: "#6366f1",
+        backgroundColor: colors.primary,
         borderBottomRightRadius: 4,
     },
     otherBubble: {
@@ -551,7 +557,7 @@ const styles = StyleSheet.create({
     },
     senderLabel: {
         fontSize: 12,
-        color: "#6366f1",
+        color: colors.primary,
         fontWeight: "600",
         marginBottom: 4,
     },
@@ -600,7 +606,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     closedAction: {
-        color: "#6366f1",
+        color: colors.primary,
         fontWeight: "600",
         fontSize: 14,
     },
@@ -631,7 +637,7 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
     },
     sendButton: {
-        backgroundColor: "#6366f1",
+        backgroundColor: colors.primary,
         width: 44,
         height: 44,
         borderRadius: 22,

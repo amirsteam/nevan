@@ -166,9 +166,11 @@
 /* Components Layer */
 @layer components {
   /* Custom Utilities */
+  /* Page width: wide enough that large screens aren't mostly empty margin
+     (content spans the screen up to 1440px, with slim side gutters) */
   .container-app {
     width: 100%;
-    max-width: 1280px;
+    max-width: 1440px;
     margin-left: auto;
     margin-right: auto;
     padding-left: 1rem;
@@ -177,15 +179,15 @@
 
   @media (min-width: 640px) {
     .container-app {
-      padding-left: 1.5rem;
-      padding-right: 1.5rem;
+      padding-left: 1.25rem;
+      padding-right: 1.25rem;
     }
   }
 
   @media (min-width: 1024px) {
     .container-app {
-      padding-left: 2rem;
-      padding-right: 2rem;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
     }
   }
 

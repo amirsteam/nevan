@@ -17,6 +17,12 @@ import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { addToCart } from "../../store/cartSlice";
 import type { ProductDetailScreenProps } from "../../navigation/types";
 import type { IProductVariant } from "@shared/types";
+import { colors } from "../../theme";
+import { FREE_SHIPPING_THRESHOLD, formatNPR } from "../../theme/store";
+import { displayPrice } from "../../utils/pricing";
+
+// "Only N left" below this (matches LOW_STOCK_DISPLAY on the web)
+const LOW_STOCK_DISPLAY = 5;
 
 const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   route,
@@ -158,12 +164,9 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
     setActiveImage(variant?.image || product.images?.[0]?.url || null);
   };
 
-  const getDisplayPrice = (): number => {
-    if (currentVariant) {
-      return currentVariant.price;
-    }
-    return product?.price || 0;
-  };
+  // Includes festival/event sale prices from the API
+  const getPricing = () => (product ? displayPrice(product, currentVariant) : null);
+  const getDisplayPrice = (): number => getPricing()?.price ?? 0;
 
   const handleAddToCart = (): void => {
     if (!product) return;
@@ -240,6 +243,17 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
   const needsSelection =
     product.variants?.length && product.variants.length > 0 && !currentVariant;
 
+  // Stock of what would be added: the chosen variant, or the product itself
+  const availableStock = currentVariant ? currentVariant.stock : product.variants?.length ? null : product.stock;
+  const stockLabel =
+    availableStock == null
+      ? null
+      : availableStock <= 0
+        ? "Out of stock"
+        : availableStock <= LOW_STOCK_DISPLAY
+          ? `Only ${availableStock} left`
+          : "In stock";
+
   return (
     <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
       <ScrollView
@@ -260,7 +274,31 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
         />
         <View style={styles.infoContainer}>
           <Text style={styles.name}>{product.name}</Text>
-          <Text style={styles.price}>Rs. {getDisplayPrice().toFixed(2)}</Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.price}>{formatNPR(getDisplayPrice())}</Text>
+            {getPricing()?.was != null && (
+              <Text style={styles.wasPrice}>{formatNPR(getPricing()!.was!)}</Text>
+            )}
+          </View>
+          {!!getPricing()?.campaignName && (
+            <Text style={styles.saleNote}>
+              {getPricing()!.campaignName} price · {getPricing()!.percentOff}% off
+            </Text>
+          )}
+          {stockLabel && (
+            <Text
+              style={[
+                styles.stockText,
+                availableStock != null && availableStock <= LOW_STOCK_DISPLAY && { color: colors.warning },
+                availableStock != null && availableStock <= 0 && { color: colors.error },
+              ]}
+            >
+              {stockLabel}
+            </Text>
+          )}
+          <Text style={styles.shippingNote}>
+            Delivery in 3–10 days across Nepal · free shipping over {formatNPR(FREE_SHIPPING_THRESHOLD)}
+          </Text>
 
           {/* Flat Variant UI */}
           {product.variants && product.variants.length > 0 && (
@@ -340,9 +378,11 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
           ]}
           onPress={handleAddToCart}
           disabled={!!needsSelection || isOutOfStock}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !!needsSelection || isOutOfStock }}
         >
           <Text style={styles.addToCartText}>
-            {isOutOfStock ? "Out of Stock" : "Add to Cart"}
+            {isOutOfStock ? "Out of Stock" : needsSelection ? "Select a size and color" : "Add to Cart"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -377,9 +417,36 @@ const styles = StyleSheet.create({
   },
   price: {
     fontSize: 22,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
     marginBottom: 20,
+  },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 10,
+  },
+  wasPrice: {
+    fontSize: 16,
+    color: colors.textMuted,
+    textDecorationLine: "line-through",
+  },
+  saleNote: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.error,
+    marginTop: 2,
+  },
+  stockText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.success,
+    marginTop: 4,
+  },
+  shippingNote: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 6,
   },
   descriptionLabel: {
     fontSize: 18,
@@ -405,11 +472,11 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   addToCartButton: {
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     paddingVertical: 18,
     borderRadius: 30,
     alignItems: "center",
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -452,8 +519,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   selectedOptionButton: {
-    backgroundColor: "#FFF0F0",
-    borderColor: "#FF9999",
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
   },
   disabledOptionButton: {
     backgroundColor: "#F9F9F9",
@@ -465,7 +532,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   selectedOptionText: {
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
   },
   disabledOptionText: {

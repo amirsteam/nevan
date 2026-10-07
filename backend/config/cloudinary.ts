@@ -84,6 +84,22 @@ const chatStorage = new CloudinaryStorage({
   } as any,
 });
 
+/**
+ * Storage configuration for campaign banners (wide desktop / tall mobile art;
+ * never cropped, only limited in size)
+ */
+const campaignStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "bivanhandicraft/campaigns",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [
+      { width: 2400, height: 2400, crop: "limit" },
+      { quality: "auto", fetch_format: "auto" },
+    ],
+  } as any,
+});
+
 // Multer upload instances
 const uploadProductImages = multer({
   storage: productStorage,
@@ -110,6 +126,17 @@ const uploadCategoryImage = multer({
 const uploadChatImage = multer({
   storage: chatStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req: any, file: any, cb: any) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed"), false);
+    }
+    cb(null, true);
+  },
+});
+
+const uploadCampaignBanner = multer({
+  storage: campaignStorage,
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3MB limit
   fileFilter: (req: any, file: any, cb: any) => {
     if (!file.mimetype.startsWith("image/")) {
       return cb(new Error("Only image files are allowed"), false);
@@ -162,6 +189,7 @@ export {
   uploadAvatar,
   uploadCategoryImage,
   uploadChatImage,
+  uploadCampaignBanner,
   deleteImage,
   getOptimizedUrl,
 };

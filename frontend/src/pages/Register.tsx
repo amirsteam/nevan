@@ -16,12 +16,14 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 type FieldName = "name" | "email" | "phone" | "password" | "confirmPassword";
 type FormValues = Record<FieldName, string>;
 type FormErrors = Partial<Record<FieldName | "global", string>>;
 
 const Register = () => {
+  usePageTitle("Create an account");
   const [formData, setFormData] = useState<FormValues>({
     name: "",
     email: "",

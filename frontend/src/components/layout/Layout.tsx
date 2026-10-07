@@ -9,6 +9,7 @@ import AuthPromptModal from "../ui/AuthPromptModal";
 import ScrollToTop from "./ScrollToTop";
 import CartSync from "./CartSync";
 import PendingCartSync from "./PendingCartSync";
+import AnnouncementBar from "../campaign/AnnouncementBar";
 
 const Layout = (): React.ReactElement => {
   return (
@@ -22,6 +23,7 @@ const Layout = (): React.ReactElement => {
       <ScrollToTop />
       <CartSync />
       <PendingCartSync />
+      <AnnouncementBar />
       <Header />
       <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
         <Outlet />

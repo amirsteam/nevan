@@ -14,6 +14,8 @@ import app from './app';
 import connectDB from './config/db';
 import { initializeSocket } from './config/socket';
 import { expireUnpaidOrders } from './services/orderService';
+import { launchDueCampaigns } from './services/campaignService';
+import { isEmailConfigured, verifyEmailConnection } from './utils/email';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err: Error) => {
@@ -67,6 +69,33 @@ const expireAbandonedOrders = () =>
         });
 setInterval(expireAbandonedOrders, 5 * 60 * 1000).unref();
 setTimeout(expireAbandonedOrders, 30 * 1000).unref();
+
+// Email (password reset codes, contact form copies): say clearly at startup
+// whether it works, instead of failing silently when someone resets a password
+if (!isEmailConfigured()) {
+    console.warn(
+        process.env.NODE_ENV === 'production'
+            ? '❌ Email (SMTP) is not configured: password reset emails will fail. Set SMTP_HOST/SMTP_USER/SMTP_PASS.'
+            : '⚠️  Email (SMTP) not configured: password reset codes are printed in this terminal instead of emailed. See SMTP_* in .env.example.',
+    );
+} else {
+    verifyEmailConnection()
+        .then(() => console.log(`📧 Email ready (SMTP ${process.env.SMTP_HOST})`))
+        .catch((err) => console.error(`❌ Email (SMTP) login failed — reset codes can't be sent: ${err.message}`));
+}
+
+// Push notifications for festival campaigns that have just gone live
+const notifyLaunchedCampaigns = () =>
+    launchDueCampaigns()
+        .then((count) => {
+            if (count > 0) console.log(`📣 Sent launch notifications for ${count} campaign(s)`);
+        })
+        .catch((err) => {
+            console.error('Failed to send campaign launch notifications:', err);
+            captureError(err);
+        });
+setInterval(notifyLaunchedCampaigns, 5 * 60 * 1000).unref();
+setTimeout(notifyLaunchedCampaigns, 45 * 1000).unref();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err: any) => {

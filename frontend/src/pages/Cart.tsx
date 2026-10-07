@@ -34,7 +34,7 @@ const Cart = () => {
   usePageTitle("Your cart");
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { items, subtotal, loading, hasLoaded } = useAppSelector(selectCart);
+  const { items, subtotal, savings, loading, hasLoaded } = useAppSelector(selectCart);
   const [busyItem, setBusyItem] = useState<string | null>(null);
   useChatOffset(items.length > 0, "5.5rem");
 
@@ -149,7 +149,19 @@ const Cart = () => {
                             {variant.size} · {variant.color}
                           </p>
                         )}
-                        <p className="text-sm text-[var(--color-text-muted)] mt-0.5">{formatPrice(price)} each</p>
+                        <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
+                          {formatPrice(price)} each
+                          {item.onSale && item.originalPrice ? (
+                            <>
+                              {" "}
+                              <span className="line-through">
+                                <span className="sr-only">was </span>
+                                {formatPrice(item.originalPrice)}
+                              </span>
+                              <span className="ml-1.5 text-xs font-semibold text-[var(--color-success)]">Sale price</span>
+                            </>
+                          ) : null}
+                        </p>
                         {item.priceChanged && (
                           <p className="text-xs text-[var(--color-warning)] mt-0.5">Price updated since you added it</p>
                         )}
@@ -207,6 +219,12 @@ const Cart = () => {
                 <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
                 <dd>{formatPrice(subtotal)}</dd>
               </div>
+              {savings > 0 && (
+                <div className="flex justify-between text-[var(--color-success)] font-medium">
+                  <dt>You save (sale)</dt>
+                  <dd>{formatPrice(savings)}</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-3">
                 <dt className="text-[var(--color-text-muted)]">Shipping</dt>
                 <dd className={freeShipping ? "text-[var(--color-success)] font-medium" : "text-right"}>

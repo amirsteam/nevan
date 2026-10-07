@@ -16,8 +16,10 @@ import toast from 'react-hot-toast';
 import type { DataTableColumn, DataTableAction } from '../../components/admin/DataTable';
 import type { ICategory } from '../../types';
 import { getErrorMessage, populated } from '../../utils/helpers';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 const Categories = () => {
+    usePageTitle('Categories');
     // State
     const [categories, setCategories] = useState<ICategory[]>([]);
     const [loading, setLoading] = useState(true);

@@ -130,6 +130,21 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
             });
           }
           break;
+        case "promotion":
+          // Festival/event campaign: open its sale
+          if (item.data?.campaign) {
+            (navigation as any).navigate("App", {
+              screen: "Main",
+              params: {
+                screen: "HomeTab",
+                params: {
+                  screen: "ProductList",
+                  params: { campaignSlug: String(item.data.campaign) },
+                },
+              },
+            });
+          }
+          break;
         default:
           break;
       }

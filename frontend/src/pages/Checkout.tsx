@@ -320,6 +320,12 @@ const Checkout = () => {
         <dt className="text-[var(--color-text-muted)]">Subtotal ({itemCount} {itemCount === 1 ? "item" : "items"})</dt>
         <dd>{formatPrice(cart.subtotal)}</dd>
       </div>
+      {cart.savings > 0 && (
+        <div className="flex justify-between text-[var(--color-success)] font-medium">
+          <dt>You save (sale)</dt>
+          <dd>{formatPrice(cart.savings)}</dd>
+        </div>
+      )}
       <div className="flex justify-between">
         <dt className="text-[var(--color-text-muted)]">Shipping{shipping.district ? ` to ${shipping.district}` : ""}</dt>
         <dd className={shippingCost === 0 ? "text-[var(--color-success)] font-medium" : ""}>

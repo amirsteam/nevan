@@ -107,6 +107,16 @@ export interface IProductVariant {
   comparePrice?: number;
   stock: number;
   image?: string;
+  // Present while a campaign sale discounts this variant
+  salePrice?: number;
+}
+
+/** Campaign sale price on a product (set by the API while a campaign is live) */
+export interface IProductSale {
+  price: number;
+  originalPrice: number;
+  percentOff: number;
+  campaign: { slug: string; name: string; endsAt: string };
 }
 
 export interface IProduct {
@@ -137,6 +147,7 @@ export interface IProduct {
   metaTitle?: string;
   metaDescription?: string;
   variants?: IProductVariant[];
+  sale?: IProductSale;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -158,6 +169,9 @@ export interface ICartItem {
   price?: number;
   priceAtAdd?: number;
   currentPrice?: number;
+  // Price before a campaign sale (equal to currentPrice when not on sale)
+  originalPrice?: number;
+  onSale?: boolean;
   itemTotal?: number;
   priceChanged?: boolean;
   variantId?: string | null;
@@ -173,6 +187,8 @@ export interface ICart {
   user: string;
   items: ICartItem[];
   subtotal: number;
+  // Saved by campaign sale prices (already reflected in subtotal)
+  savings?: number;
   itemCount: number;
 }
 
@@ -344,13 +360,84 @@ export interface IPaymentVerifyData {
 // Admin Types
 // ============================================
 
+// GET /admin/dashboard (backend/routes/adminRoutes.ts + Order.getDashboardStats)
 export interface IDashboardStats {
   totalOrders: number;
+  todayOrders: number;
+  pendingOrders: number;
   totalRevenue: number;
+  totalUsers: number;
   totalProducts: number;
-  totalCustomers: number;
-  recentOrders: IOrder[];
-  topProducts: IProduct[];
+  ordersByStatus: Partial<Record<OrderStatus, number>>;
+  salesByDay: { date: string; revenue: number; orders: number }[];
+  recentOrders: {
+    _id: string;
+    orderNumber: string;
+    user?: Pick<IUser, "name" | "email"> | null;
+    orderStatus: OrderStatus;
+    paymentStatus?: PaymentStatus;
+    total?: number;
+    createdAt: string;
+  }[];
+  lowStockThreshold: number;
+  lowStockCount: number;
+  lowStockProducts: {
+    _id: string;
+    name: string;
+    slug: string;
+    stock: number;
+    image?: string;
+    lowVariants: { size: string; color: string; stock: number }[];
+  }[];
+  needsAttention: {
+    pendingOrders: number;
+    toShip: number;
+    refundRequired: number;
+    lowStock: number;
+    unreadMessages: number;
+  };
+  // Best sellers, last 30 days
+  topProducts: {
+    _id: string;
+    name: string;
+    slug?: string;
+    image?: string;
+    quantity: number;
+    revenue: number;
+  }[];
+}
+
+// GET /admin/badges
+export interface IAdminBadges {
+  pendingOrders: number;
+  refundRequired: number;
+  unreadMessages: number;
+}
+
+// POST /admin/orders/bulk-status
+export interface IBulkStatusResult {
+  updated: { _id: string; orderNumber: string }[];
+  failed: { _id: string; orderNumber?: string; message: string }[];
+}
+
+// Storefront contact-form message (admin inbox)
+export interface IContactMessage {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+  isRead: boolean;
+  emailed: boolean;
+  createdAt: string;
+}
+
+export interface ISubscriber {
+  _id: string;
+  email: string;
+  source: string;
+  createdAt: string;
 }
 
 export interface IAnalytics {
@@ -374,4 +461,105 @@ export interface IReview {
   isVerifiedPurchase?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================
+// Campaign Types (festivals and events)
+// ============================================
+
+export type CampaignState = "draft" | "scheduled" | "live" | "ended";
+export type CampaignSaleType = "none" | "percent" | "fixed";
+export type CampaignSaleScope = "all" | "categories" | "products";
+
+/** Colours resolved by the API from the campaign's palette (WCAG AA pairs) */
+export interface ICampaignTheme {
+  label: string;
+  bg: string;
+  text: string;
+  accent: string;
+  onAccent: string;
+  highlight: string;
+}
+
+/** GET /campaigns/live and /campaigns/:slug */
+export interface IPublicCampaign {
+  _id: string;
+  name: string;
+  slug: string;
+  festival: string;
+  headline: string;
+  subheadline: string;
+  greeting: string;
+  emoji: string;
+  ctaLabel: string;
+  bannerDesktop: string | null;
+  bannerMobile: string | null;
+  startsAt: string;
+  endsAt: string;
+  state: CampaignState;
+  theme: ICampaignTheme;
+  sale: {
+    type: CampaignSaleType;
+    value: number;
+    scope: CampaignSaleScope;
+    label: string | null;
+    categories: { _id: string; name: string; slug: string }[];
+  };
+}
+
+/** Admin campaign document */
+export interface IAdminCampaign {
+  _id: string;
+  name: string;
+  slug: string;
+  festival: string;
+  headline: string;
+  subheadline?: string;
+  greeting?: string;
+  emoji?: string;
+  palette: string;
+  ctaLabel: string;
+  bannerDesktop?: { url: string; publicId?: string } | null;
+  bannerMobile?: { url: string; publicId?: string } | null;
+  startsAt: string;
+  endsAt: string;
+  status: "draft" | "published";
+  sale: {
+    type: CampaignSaleType;
+    value: number;
+    scope: CampaignSaleScope;
+    categories: string[];
+    products: string[];
+    excludeProducts: string[];
+  };
+  notify: { pushOnLaunch: boolean; sentAt?: string | null };
+  state: CampaignState;
+  theme: ICampaignTheme;
+  saleLabel: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface IFestivalPreset {
+  label: string;
+  emoji: string;
+  palette: string;
+  name: string;
+  headline: string;
+  greeting: string;
+  monthHint: string;
+}
+
+/** GET /admin/campaigns/presets */
+export interface ICampaignPresets {
+  festivals: Record<string, IFestivalPreset>;
+  palettes: Record<string, ICampaignTheme>;
+  maxPercent: number;
+}
+
+export interface ICampaignStats {
+  orders: number;
+  units: number;
+  revenue: number;
+  savings: number;
 }

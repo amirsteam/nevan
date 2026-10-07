@@ -10,11 +10,13 @@ import { ArrowRight, Sparkles, Truck, Banknote, RotateCcw, Gift, Loader2, Star, 
 import { productsAPI, categoriesAPI } from "../api";
 import { contactAPI, reviewsAPI, type FeaturedReview } from "../api/contact";
 import ProductCard from "../components/ProductCard";
-import { ProductGridSkeleton, Skeleton } from "../components/ui/Skeleton";
+import HeroCarousel from "../components/home/HeroCarousel";
+import { ProductGridSkeleton } from "../components/ui/Skeleton";
 import { formatPrice, getErrorMessage } from "../utils/helpers";
 import { imageUrl, onImageError } from "../utils/image";
 import { AGE_GROUPS, FREE_SHIPPING_THRESHOLD, RETURN_WINDOW_DAYS, formatAgeGroup } from "../config/store";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useCampaign } from "../context/CampaignContext";
 import type { ICategory, IProduct } from "../types";
 
 const AGE_LABELS: Record<string, { label: string; emoji: string }> = {
@@ -67,6 +69,8 @@ const SectionHeader = ({
 
 const Home = () => {
   usePageTitle(null);
+  const { campaign, isPreview } = useCampaign();
+  const heroCampaign = campaign && (isPreview || campaign.state === "live") ? campaign : null;
   const [featuredProducts, setFeaturedProducts] = useState<IProduct[]>([]);
   const [newArrivals, setNewArrivals] = useState<IProduct[]>([]);
   const [categories, setCategories] = useState<ICategory[]>([]);
@@ -114,67 +118,12 @@ const Home = () => {
     }
   };
 
-  const heroImages = featuredProducts
-    .map((p) => (p.images?.find((img) => img.isPrimary) || p.images?.[0])?.url)
-    .filter(Boolean)
-    .slice(0, 3) as string[];
-
   return (
     <div>
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[var(--color-primary-soft)] via-[var(--color-bg)] to-[var(--color-accent-light)]/40">
-        <div className="container-app grid md:grid-cols-2 gap-8 items-center py-12 md:py-20 min-h-[60vh] md:min-h-[520px]">
-          <div className="animate-slideUp">
-            <span className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-sm mb-5 font-medium">
-              <span aria-hidden="true">🧶</span> Handmade in Nepal
-            </span>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-5 leading-[1.1]">
-              Soft, safe &amp; handmade clothing for little ones
-            </h1>
-            <p className="text-lg text-[var(--color-text-muted)] mb-8 max-w-lg">
-              Gentle fabrics and thoughtful designs from newborn to 10 years. Cash on delivery anywhere in Nepal.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link to="/products" className="btn btn-primary px-7 py-3 text-base">
-                Shop now
-                <ArrowRight className="w-5 h-5" aria-hidden="true" />
-              </Link>
-              <a href="#shop-by-age" className="btn btn-secondary px-7 py-3 text-base bg-[var(--color-surface)]">
-                Shop by age
-              </a>
-            </div>
-          </div>
-
-          {/* Product collage (decorative; the products are listed below) */}
-          <div className="hidden md:grid grid-cols-2 gap-4 h-[440px]" aria-hidden="true">
-            {loading ? (
-              <>
-                <Skeleton className="row-span-2 rounded-2xl" />
-                <Skeleton className="rounded-2xl" />
-                <Skeleton className="rounded-2xl" />
-              </>
-            ) : heroImages.length > 0 ? (
-              heroImages.map((url, i) => (
-                <img
-                  key={url}
-                  src={imageUrl(url, i === 0 ? 480 : 320)}
-                  alt=""
-                  loading="eager"
-                  decoding="async"
-                  onError={onImageError}
-                  className={`w-full h-full object-cover rounded-2xl shadow-[var(--shadow-lg)] ${
-                    i === 0 ? (heroImages.length > 1 ? "row-span-2" : "row-span-2 col-span-2") : ""
-                  } ${heroImages.length === 2 && i === 1 ? "row-span-2" : ""}`}
-                />
-              ))
-            ) : (
-              <div className="col-span-2 row-span-2 rounded-2xl bg-[var(--color-brand)]/20 flex items-center justify-center text-8xl">
-                👶
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* Hero carousel */}
+      <div className="container-app pt-4 md:pt-6 pb-6 md:pb-8">
+        <HeroCarousel products={featuredProducts} loading={loading} campaign={heroCampaign} />
+      </div>
 
       {/* Store promises */}
       <section aria-label="Why shop with us" className="bg-[var(--color-surface)] border-y border-[var(--color-border)]">

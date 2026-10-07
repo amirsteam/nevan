@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 import { IProduct } from './Product';
+import { priceFor, PricingCampaign } from '../utils/campaignPricing';
 
 export interface ICartItem {
     _id: Types.ObjectId;
@@ -12,9 +13,10 @@ export interface ICartItem {
 }
 
 export interface ICartMethods {
-    calculateTotal(): {
+    calculateTotal(campaign?: PricingCampaign | null): {
         items: any[];
         subtotal: number;
+        savings: number;
         itemCount: number;
     };
     addItem(productId: Types.ObjectId, quantity: number, variantId: Types.ObjectId | null, price: number): Promise<ICart>;
@@ -78,33 +80,36 @@ cartSchema.virtual('itemCount').get(function (this: ICart) {
 });
 
 // Instance methods
-cartSchema.methods.calculateTotal = function (this: ICart) {
+// `campaign` is the live campaign's pricing (campaignService.getLiveCampaign),
+// so cart prices match what createOrder will charge
+cartSchema.methods.calculateTotal = function (this: ICart, campaign: PricingCampaign | null = null) {
     let subtotal = 0;
+    let savings = 0;
     const itemsWithPrices: any[] = [];
 
     for (const item of this.items) {
         if (!item.product) continue;
 
         const product = item.product as any; // Cast as any for simplicity in calculation
-        let itemPrice = product.price;
         let variant = null;
 
         if (item.variantId && product.variants) {
             variant = product.variants.find(
                 (v: any) => v._id.toString() === item.variantId?.toString()
             );
-            if (variant) {
-                itemPrice = variant.price;
-            }
         }
 
+        const { price: itemPrice, originalPrice } = priceFor(product, variant, campaign);
         const itemTotal = itemPrice * item.quantity;
         subtotal += itemTotal;
+        savings += (originalPrice - itemPrice) * item.quantity;
 
         itemsWithPrices.push({
             ...(item as any).toObject(),
             variant,
             currentPrice: itemPrice,
+            originalPrice,
+            onSale: itemPrice < originalPrice,
             itemTotal,
             priceChanged: item.priceAtAdd !== itemPrice,
         });
@@ -113,6 +118,7 @@ cartSchema.methods.calculateTotal = function (this: ICart) {
     return {
         items: itemsWithPrices,
         subtotal,
+        savings,
         itemCount: this.itemCount,
     };
 };
@@ -175,7 +181,7 @@ cartSchema.methods.clear = async function (this: ICart) {
 cartSchema.statics.getOrCreate = async function (userId: string | Types.ObjectId) {
     let cart = await this.findOne({ user: userId }).populate({
         path: 'items.product',
-        select: 'name slug price comparePrice images stock variants isActive',
+        select: 'name slug price comparePrice images stock variants isActive category',
     });
 
     if (!cart) {

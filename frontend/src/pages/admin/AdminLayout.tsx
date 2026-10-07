@@ -2,31 +2,52 @@
  * Admin Layout
  * Responsive sidebar navigation with mobile hamburger menu
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { adminAPI } from '../../api';
+import { useAppSelector } from '../../store/hooks';
+import type { IAdminBadges } from '../../types';
 import {
     LayoutDashboard,
     Package,
     FolderTree,
     ShoppingCart,
     Users,
+    Mail,
+    Megaphone,
+    MessageCircle,
     LogOut,
     ChevronLeft,
     Menu,
     X,
 } from 'lucide-react';
 
-const navItems = [
+type BadgeKey = 'orders' | 'messages' | 'chat';
+
+const navItems: { to: string; icon: typeof Package; label: string; end?: boolean; badge?: BadgeKey }[] = [
     { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
+    { to: '/admin/orders', icon: ShoppingCart, label: 'Orders', badge: 'orders' },
+    { to: '/admin/chat', icon: MessageCircle, label: 'Live chat', badge: 'chat' },
     { to: '/admin/products', icon: Package, label: 'Products' },
     { to: '/admin/categories', icon: FolderTree, label: 'Categories' },
-    { to: '/admin/orders', icon: ShoppingCart, label: 'Orders' },
     { to: '/admin/users', icon: Users, label: 'Users' },
+    { to: '/admin/campaigns', icon: Megaphone, label: 'Campaigns' },
+    { to: '/admin/messages', icon: Mail, label: 'Contact forms', badge: 'messages' },
 ];
 
+const BADGE_POLL_MS = 60_000;
+
 // Sidebar content (shared between mobile and desktop)
-const SidebarContent = ({ userName, onLogout }: { userName?: string; onLogout: () => void }) => (
+const SidebarContent = ({
+    userName,
+    onLogout,
+    badges,
+}: {
+    userName?: string;
+    onLogout: () => void;
+    badges: Record<BadgeKey, { count: number; label: string }>;
+}) => (
     <>
         {/* Header */}
         <div className="p-4 border-b border-[var(--color-border)]">
@@ -54,8 +75,17 @@ const SidebarContent = ({ userName, onLogout }: { userName?: string; onLogout: (
                         }`
                     }
                 >
-                    <item.icon className="w-5 h-5" />
-                    {item.label}
+                    <item.icon className="w-5 h-5" aria-hidden="true" />
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && badges[item.badge].count > 0 && (
+                        <span
+                            className="min-w-6 h-6 px-1.5 rounded-full bg-[var(--color-error)] text-white text-xs font-semibold flex items-center justify-center"
+                            title={badges[item.badge].label}
+                        >
+                            {badges[item.badge].count > 99 ? '99+' : badges[item.badge].count}
+                            <span className="sr-only"> {badges[item.badge].label}</span>
+                        </span>
+                    )}
                 </NavLink>
             ))}
         </nav>
@@ -87,6 +117,55 @@ const AdminLayout = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [counts, setCounts] = useState<IAdminBadges | null>(null);
+
+    // Badge counts: on load, every minute, on navigation, and when a page
+    // changes something (dispatches "admin-badges-refresh")
+    const refreshBadges = useCallback(() => {
+        adminAPI
+            .getBadges()
+            .then((res) => setCounts(res.data.data))
+            .catch(() => {
+                /* badges are best-effort */
+            });
+    }, []);
+
+    useEffect(() => {
+        refreshBadges();
+        const timer = window.setInterval(refreshBadges, BADGE_POLL_MS);
+        window.addEventListener('admin-badges-refresh', refreshBadges);
+        return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('admin-badges-refresh', refreshBadges);
+        };
+    }, [refreshBadges]);
+
+    useEffect(() => {
+        refreshBadges();
+    }, [location.pathname, refreshBadges]);
+
+    const ordersNeedingAction = (counts?.pendingOrders || 0) + (counts?.refundRequired || 0);
+    // Live from the chat connection (updates the moment a customer writes)
+    const unreadChats = useAppSelector((state) => state.chat.unreadCount);
+    const badges: Record<BadgeKey, { count: number; label: string }> = {
+        chat: {
+            count: unreadChats,
+            label: `${unreadChats} unread chat message${unreadChats === 1 ? '' : 's'}`,
+        },
+        orders: {
+            count: ordersNeedingAction,
+            label: [
+                counts?.pendingOrders ? `${counts.pendingOrders} pending` : '',
+                counts?.refundRequired ? `${counts.refundRequired} refund${counts.refundRequired > 1 ? 's' : ''} owed` : '',
+            ]
+                .filter(Boolean)
+                .join(', '),
+        },
+        messages: {
+            count: counts?.unreadMessages || 0,
+            label: `${counts?.unreadMessages || 0} unread`,
+        },
+    };
 
     // Close sidebar on route change (mobile) — adjusting state during render
     // avoids an extra effect-triggered render
@@ -133,10 +212,17 @@ const AdminLayout = () => {
                 <div className="flex items-center justify-between">
                     <button
                         onClick={() => setSidebarOpen(true)}
-                        className="p-2 -ml-2 rounded-lg hover:bg-[var(--color-bg)]"
-                        aria-label="Open menu"
+                        className="relative p-2 -ml-2 rounded-lg hover:bg-[var(--color-bg)]"
+                        aria-label={
+                            ordersNeedingAction + (counts?.unreadMessages || 0) > 0
+                                ? 'Open menu (items need attention)'
+                                : 'Open menu'
+                        }
                     >
                         <Menu className="w-6 h-6" />
+                        {ordersNeedingAction + (counts?.unreadMessages || 0) > 0 && (
+                            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-[var(--color-error)]" aria-hidden="true" />
+                        )}
                     </button>
                     <h1 className="text-lg font-bold text-[var(--color-primary)]">Admin Panel</h1>
                     <div className="w-10" /> {/* Spacer for centering */}
@@ -169,12 +255,12 @@ const AdminLayout = () => {
                 >
                     <X className="w-5 h-5" />
                 </button>
-                <SidebarContent userName={user?.name} onLogout={handleLogout} />
+                <SidebarContent userName={user?.name} onLogout={handleLogout} badges={badges} />
             </aside>
 
             {/* Desktop Sidebar */}
             <aside className="hidden lg:flex w-64 bg-[var(--color-surface)] border-r border-[var(--color-border)] fixed h-full flex-col">
-                <SidebarContent userName={user?.name} onLogout={handleLogout} />
+                <SidebarContent userName={user?.name} onLogout={handleLogout} badges={badges} />
             </aside>
 
             {/* Main Content */}

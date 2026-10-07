@@ -5,8 +5,10 @@ import { useState, FormEvent } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, Loader2 } from 'lucide-react';
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const Login = () => {
+  usePageTitle("Sign in");
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [errors, setErrors] = useState<{ email?: string; password?: string; global?: string }>({});

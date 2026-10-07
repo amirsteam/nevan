@@ -23,7 +23,7 @@ const ProductListScreen: React.FC<ProductListScreenProps> = ({
   route,
   navigation,
 }) => {
-  const { categorySlug, categoryName, search } = route.params || {};
+  const { categorySlug, categoryName, search, campaignSlug, campaignName } = route.params || {};
 
   // Conditionally use different queries based on params
   const categoryQuery = useGetCategoryProductsQuery(
@@ -36,9 +36,15 @@ const ProductListScreen: React.FC<ProductListScreenProps> = ({
     { skip: !search || !!categorySlug },
   );
 
+  // Festival/event sale: the products its campaign covers
+  const campaignQuery = useGetProductsQuery(
+    { campaign: campaignSlug, limit: 50 },
+    { skip: !campaignSlug || !!categorySlug || !!search },
+  );
+
   const allProductsQuery = useGetProductsQuery(
     {},
-    { skip: !!categorySlug || !!search },
+    { skip: !!categorySlug || !!search || !!campaignSlug },
   );
 
   // Get category name for header
@@ -51,7 +57,9 @@ const ProductListScreen: React.FC<ProductListScreenProps> = ({
     ? categoryQuery
     : search
       ? searchQuery
-      : allProductsQuery;
+      : campaignSlug
+        ? campaignQuery
+        : allProductsQuery;
 
   const { data, isLoading, isFetching, refetch } = activeQuery;
   const products = data?.products || [];
@@ -61,9 +69,9 @@ const ProductListScreen: React.FC<ProductListScreenProps> = ({
     const title =
       categoryName ||
       category?.name ||
-      (search ? `Search: ${search}` : "Products");
+      (search ? `Search: ${search}` : campaignName || (campaignSlug ? "Sale" : "Products"));
     navigation.setOptions({ title });
-  }, [categoryName, category, search, navigation]);
+  }, [categoryName, category, search, campaignName, campaignSlug, navigation]);
 
   const renderItem: ListRenderItem<IProduct> = ({ item }) => (
     <ProductCard

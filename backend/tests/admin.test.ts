@@ -45,6 +45,34 @@ describe("Admin dashboard", () => {
   });
 });
 
+describe("Admin navigation badges", () => {
+  it("counts pending orders, refunds owed and unread contact messages", async () => {
+    const { user } = await createUser();
+    const product = await createProduct({ price: 1500, stock: 10 });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const refund = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
+    await Order.updateOne({ _id: refund._id }, { status: "cancelled", "payment.status": "paid" });
+    await request(app)
+      .post("/api/v1/contact")
+      .send({ name: "Asha", email: "asha@example.com", message: "Do you have this in 2-4 years?" });
+
+    const res = await request(app)
+      .get("/api/v1/admin/badges")
+      .set("Authorization", `Bearer ${await asAdmin()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ pendingOrders: 1, refundRequired: 1, unreadMessages: 1 });
+  });
+
+  it("is admin-only", async () => {
+    const { accessToken } = await createUser();
+    const res = await request(app).get("/api/v1/admin/badges").set("Authorization", `Bearer ${accessToken}`);
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("Admin product filters", () => {
   it("filters by search text, category and active status", async () => {
     const blanket = await createProduct({ name: "Muslin Swaddle Blanket" });

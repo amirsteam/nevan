@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 import { Mail, KeyRound, Lock, Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 
 import { getErrorMessage } from "../utils/helpers";
+import { usePageTitle } from "../hooks/usePageTitle";
 const STEPS = {
   EMAIL: 0,
   OTP: 1,
@@ -17,6 +18,7 @@ const STEPS = {
 };
 
 const ForgotPassword = () => {
+  usePageTitle("Reset your password");
   const [step, setStep] = useState(STEPS.EMAIL);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -24,6 +26,8 @@ const ForgotPassword = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Development only: the server returns the code when it can't email it
+  const [devCode, setDevCode] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleSendOTP = async (e: FormEvent<HTMLFormElement>) => {
@@ -37,8 +41,10 @@ const ForgotPassword = () => {
 
     setLoading(true);
     try {
-      await authAPI.forgotPassword(email);
-      toast.success("OTP sent to your email!");
+      const res = await authAPI.forgotPassword(email);
+      setDevCode(res.data?.otp ?? null);
+      // Same reply whether or not the email has an account (no account guessing)
+      toast.success("If an account exists for this email, a reset code is on its way.");
       setStep(STEPS.OTP);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to send OTP"));
@@ -175,9 +181,17 @@ const ForgotPassword = () => {
             <div className="text-center mb-8">
               <h1 className="text-3xl font-bold mb-2">Enter Reset Code</h1>
               <p className="text-[var(--color-text-muted)]">
-                We sent a code to <span className="font-medium text-[var(--color-text)]">{email}</span>
+                If <span className="font-medium text-[var(--color-text)]">{email}</span> has an account, we've emailed it a
+                6-digit code. It expires in 10 minutes — check Spam and Promotions too.
               </p>
             </div>
+
+            {devCode && (
+              <div role="note" className="mb-4 rounded-lg border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-3 text-sm">
+                <strong>Development server:</strong> email isn't set up, so nothing was sent. Your code is{" "}
+                <span className="font-mono font-bold tracking-widest">{devCode}</span>.
+              </div>
+            )}
 
             <form onSubmit={handleVerifyOTP} className="card p-6 space-y-4">
               {error && (

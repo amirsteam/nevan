@@ -13,6 +13,13 @@ import type {
   IDashboardStats,
   IAnalytics,
   OrderStatus,
+  IAdminBadges,
+  IBulkStatusResult,
+  IContactMessage,
+  ISubscriber,
+  IAdminCampaign,
+  ICampaignPresets,
+  ICampaignStats,
 } from "../types";
 
 // Types
@@ -23,6 +30,8 @@ interface ProductQueryParams {
   search?: string;
   sort?: string;
   isActive?: boolean;
+  // "low" = 1..LOW_STOCK_THRESHOLD, "out" = 0
+  stock?: "low" | "out";
 }
 
 interface OrderQueryParams {
@@ -30,6 +39,9 @@ interface OrderQueryParams {
   limit?: number;
   status?: string;
   paymentStatus?: string;
+  paymentMethod?: string;
+  // Cancelled orders that were paid online (money to return)
+  refundRequired?: boolean;
   search?: string;
 }
 
@@ -37,6 +49,7 @@ interface UserQueryParams {
   page?: number;
   limit?: number;
   role?: string;
+  isActive?: boolean;
   search?: string;
 }
 
@@ -170,6 +183,14 @@ export const updateOrderStatus = (
 ): ApiResponse<{ order: IOrder }> =>
   api.put(`/admin/orders/${id}/status`, { status, note });
 
+// Applies the same rules as single updates to each order; returns per-order results
+export const bulkUpdateOrderStatus = (
+  orderIds: string[],
+  status: OrderStatus,
+  note: string = "",
+): ApiResponse<IBulkStatusResult> =>
+  api.post("/admin/orders/bulk-status", { orderIds, status, note });
+
 export const markCODCollected = (
   orderId: string,
 ): ApiResponse<{ order: IOrder }> =>
@@ -196,11 +217,83 @@ export const updateUserRole = (
   role: "customer" | "admin",
 ): ApiResponse<{ user: IUser }> => api.put(`/admin/users/${id}/role`, { role });
 
+/**
+ * Contact messages and newsletter subscribers
+ */
+export const getContactMessages = (
+  params: { page?: number; limit?: number; unread?: boolean } = {},
+): ApiResponse<{ messages: IContactMessage[]; unreadCount: number }> =>
+  api.get(`/admin/contact-messages?${toQueryString(params)}`);
+
+export const setContactMessageRead = (
+  id: string,
+  isRead: boolean,
+): ApiResponse<{ message: IContactMessage }> =>
+  api.put(`/admin/contact-messages/${id}`, { isRead });
+
+export const getSubscribers = (
+  params: { page?: number; limit?: number } = {},
+): ApiResponse<{ subscribers: ISubscriber[] }> =>
+  api.get(`/admin/subscribers?${toQueryString(params)}`);
+
+/**
+ * Festival/event campaigns
+ */
+export type CampaignPayload = Partial<
+  Pick<
+    IAdminCampaign,
+    "name" | "festival" | "headline" | "subheadline" | "greeting" | "emoji" | "palette" | "ctaLabel" | "startsAt" | "endsAt" | "status"
+  >
+> & {
+  sale?: Partial<IAdminCampaign["sale"]>;
+  notify?: { pushOnLaunch?: boolean };
+};
+
+export const getCampaignPresets = (): ApiResponse<ICampaignPresets> => api.get("/admin/campaigns/presets");
+
+export const getCampaigns = (): ApiResponse<{ campaigns: IAdminCampaign[] }> => api.get("/admin/campaigns");
+
+export const getCampaign = (id: string): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.get(`/admin/campaigns/${id}`);
+
+export const createCampaign = (data: CampaignPayload): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.post("/admin/campaigns", data);
+
+export const updateCampaign = (id: string, data: CampaignPayload): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.put(`/admin/campaigns/${id}`, data);
+
+export const deleteCampaign = (id: string): ApiResponse<null> => api.delete(`/admin/campaigns/${id}`);
+
+export const duplicateCampaign = (id: string): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.post(`/admin/campaigns/${id}/duplicate`);
+
+export const uploadCampaignBanner = (
+  id: string,
+  variant: "desktop" | "mobile",
+  formData: FormData,
+): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.post(`/admin/campaigns/${id}/banner?variant=${variant}`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+export const deleteCampaignBanner = (id: string, variant: "desktop" | "mobile"): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.delete(`/admin/campaigns/${id}/banner?variant=${variant}`);
+
+export const notifyCampaign = (id: string): ApiResponse<{ campaign: IAdminCampaign }> =>
+  api.post(`/admin/campaigns/${id}/notify`);
+
+export const getCampaignStats = (id: string): ApiResponse<{ stats: ICampaignStats }> =>
+  api.get(`/admin/campaigns/${id}/stats`);
+
+/** Counts for the admin navigation badges (cheap; polled by AdminLayout) */
+export const getBadges = (): ApiResponse<IAdminBadges> => api.get("/admin/badges");
+
 // Export as a grouped object for convenience
 export const adminAPI = {
   // Dashboard
   getDashboard,
   getDashboardAnalytics,
+  getBadges,
   // Products
   getProducts,
   getProductById,
@@ -222,11 +315,28 @@ export const adminAPI = {
   getOrders,
   getOrderById,
   updateOrderStatus,
+  bulkUpdateOrderStatus,
   markCODCollected,
   // Users
   getUsers,
   updateUserStatus,
   updateUserRole,
+  // Campaigns
+  getCampaignPresets,
+  getCampaigns,
+  getCampaign,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  duplicateCampaign,
+  uploadCampaignBanner,
+  deleteCampaignBanner,
+  notifyCampaign,
+  getCampaignStats,
+  // Contact
+  getContactMessages,
+  setContactMessageRead,
+  getSubscribers,
 };
 
 export default adminAPI;

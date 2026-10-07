@@ -7,8 +7,10 @@ import { Link } from 'react-router-dom';
 import { categoriesAPI } from '../api';
 import { Loader2 } from 'lucide-react';
 import type { ICategory } from '../types';
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const Categories = () => {
+  usePageTitle("Shop by category");
     const [categories, setCategories] = useState<ICategory[]>([]);
     const [loading, setLoading] = useState(true);
 

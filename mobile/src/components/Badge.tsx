@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from "react-native";
+import { colors } from "../theme";
 
 type BadgeVariant = "primary" | "secondary" | "success" | "warning" | "danger";
 type BadgeSize = "small" | "medium" | "large";
@@ -18,7 +19,7 @@ interface BadgeProps {
 
 // Style mappings for type-safe access
 const variantStyles = {
-  primary: { backgroundColor: "#FF9999" },
+  primary: { backgroundColor: colors.primary },
   secondary: { backgroundColor: "#4A4A4A" },
   success: { backgroundColor: "#4CAF50" },
   warning: { backgroundColor: "#FFA500" },

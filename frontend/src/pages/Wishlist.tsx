@@ -9,8 +9,10 @@ import { formatPrice, calculateDiscount, populated } from "../utils/helpers";
 import toast from "react-hot-toast";
 import { Heart, Trash2, Loader2 } from "lucide-react";
 import type { IProduct } from "../types";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const Wishlist = () => {
+  usePageTitle("Your wishlist");
   const [items, setItems] = useState<IProduct[]>([]);
   const [loading, setLoading] = useState(true);
 

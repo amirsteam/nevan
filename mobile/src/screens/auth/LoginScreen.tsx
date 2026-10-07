@@ -14,6 +14,7 @@ import { Mail, Lock, Eye, EyeOff, LogIn } from "lucide-react-native";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { login, clearError } from "../../store/authSlice";
 import type { LoginScreenProps } from "../../navigation/types";
+import { colors } from "../../theme";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -250,11 +251,11 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -332,16 +333,16 @@ const styles = StyleSheet.create({
   },
   forgotPasswordText: {
     fontSize: 14,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "600",
   },
   loginButton: {
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 12,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -371,7 +372,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 15,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
   },
 });

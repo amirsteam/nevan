@@ -5,6 +5,7 @@
  * Also owns the chat connection, so the badge updates while the window is closed.
  */
 import { MessageCircle } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { toggleChat } from "../../store/chatSlice";
 import { useChatConnection } from "../../hooks/useChatConnection";
@@ -15,6 +16,10 @@ const ChatWidget = () => {
     const { isOpen, unreadCount } = useAppSelector((state) => state.chat);
 
     useChatConnection();
+
+    // The admin Live chat page shows the same inbox full size
+    const { pathname } = useLocation();
+    if (pathname.startsWith("/admin/chat")) return null;
 
     return (
         <>

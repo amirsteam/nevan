@@ -6,8 +6,10 @@
 import { Link } from 'react-router-dom';
 import { Heart, Leaf, Baby, Mail } from 'lucide-react';
 import founderImage from '../assets/founder.jpg';
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const About = () => {
+  usePageTitle("About us", "Nevan Handicraft makes soft, handmade baby clothing in Panauti, Nepal.");
     return (
         <div className="min-h-screen">
             {/* HERO SECTION */}

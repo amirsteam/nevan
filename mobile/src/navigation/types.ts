@@ -75,6 +75,9 @@ export type HomeStackParamList = {
     categorySlug?: string;
     categoryName?: string;
     search?: string;
+    // Festival/event sale: products covered by this campaign
+    campaignSlug?: string;
+    campaignName?: string;
   };
   ProductDetail: {
     slug: string;

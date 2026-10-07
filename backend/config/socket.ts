@@ -358,12 +358,17 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 socket.join(`room:${room._id}`);
 
                 const history = await loadHistory(String(room._id));
+                // The history travels in the acknowledgement: clients only accept
+                // history for the room they've entered, and they enter it when this
+                // ack arrives — a separate event sent first would be discarded.
+                // "chat-history" is still emitted for older app versions.
                 socket.emit("chat-history", { roomId: String(room._id), ...history });
 
                 callback?.({
                     success: true,
                     roomId: String(room._id),
                     status: room.status,
+                    messages: history.messages,
                     hasMore: history.hasMore,
                 });
             } catch (error: any) {

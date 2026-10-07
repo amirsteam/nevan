@@ -14,6 +14,7 @@ import { Mail, Lock, User, Phone, Eye, EyeOff, UserPlus } from "lucide-react-nat
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { register, clearError } from "../../store/authSlice";
 import type { RegisterScreenProps } from "../../navigation/types";
+import { colors } from "../../theme";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NEPAL_PHONE_REGEX = /^(\+?977)?[0-9]{10}$/;
@@ -394,11 +395,11 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -493,12 +494,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   registerButton: {
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 12,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -528,7 +529,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 15,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
   },
 });

@@ -4,8 +4,15 @@
  */
 import { Link } from "react-router-dom";
 import { Truck, Clock, MapPin, Package, CheckCircle } from "lucide-react";
+import { FREE_SHIPPING_THRESHOLD, SHIPPING_ZONES } from "../config/store";
+import { formatPrice } from "../utils/helpers";
+import { usePageTitle } from "../hooks/usePageTitle";
+
+const minShipping = Math.min(...SHIPPING_ZONES.map((z) => z.cost));
+const maxShipping = Math.max(...SHIPPING_ZONES.map((z) => z.cost));
 
 const ShippingInfo = () => {
+  usePageTitle("Shipping information", `Delivery times and costs across Nepal. Free shipping on orders over NPR ${FREE_SHIPPING_THRESHOLD.toLocaleString()}.`);
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}
@@ -21,29 +28,29 @@ const ShippingInfo = () => {
             Shipping Information
           </h1>
           <p className="text-[var(--color-text-muted)]">
-            Fast, free delivery across Nepal — because your little one can't wait!
+            Delivery across Nepal, free on orders over {formatPrice(FREE_SHIPPING_THRESHOLD)}.
           </p>
         </div>
 
         {/* Highlights */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
           <div className="card p-5 text-center">
-            <Truck className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" />
-            <h3 className="font-semibold text-sm mb-1">Free Shipping</h3>
+            <Truck className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" aria-hidden="true" />
+            <h2 className="font-semibold text-sm mb-1 font-sans">Free shipping over {formatPrice(FREE_SHIPPING_THRESHOLD)}</h2>
             <p className="text-xs text-[var(--color-text-muted)]">
-              On all orders within Nepal
+              Otherwise {formatPrice(minShipping)}–{formatPrice(maxShipping)} by location
             </p>
           </div>
           <div className="card p-5 text-center">
-            <Clock className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" />
-            <h3 className="font-semibold text-sm mb-1">3–5 Business Days</h3>
+            <Clock className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" aria-hidden="true" />
+            <h2 className="font-semibold text-sm mb-1 font-sans">3–5 business days</h2>
             <p className="text-xs text-[var(--color-text-muted)]">
               Inside Kathmandu Valley
             </p>
           </div>
           <div className="card p-5 text-center">
-            <Package className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" />
-            <h3 className="font-semibold text-sm mb-1">Careful Packaging</h3>
+            <Package className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" aria-hidden="true" />
+            <h2 className="font-semibold text-sm mb-1 font-sans">Careful packaging</h2>
             <p className="text-xs text-[var(--color-text-muted)]">
               Gift-ready, eco-friendly wrapping
             </p>
@@ -53,37 +60,33 @@ const ShippingInfo = () => {
         {/* Delivery Zones */}
         <div className="card p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-[var(--color-primary)]" />
-            Delivery Zones & Times
+            <MapPin className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+            Delivery zones, times and costs
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  <th className="text-left py-3 font-semibold">Zone</th>
-                  <th className="text-left py-3 font-semibold">Delivery Time</th>
-                  <th className="text-left py-3 font-semibold">Cost</th>
+                  <th scope="col" className="text-left py-3 pr-3 font-semibold">Zone</th>
+                  <th scope="col" className="text-left py-3 pr-3 font-semibold">Delivery time</th>
+                  <th scope="col" className="text-right py-3 font-semibold">Shipping</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-[var(--color-border)]">
-                  <td className="py-3">Kathmandu Valley</td>
-                  <td className="py-3">3–5 business days</td>
-                  <td className="py-3 text-green-600 font-medium">Free</td>
-                </tr>
-                <tr className="border-b border-[var(--color-border)]">
-                  <td className="py-3">Major Cities (Pokhara, Biratnagar, etc.)</td>
-                  <td className="py-3">5–7 business days</td>
-                  <td className="py-3 text-green-600 font-medium">Free</td>
-                </tr>
-                <tr>
-                  <td className="py-3">Remote Areas</td>
-                  <td className="py-3">7–10 business days</td>
-                  <td className="py-3 text-green-600 font-medium">Free</td>
-                </tr>
+                {SHIPPING_ZONES.map((zone) => (
+                  <tr key={zone.zone} className="border-b border-[var(--color-border)] last:border-0">
+                    <td className="py-3 pr-3">{zone.zone}</td>
+                    <td className="py-3 pr-3 whitespace-nowrap">{zone.delivery}</td>
+                    <td className="py-3 text-right font-medium whitespace-nowrap">{formatPrice(zone.cost)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+          <p className="mt-4 rounded-lg bg-[var(--color-accent)]/15 px-4 py-3 text-sm">
+            <strong>Free shipping</strong> on every order of {formatPrice(FREE_SHIPPING_THRESHOLD)} or more, anywhere in
+            Nepal. The exact cost is shown at checkout before you pay.
+          </p>
         </div>
 
         {/* How It Works */}

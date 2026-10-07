@@ -54,10 +54,13 @@ const FilterGroup = ({ title, children }: { title: string; children: React.React
 const Filters = ({ categories, current, onChange, onPriceApply }: FiltersProps) => {
   const [min, setMin] = useState(current.minPrice);
   const [max, setMax] = useState(current.maxPrice);
-  useEffect(() => {
+  // Follow the URL when the price filter changes elsewhere (chips, "Clear all")
+  const [applied, setApplied] = useState({ min: current.minPrice, max: current.maxPrice });
+  if (applied.min !== current.minPrice || applied.max !== current.maxPrice) {
+    setApplied({ min: current.minPrice, max: current.maxPrice });
     setMin(current.minPrice);
     setMax(current.maxPrice);
-  }, [current.minPrice, current.maxPrice]);
+  }
 
   const submitPrice = (e: FormEvent) => {
     e.preventDefault();

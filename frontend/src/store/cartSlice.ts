@@ -11,6 +11,8 @@ import type { RootState } from "./index";
 interface CartState {
   items: ICartItem[];
   subtotal: number;
+  // Campaign sale savings (from the API)
+  savings: number;
   itemCount: number;
   loading: boolean;
   // True once the server cart has been fetched; an empty `items` before that
@@ -127,6 +129,7 @@ export const clearCart = createAsyncThunk<ICart, void, { rejectValue: string }>(
 const initialState: CartState = {
   items: [],
   subtotal: 0,
+  savings: 0,
   itemCount: 0,
   loading: false,
   hasLoaded: false,
@@ -154,6 +157,7 @@ const cartSlice = createSlice({
         state.hasLoaded = true;
         state.items = action.payload.items || [];
         state.subtotal = action.payload.subtotal || 0;
+        state.savings = action.payload.savings || 0;
         state.itemCount = action.payload.itemCount || 0;
       })
       .addCase(fetchCart.rejected, (state, action) => {
@@ -170,6 +174,7 @@ const cartSlice = createSlice({
         state.loading = false;
         state.items = action.payload.items || [];
         state.subtotal = action.payload.subtotal || 0;
+        state.savings = action.payload.savings || 0;
         state.itemCount = action.payload.itemCount || 0;
       })
       .addCase(addToCart.rejected, (state, action) => {
@@ -182,6 +187,7 @@ const cartSlice = createSlice({
         (state, action: PayloadAction<ICart>) => {
           state.items = action.payload.items || [];
           state.subtotal = action.payload.subtotal || 0;
+        state.savings = action.payload.savings || 0;
           state.itemCount = action.payload.itemCount || 0;
         },
       )
@@ -191,6 +197,7 @@ const cartSlice = createSlice({
         (state, action: PayloadAction<ICart>) => {
           state.items = action.payload.items || [];
           state.subtotal = action.payload.subtotal || 0;
+        state.savings = action.payload.savings || 0;
           state.itemCount = action.payload.itemCount || 0;
         },
       )

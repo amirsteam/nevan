@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { ShoppingBag } from "lucide-react-native";
 import Button from "./Button";
+import { colors } from "../theme";
 
 interface EmptyStateProps {
   icon?: LucideIcon;
@@ -24,7 +25,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   return (
     <View style={[styles.container, containerStyle]}>
       <View style={styles.iconContainer}>
-        <Icon color="#FF9999" size={64} />
+        <Icon color={colors.primary} size={64} />
       </View>
       <Text style={styles.title}>{title}</Text>
       {message && <Text style={styles.message}>{message}</Text>}

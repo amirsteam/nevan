@@ -66,6 +66,10 @@ interface AdvancedDataTableProps<T> {
   striped?: boolean;
   // Custom render
   renderRowActions?: (row: T) => React.ReactNode;
+  /** Buttons shown in the "N selected" bar (e.g. bulk status updates) */
+  renderSelectionActions?: (selectedRows: T[], clearSelection: () => void) => React.ReactNode;
+  /** Stable row ids (e.g. Mongo _id) so selection follows rows, not positions */
+  getRowId?: (row: T) => string;
 }
 
 export function AdvancedDataTable<T extends object>({
@@ -90,6 +94,8 @@ export function AdvancedDataTable<T extends object>({
   stickyHeader = false,
   striped = false,
   renderRowActions,
+  renderSelectionActions,
+  getRowId,
 }: AdvancedDataTableProps<T>) {
   // State
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -97,6 +103,14 @@ export function AdvancedDataTable<T extends object>({
   const [globalFilter, setGlobalFilter] = useState("");
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // New data (another page, a refetch after a bulk update) clears the
+  // selection so actions never apply to rows that are no longer shown
+  const [selectionData, setSelectionData] = useState(data);
+  if (selectionData !== data) {
+    setSelectionData(data);
+    setRowSelection({});
+  }
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: serverPagination?.pageIndex ?? 0,
     pageSize: serverPagination?.pageSize ?? pageSize,
@@ -133,6 +147,7 @@ export function AdvancedDataTable<T extends object>({
         header: ({ table }) => (
           <input
             type="checkbox"
+            aria-label="Select all rows on this page"
             checked={table.getIsAllPageRowsSelected()}
             onChange={table.getToggleAllPageRowsSelectedHandler()}
             className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
@@ -141,6 +156,7 @@ export function AdvancedDataTable<T extends object>({
         cell: ({ row }) => (
           <input
             type="checkbox"
+            aria-label="Select row"
             checked={row.getIsSelected()}
             onChange={row.getToggleSelectedHandler()}
             onClick={(e) => e.stopPropagation()}
@@ -159,6 +175,7 @@ export function AdvancedDataTable<T extends object>({
   const table = useReactTable<T>({
     data,
     columns: finalColumns as ColumnDef<T, unknown>[],
+    ...(getRowId ? { getRowId: (row: T) => getRowId(row) } : {}),
     state: {
       sorting,
       columnFilters,
@@ -183,7 +200,10 @@ export function AdvancedDataTable<T extends object>({
           typeof updater === "function" ? updater(rowSelection) : updater;
         const selectedRows = Object.keys(newSelection)
           .filter((key) => newSelection[key])
-          .map((key) => data[parseInt(key)]);
+          .map((key) =>
+            getRowId ? data.find((row) => getRowId(row) === key) : data[parseInt(key)],
+          )
+          .filter((row): row is T => row !== undefined);
         onRowSelectionChange(selectedRows);
       }
     },
@@ -431,8 +451,8 @@ export function AdvancedDataTable<T extends object>({
       )}
 
       {/* Row Selection Info */}
-      {enableRowSelection && Object.keys(rowSelection).length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-[var(--color-primary)]/10 rounded-lg">
+      {enableRowSelection && Object.values(rowSelection).some(Boolean) && (
+        <div className="flex flex-wrap items-center gap-3 p-3 bg-[var(--color-primary)]/10 rounded-lg">
           <Check className="w-4 h-4 text-[var(--color-primary)]" />
           <span className="text-sm font-medium">
             {Object.keys(rowSelection).filter((k) => rowSelection[k]).length}{" "}
@@ -444,6 +464,14 @@ export function AdvancedDataTable<T extends object>({
           >
             Clear selection
           </button>
+          {renderSelectionActions && (
+            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+              {renderSelectionActions(
+                table.getSelectedRowModel().rows.map((row) => row.original),
+                () => setRowSelection({}),
+              )}
+            </div>
+          )}
         </div>
       )}
 

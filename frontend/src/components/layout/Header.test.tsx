@@ -17,6 +17,7 @@ const renderHeader = (authValue = {}) => {
       cart: { 
         items: [], 
         subtotal: 0,
+        savings: 0,
         itemCount: 0,
         loading: false,
         hasLoaded: true,

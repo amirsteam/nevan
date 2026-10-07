@@ -75,14 +75,14 @@ function AppContent(): React.ReactElement {
           }
           break;
         case "promotion":
-          // Navigate to promotions or home
+          // Festival/event campaign pushes open that sale; others go home
           navigationRef.current.navigate("App", {
             screen: "Main",
             params: {
               screen: "HomeTab",
-              params: {
-                screen: "HomeScreen",
-              },
+              params: data.campaign
+                ? { screen: "ProductList", params: { campaignSlug: String(data.campaign) } }
+                : { screen: "HomeScreen" },
             },
           });
           break;

@@ -9,11 +9,13 @@ import * as categoryController from "../controllers/categoryController";
 import * as orderController from "../controllers/orderController";
 import * as paymentController from "../controllers/paymentController";
 import * as contactController from "../controllers/contactController";
+import * as campaignController from "../controllers/campaignController";
 import asyncHandler from "../utils/asyncHandler";
 import { protect } from "../middleware/auth";
 import { adminOnly } from "../middleware/role";
-import { uploadProductImages, uploadCategoryImage } from "../config/cloudinary";
+import { uploadProductImages, uploadCategoryImage, uploadCampaignBanner } from "../config/cloudinary";
 import {
+  campaignValidator,
   createProductValidator,
   updateProductValidator,
   createCategoryValidator,
@@ -143,6 +145,22 @@ router.get(
           revenue: p.revenue,
         })),
       },
+    });
+  }),
+);
+
+// Counts for the admin navigation badges — cheap enough to poll
+router.get(
+  "/badges",
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [pendingOrders, refundRequired, unreadMessages] = await Promise.all([
+      Order.countDocuments({ status: "pending" }),
+      Order.countDocuments({ status: "cancelled", "payment.status": "paid" }),
+      ContactMessage.countDocuments({ isRead: false }),
+    ]);
+    res.status(200).json({
+      status: "success",
+      data: { pendingOrders, refundRequired, unreadMessages },
     });
   }),
 );
@@ -428,6 +446,25 @@ router.put(
   contactController.updateContactMessage,
 );
 router.get("/subscribers", paginationValidator, contactController.getSubscribers);
+
+// ==================== CAMPAIGNS ====================
+// "presets" before "/:id" so it is not treated as an id
+router.get("/campaigns/presets", campaignController.presets);
+router.get("/campaigns", campaignController.list);
+router.post("/campaigns", campaignValidator(true), campaignController.create);
+router.get("/campaigns/:id", mongoIdValidator("id"), campaignController.getOne);
+router.put("/campaigns/:id", mongoIdValidator("id"), campaignValidator(false), campaignController.update);
+router.delete("/campaigns/:id", mongoIdValidator("id"), campaignController.remove);
+router.post("/campaigns/:id/duplicate", mongoIdValidator("id"), campaignController.duplicate);
+router.post(
+  "/campaigns/:id/banner",
+  mongoIdValidator("id"),
+  uploadCampaignBanner.single("image"),
+  campaignController.uploadBanner,
+);
+router.delete("/campaigns/:id/banner", mongoIdValidator("id"), campaignController.deleteBanner);
+router.post("/campaigns/:id/notify", mongoIdValidator("id"), campaignController.notify);
+router.get("/campaigns/:id/stats", mongoIdValidator("id"), campaignController.stats);
 
 // ==================== PAYMENTS ====================
 router.post("/payments/cod-collected", paymentController.markCODCollected);

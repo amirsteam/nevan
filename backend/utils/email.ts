@@ -37,6 +37,17 @@ const getTransporter = (): Transporter | null => {
 
 export const isEmailConfigured = (): boolean => !!process.env.SMTP_HOST;
 
+/**
+ * Log in to the SMTP server without sending anything (startup check and
+ * `npm run test-email`). Throws with the server's reason, e.g. a rejected
+ * Gmail password.
+ */
+export const verifyEmailConnection = async (): Promise<void> => {
+  const transport = getTransporter();
+  if (!transport) throw new Error("SMTP_HOST is not set");
+  await transport.verify();
+};
+
 export const sendEmail = async (options: EmailOptions): Promise<void> => {
   const transport = getTransporter();
 

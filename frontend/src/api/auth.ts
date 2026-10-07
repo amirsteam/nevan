@@ -52,7 +52,8 @@ export const authAPI = {
     return response.data;
   },
 
-  forgotPassword: async (email: string): Promise<IApiResponse<null>> => {
+  // `data.otp` is only returned by a development server without email set up
+  forgotPassword: async (email: string): Promise<IApiResponse<{ otp?: string } | undefined>> => {
     const response = await api.post("/auth/forgot-password", { email });
     return response.data;
   },

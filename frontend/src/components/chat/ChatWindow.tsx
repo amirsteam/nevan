@@ -19,6 +19,8 @@ import {
     clearPendingRoom,
     roomClosed,
     roomDisplayName,
+    setMessages,
+    type ChatMessage,
 } from "../../store/chatSlice";
 import socketService, { AckResponse } from "../../services/socketService";
 import { refreshRooms } from "../../hooks/useChatConnection";
@@ -33,6 +35,8 @@ const MAX_MESSAGE_LENGTH = 2000;
 interface JoinResponse extends AckResponse {
     roomId?: string;
     status?: "open" | "closed";
+    // The conversation's latest messages come with the join itself
+    messages?: ChatMessage[];
     hasMore?: boolean;
 }
 
@@ -44,7 +48,12 @@ const formatRoomTime = (iso?: string) => {
         : date.toLocaleDateString([], { month: "short", day: "numeric" });
 };
 
-const ChatWindow = () => {
+interface ChatWindowProps {
+    /** Rendered inside a page (admin Live chat) instead of as a floating window */
+    embedded?: boolean;
+}
+
+const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
     const dispatch = useAppDispatch();
     const { user, isAuthenticated, loading: authLoading } = useAuth();
     const isAdmin = isAuthenticated && user?.role === "admin";
@@ -86,6 +95,9 @@ const ChatWindow = () => {
         dispatch(setIsLoading(false));
         if (res.success && res.roomId) {
             dispatch(enterRoom({ roomId: res.roomId, status: res.status ?? "open", hasMore: res.hasMore }));
+            // History arrives with the join: a separate "chat-history" event can
+            // reach us before the room is active and would be dropped
+            if (res.messages) dispatch(setMessages({ roomId: res.roomId, messages: res.messages, hasMore: res.hasMore }));
             socketService.send("message-read", { roomId: res.roomId });
         } else {
             toast.error(res.error || "Could not open the conversation");
@@ -222,8 +234,12 @@ const ChatWindow = () => {
 
     return (
         <div
-            className="fixed z-[60] inset-0 sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[380px] sm:h-[min(560px,calc(100vh-7rem))] bg-[var(--color-surface)] sm:rounded-2xl shadow-[var(--shadow-lg)] flex flex-col overflow-hidden sm:border border-[var(--color-border)] pb-[env(safe-area-inset-bottom)] animate-slideUp"
-            role="dialog"
+            className={
+                embedded
+                    ? "h-full bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] flex flex-col overflow-hidden"
+                    : "fixed z-[60] inset-0 sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[380px] sm:h-[min(560px,calc(100vh-7rem))] bg-[var(--color-surface)] sm:rounded-2xl shadow-[var(--shadow-lg)] flex flex-col overflow-hidden sm:border border-[var(--color-border)] pb-[env(safe-area-inset-bottom)] animate-slideUp"
+            }
+            role={embedded ? "region" : "dialog"}
             aria-label="Support chat"
         >
             {/* Header */}
@@ -269,9 +285,11 @@ const ChatWindow = () => {
                             <RefreshCw size={18} />
                         </button>
                     )}
-                    <button onClick={() => dispatch(setIsOpen(false))} className="p-2 hover:bg-white/15 rounded-lg transition-colors" aria-label="Close chat window">
-                        <X size={18} />
-                    </button>
+                    {!embedded && (
+                        <button onClick={() => dispatch(setIsOpen(false))} className="p-2 hover:bg-white/15 rounded-lg transition-colors" aria-label="Close chat window">
+                            <X size={18} />
+                        </button>
+                    )}
                 </div>
             </div>
 

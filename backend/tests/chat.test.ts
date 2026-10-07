@@ -118,6 +118,21 @@ describe("Conversations", () => {
     expect(await ChatRoom.countDocuments()).toBe(1);
   });
 
+  it("returns the conversation history in the join acknowledgement", async () => {
+    const { adminSocket, customerSocket, roomId } = await setup();
+    await emitAck(customerSocket, "send-message", { roomId, content: "Do you have size 6-12 months?" });
+
+    // An admin opening the conversation gets the history with the join itself
+    // (clients enter the room when the ack arrives, so it can't be lost)
+    const joined = await emitAck(adminSocket, "join-chat", { roomId });
+    expect(joined).toMatchObject({ success: true, roomId, status: "open", hasMore: false });
+    expect(joined.messages.map((m: any) => m.content)).toEqual(["Do you have size 6-12 months?"]);
+
+    // ...and a returning customer sees their own history again
+    const rejoined = await emitAck(customerSocket, "join-chat", {});
+    expect(rejoined.messages).toHaveLength(1);
+  });
+
   it("creates a single room when two tabs join at the same time", async () => {
     const customer = await createUser();
     const [tab1, tab2] = await Promise.all([connect(customer.accessToken), connect(customer.accessToken)]);

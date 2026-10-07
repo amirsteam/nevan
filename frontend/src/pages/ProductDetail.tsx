@@ -27,7 +27,11 @@ import {
 } from "lucide-react";
 import { productsAPI } from "../api";
 import api from "../api/axios";
-import { formatPrice, calculateDiscount, populated, getAvailableStock, formatDate } from "../utils/helpers";
+import { formatPrice, populated, getAvailableStock, formatDate } from "../utils/helpers";
+import { displayPrice as priceToShow } from "../utils/pricing";
+import { useCampaign } from "../context/CampaignContext";
+import Countdown from "../components/campaign/Countdown";
+import { salePath } from "../utils/campaign";
 import { imageUrl, onImageError } from "../utils/image";
 import {
   CONTACT,
@@ -81,6 +85,7 @@ const Stars = ({ value, size = "w-4 h-4" }: { value: number; size?: string }) =>
 
 const ProductDetail = () => {
   const { slug = "" } = useParams();
+  const { campaign: liveCampaign } = useCampaign();
   const { isAuthenticated } = useAuth();
   const { add, addingId } = useAddToCart();
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
@@ -235,8 +240,12 @@ const ProductDetail = () => {
   }
 
   const category = populated(product.category);
-  const displayPrice = currentVariant?.price ?? product.price;
-  const discount = calculateDiscount(product.comparePrice, displayPrice);
+  // Includes festival/event sale prices from the API
+  const pricing = priceToShow(product, currentVariant);
+  const displayPrice = pricing.price;
+  const discount = pricing.percentOff;
+  const saleCampaign = pricing.campaign;
+  const saleTheme = saleCampaign && liveCampaign?.slug === saleCampaign.slug ? liveCampaign.theme : null;
   const totalStock = getAvailableStock(product);
   const soldOut = totalStock <= 0;
   const selectionUnavailable = hasVariants && (!currentVariant || currentVariant.stock <= 0);
@@ -409,16 +418,30 @@ const ProductDetail = () => {
           {/* Price */}
           <div className="flex flex-wrap items-baseline gap-3">
             <span className="text-3xl font-bold text-[var(--color-primary)]">{formatPrice(displayPrice)}</span>
-            {(product.comparePrice ?? 0) > displayPrice && (
+            {pricing.was && (
               <span className="text-lg text-[var(--color-text-muted)] line-through">
                 <span className="sr-only">Was </span>
-                {formatPrice(product.comparePrice)}
+                {formatPrice(pricing.was)}
               </span>
             )}
             {discount > 0 && (
               <span className="text-sm font-semibold text-red-700 dark:text-red-400">Save {discount}%</span>
             )}
           </div>
+          {saleCampaign && (
+            <Link
+              to={salePath(saleCampaign.slug)}
+              className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-3 py-2 text-sm font-medium bg-[var(--color-primary-soft)] text-[var(--color-text)]"
+              style={saleTheme ? { backgroundColor: saleTheme.bg, color: saleTheme.text } : undefined}
+            >
+              <span className="font-semibold">
+                {liveCampaign?.emoji && <span aria-hidden="true">{liveCampaign.emoji} </span>}
+                {saleCampaign.name} price
+              </span>
+              <span aria-hidden="true">·</span>
+              <Countdown endsAt={saleCampaign.endsAt} />
+            </Link>
+          )}
 
           {product.shortDescription && <p className="text-[var(--color-text-muted)]">{product.shortDescription}</p>}
 

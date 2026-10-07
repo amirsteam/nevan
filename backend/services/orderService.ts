@@ -10,6 +10,8 @@ import User from "../models/User";
 import { paginate, PaginationResult, escapeRegex } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { sendOrderStatusNotification } from "./pushNotificationService";
+import { getLiveCampaign } from "./campaignService";
+import { priceFor } from "../utils/campaignPricing";
 
 interface ShippingAddress {
   name: string;
@@ -107,16 +109,21 @@ const createOrder = async (
   // Get user's cart
   const cart = await Cart.findOne({ user: userId }).populate({
     path: "items.product",
-    select: "name slug price images stock variants isActive",
+    select: "name slug price images stock variants isActive category",
   });
 
   if (!cart || (cart as any).items.length === 0) {
     throw new AppError("Cart is empty", 400);
   }
 
+  // Campaign sale prices apply to orders placed while the campaign is live;
+  // the order total is fixed here, so a sale ending mid-payment can't change it
+  const campaign = (await getLiveCampaign())?.pricing ?? null;
+
   // Validate products and build order items
   const orderItems: any[] = [];
   let subtotal = 0;
+  let savings = 0;
 
   for (const item of (cart as any).items) {
     const product = item.product;
@@ -128,8 +135,8 @@ const createOrder = async (
       );
     }
 
-    let itemPrice: number;
     let variantSnapshot: any = null;
+    let variantDoc: any = null;
     let variantImage: string | null = null;
 
     // If variantId exists, validate and get variant data
@@ -147,7 +154,7 @@ const createOrder = async (
         );
       }
 
-      itemPrice = variant.price;
+      variantDoc = variant;
       variantImage = variant.image;
       variantSnapshot = {
         size: variant.size,
@@ -158,11 +165,12 @@ const createOrder = async (
       if (product.stock < item.quantity) {
         throw new AppError(`Insufficient stock for ${product.name}`, 400);
       }
-      itemPrice = product.price;
     }
 
+    const { price: itemPrice, originalPrice, campaignId } = priceFor(product, variantDoc, campaign);
     const itemSubtotal = itemPrice * item.quantity;
     subtotal += itemSubtotal;
+    savings += (originalPrice - itemPrice) * item.quantity;
 
     orderItems.push({
       product: product._id,
@@ -171,6 +179,7 @@ const createOrder = async (
       slug: product.slug,
       image: variantImage || product.images[0]?.url,
       price: itemPrice,
+      ...(campaignId ? { originalPrice, campaign: campaignId } : {}),
       quantity: item.quantity,
       variant: variantSnapshot,
       subtotal: itemSubtotal,
@@ -202,6 +211,7 @@ const createOrder = async (
         subtotal,
         shippingCost,
         discount,
+        savings,
         tax,
         total,
       },

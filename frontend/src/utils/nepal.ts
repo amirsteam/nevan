@@ -27,3 +27,31 @@ export const PROVINCE_NAMES: Record<number, string> = {
 export const NEPALI_MOBILE = /^(\+?977)?9[78]\d{8}$/;
 
 export const normalizePhone = (phone: string): string => phone.replace(/[\s-]/g, "");
+
+// Nepal time is UTC+05:45 all year (no daylight saving), so admin date/time
+// inputs can be converted exactly without a timezone library
+const NEPAL_OFFSET_MS = (5 * 60 + 45) * 60 * 1000;
+
+/** ISO instant -> "YYYY-MM-DDTHH:mm" in Nepal time (for datetime-local inputs) */
+export const toNepalInput = (iso: string | Date | null | undefined): string => {
+  if (!iso) return "";
+  const time = new Date(iso).getTime();
+  return Number.isFinite(time) ? new Date(time + NEPAL_OFFSET_MS).toISOString().slice(0, 16) : "";
+};
+
+/** "YYYY-MM-DDTHH:mm" entered as Nepal time -> ISO instant */
+export const fromNepalInput = (value: string): string => {
+  const time = Date.parse(`${value}:00Z`);
+  return Number.isFinite(time) ? new Date(time - NEPAL_OFFSET_MS).toISOString() : "";
+};
+
+/** "20 Oct 2026, 6:00 am" in Nepal time */
+export const formatNepalDateTime = (iso: string | Date): string =>
+  new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Kathmandu",
+  });

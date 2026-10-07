@@ -4,8 +4,11 @@
  */
 import { Link } from "react-router-dom";
 import { RotateCcw, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
+import { CONTACT } from "../config/store";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const Returns = () => {
+  usePageTitle("Returns & exchanges");
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}
@@ -102,7 +105,7 @@ const Returns = () => {
               {
                 step: "1",
                 title: "Contact Us",
-                desc: "Send us a message on WhatsApp (+977 9844575932) or email with your order number and reason for return.",
+                desc: `Send us a message on WhatsApp (${CONTACT.phoneDisplay}) or email with your order number and reason for return.`,
               },
               {
                 step: "2",
@@ -172,7 +175,7 @@ const Returns = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <a
-              href="https://wa.me/9779844575932"
+              href={CONTACT.whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-primary"

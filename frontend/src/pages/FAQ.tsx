@@ -5,6 +5,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { DELIVERY_ESTIMATE, FREE_SHIPPING_THRESHOLD, SHIPPING_ZONES } from "../config/store";
+import { formatPrice } from "../utils/helpers";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const faqs = [
   {
@@ -12,15 +15,15 @@ const faqs = [
     items: [
       {
         q: "How long does delivery take?",
-        a: "We deliver within 3–5 business days inside Kathmandu Valley. For orders outside the valley, delivery may take 5–7 business days. You'll receive a confirmation with tracking details once your order is shipped.",
+        a: `${DELIVERY_ESTIMATE}. You can follow every step in the 'My Orders' section of your account.`,
       },
       {
         q: "Do you offer free shipping?",
-        a: "Yes! We currently offer free shipping on all orders within Nepal. No minimum order amount required.",
+        a: `Yes — shipping is free on orders of ${formatPrice(FREE_SHIPPING_THRESHOLD)} or more. Below that it costs ${formatPrice(Math.min(...SHIPPING_ZONES.map((z) => z.cost)))} inside Kathmandu Valley and up to ${formatPrice(Math.max(...SHIPPING_ZONES.map((z) => z.cost)))} for remote provinces. The exact amount is shown at checkout before you pay.`,
       },
       {
         q: "Can I track my order?",
-        a: "Absolutely. Once your order is shipped, you'll receive tracking information via email. You can also check your order status anytime in the 'My Orders' section of your account.",
+        a: "Yes. Check your order status anytime in the 'My Orders' section of your account — it shows each step from confirmation to delivery.",
       },
       {
         q: "Do you ship outside Nepal?",
@@ -113,6 +116,7 @@ const AccordionItem = ({ question, answer }: { question: string; answer: string 
 };
 
 const FAQ = () => {
+  usePageTitle("FAQ", "Answers about delivery, shipping costs, sizes, payments and returns at Nevan Handicraft.");
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}

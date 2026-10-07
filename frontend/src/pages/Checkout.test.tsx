@@ -40,7 +40,7 @@ const renderCheckout = (cart: { items: ICartItem[]; hasLoaded: boolean; loading?
   const store = configureStore({
     reducer: { cart: cartReducer, chat: chatReducer },
     preloadedState: {
-      cart: { items: cart.items, subtotal: 1200, itemCount: cart.items.length, loading: !!cart.loading, hasLoaded: cart.hasLoaded, error: null },
+      cart: { items: cart.items, subtotal: 1200, savings: 0, itemCount: cart.items.length, loading: !!cart.loading, hasLoaded: cart.hasLoaded, error: null },
     },
   });
   render(

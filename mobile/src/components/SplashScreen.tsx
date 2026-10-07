@@ -11,6 +11,7 @@ import {
   Dimensions,
   Text,
 } from "react-native";
+import { colors } from "../theme";
 
 const { width, height } = Dimensions.get("window");
 
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderRadius: 30,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -231,7 +232,7 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: 14,
-    color: "#FF9999",
+    color: colors.primary,
     marginTop: 8,
     fontWeight: "500",
     letterSpacing: 0.5,
@@ -249,7 +250,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     marginHorizontal: 4,
   },
 });

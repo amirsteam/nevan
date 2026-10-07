@@ -1,11 +1,12 @@
 /**
  * Admin Dashboard
- * Overview with stats, charts, and recent orders
+ * What needs doing today (each item links to a filtered list), store
+ * performance, low stock and best sellers.
  */
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../../api";
-import { formatPrice, formatDate } from "../../utils/helpers";
+import { adminAPI } from "../../api";
+import { formatPrice, formatDate, getErrorMessage } from "../../utils/helpers";
 import {
   LineChart,
   Line,
@@ -23,42 +24,37 @@ import {
   ShoppingCart,
   Users,
   Package,
-  TrendingUp,
   ArrowRight,
-  Loader2,
+  Clock,
+  Truck,
   AlertTriangle,
+  PackageX,
+  Mail,
+  MessageCircle,
+  CheckCircle2,
+  Plus,
+  FolderTree,
+  RefreshCw,
 } from "lucide-react";
 import { StatusBadge } from "../../components/admin";
-import type { IUser, OrderStatus } from "../../types";
+import CampaignCard from "../../components/admin/CampaignCard";
+import { useAppSelector } from "../../store/hooks";
+import { ChartSkeleton, DashboardStatSkeleton, EmptyState, LoadingRegion, Skeleton } from "../../components/ui";
+import { usePageTitle } from "../../hooks/usePageTitle";
+import type { IDashboardStats, OrderStatus } from "../../types";
 
-// GET /admin/dashboard response (routes/adminRoutes.ts + Order.getDashboardStats)
-interface DashboardStats {
-  totalOrders: number;
-  todayOrders: number;
-  pendingOrders: number;
-  totalRevenue: number;
-  totalUsers: number;
-  totalProducts: number;
-  ordersByStatus: Partial<Record<OrderStatus, number>>;
-  salesByDay: { date: string; revenue: number; orders: number }[];
-  recentOrders: {
-    _id: string;
-    orderNumber: string;
-    user?: Pick<IUser, "name" | "email"> | null;
-    orderStatus: OrderStatus;
-    total?: number;
-    createdAt: string;
-  }[];
-}
-
+// Status colours (brand-aligned; readable on light and dark surfaces)
 const STATUS_COLORS: Record<OrderStatus, string> = {
-  pending: "#F59E0B",
-  confirmed: "#3B82F6",
-  processing: "#6366F1",
-  shipped: "#8B5CF6",
-  delivered: "#10B981",
-  cancelled: "#EF4444",
+  pending: "#d97706",
+  confirmed: "#2563eb",
+  processing: "#8fae8b",
+  shipped: "#c1847b",
+  delivered: "#047857",
+  cancelled: "#dc2626",
 };
+
+const REVENUE_COLOR = "var(--color-primary)";
+const ORDERS_COLOR = "var(--color-accent-dark)";
 
 interface ChartTooltipProps {
   active?: boolean;
@@ -72,10 +68,10 @@ const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
     return (
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 shadow-lg">
         <p className="font-medium mb-1">{label}</p>
-        <p className="text-sm text-green-600">
+        <p className="text-sm text-[var(--color-primary)]">
           Revenue: {formatPrice(payload[0].value)}
         </p>
-        <p className="text-sm text-blue-600">
+        <p className="text-sm text-[var(--color-accent-strong)]">
           Orders: {payload[1]?.value || 0}
         </p>
       </div>
@@ -85,34 +81,135 @@ const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
 };
 
 const Dashboard = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  usePageTitle("Dashboard");
+  const unreadChats = useAppSelector((state) => state.chat.unreadCount);
+  const [stats, setStats] = useState<IDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const response = await api.get("/admin/dashboard");
+    let cancelled = false;
+    adminAPI
+      .getDashboard()
+      .then((response) => {
+        if (cancelled) return;
         setStats(response.data.data);
-      } catch (error) {
-        console.error("Failed to fetch dashboard:", error);
-      } finally {
-        setLoading(false);
-      }
+        setError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getErrorMessage(err, "Could not load the dashboard"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchDashboard();
-  }, []);
+  }, [reloadKey]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-[var(--color-primary)]" />
-      </div>
+      <LoadingRegion label="Loading dashboard" className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <DashboardStatSkeleton key={i} />
+          ))}
+        </div>
+        <ChartSkeleton />
+      </LoadingRegion>
     );
   }
 
-  const recentOrders = stats?.recentOrders || [];
+  if (error || !stats) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Couldn't load the dashboard"
+        description={error || "Please try again."}
+        actionLabel="Try again"
+        onAction={() => {
+          setLoading(true);
+          setReloadKey((k) => k + 1);
+        }}
+      />
+    );
+  }
 
-  const chartData = (stats?.salesByDay || []).map((day) => ({
+  const attention = stats.needsAttention;
+  const attentionItems: {
+    label: string;
+    count: number;
+    hint: string;
+    link: string;
+    icon: typeof Clock;
+    tone: "warning" | "info" | "error";
+  }[] = [
+    {
+      label: "Pending orders",
+      count: attention?.pendingOrders || 0,
+      hint: "Confirm or cancel",
+      link: "/admin/orders?status=pending",
+      icon: Clock,
+      tone: "warning",
+    },
+    {
+      label: "Ready to ship",
+      count: attention?.toShip || 0,
+      hint: "Confirmed or processing",
+      link: "/admin/orders?status=confirmed",
+      icon: Truck,
+      tone: "info",
+    },
+    {
+      label: "Refunds owed",
+      count: attention?.refundRequired || 0,
+      hint: "Paid, then cancelled",
+      link: "/admin/orders?refund=1",
+      icon: AlertTriangle,
+      tone: "error",
+    },
+    {
+      label: "Low stock",
+      count: attention?.lowStock || 0,
+      hint: `${stats.lowStockThreshold ?? 5} or fewer left`,
+      link: "/admin/products?stock=low",
+      icon: PackageX,
+      tone: "warning",
+    },
+    {
+      label: "Unread chats",
+      count: unreadChats,
+      hint: "Customers and visitors",
+      link: "/admin/chat",
+      icon: MessageCircle,
+      tone: "warning",
+    },
+    {
+      label: "Contact forms",
+      count: attention?.unreadMessages || 0,
+      hint: "Unread messages",
+      link: "/admin/messages",
+      icon: Mail,
+      tone: "info",
+    },
+  ];
+  const toneClasses = {
+    warning: "bg-[var(--color-warning)]/10 text-[var(--color-warning)]",
+    info: "bg-[var(--color-info)]/10 text-[var(--color-info)]",
+    error: "bg-[var(--color-error)]/10 text-[var(--color-error)]",
+  };
+  const allClear = attentionItems.every((item) => item.count === 0);
+
+  const recentOrders = stats.recentOrders || [];
+
+  const chartData = (stats.salesByDay || []).map((day) => ({
     ...day,
     // "2026-10-05" -> "Mon"; parsed as local noon to avoid timezone day shifts
     date: new Date(`${day.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }),
@@ -121,7 +218,7 @@ const Dashboard = () => {
   const ordersByStatus = (Object.keys(STATUS_COLORS) as OrderStatus[])
     .map((status) => ({
       name: status.charAt(0).toUpperCase() + status.slice(1),
-      value: stats?.ordersByStatus?.[status] || 0,
+      value: stats.ordersByStatus?.[status] || 0,
       color: STATUS_COLORS[status],
     }))
     .filter((entry) => entry.value > 0);
@@ -135,23 +232,23 @@ const Dashboard = () => {
     link?: string;
   }[] = [
     {
-      label: "Total Sales",
-      value: formatPrice(stats?.totalRevenue || 0),
+      label: "Revenue",
+      value: formatPrice(stats.totalRevenue || 0),
       icon: Banknote,
-      color: "text-green-500",
-      bg: "bg-green-50 dark:bg-green-900/20",
+      color: "text-[var(--color-success)]",
+      bg: "bg-[var(--color-success)]/10",
     },
     {
       label: "Total Orders",
-      value: stats?.totalOrders || 0,
+      value: stats.totalOrders || 0,
       icon: ShoppingCart,
-      color: "text-blue-500",
-      bg: "bg-blue-50 dark:bg-blue-900/20",
+      color: "text-[var(--color-info)]",
+      bg: "bg-[var(--color-info)]/10",
       link: "/admin/orders",
     },
     {
       label: "Total Users",
-      value: stats?.totalUsers || 0,
+      value: stats.totalUsers || 0,
       icon: Users,
       color: "text-[var(--color-primary)]",
       bg: "bg-[var(--color-primary-soft)]",
@@ -159,10 +256,10 @@ const Dashboard = () => {
     },
     {
       label: "Total Products",
-      value: stats?.totalProducts || 0,
+      value: stats.totalProducts || 0,
       icon: Package,
-      color: "text-orange-500",
-      bg: "bg-orange-50 dark:bg-orange-900/20",
+      color: "text-[var(--color-accent-strong)]",
+      bg: "bg-[var(--color-accent)]/15",
       link: "/admin/products",
     },
   ];
@@ -177,11 +274,52 @@ const Dashboard = () => {
             Overview of your store performance
           </p>
         </div>
-        <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
-          <TrendingUp className="w-4 h-4" />
-          Last 7 days
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            setReloadKey((k) => k + 1);
+          }}
+          className="btn btn-secondary text-sm"
+        >
+          <RefreshCw className="w-4 h-4" aria-hidden="true" />
+          Refresh
+        </button>
       </div>
+
+      {/* Needs attention */}
+      <section aria-labelledby="attention-heading" className="space-y-3">
+        <h2 id="attention-heading" className="font-semibold">
+          Needs attention
+        </h2>
+        {allClear ? (
+          <div className="card p-4 flex items-center gap-3 text-[var(--color-success)]">
+            <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
+            <span className="font-medium">All caught up — nothing waiting on you.</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            {attentionItems.map((item) => (
+              <Link
+                key={item.label}
+                to={item.link}
+                className={`card p-4 flex items-start gap-3 transition-colors hover:border-[var(--color-primary)] ${
+                  item.count === 0 ? "opacity-60" : ""
+                }`}
+              >
+                <span className={`p-2 rounded-lg shrink-0 ${toneClasses[item.tone]}`}>
+                  <item.icon className="w-5 h-5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-2xl font-bold leading-tight">{item.count}</span>
+                  <span className="block text-sm font-medium">{item.label}</span>
+                  <span className="block text-xs text-[var(--color-text-muted)]">{item.hint}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
@@ -213,30 +351,26 @@ const Dashboard = () => {
         })}
       </div>
 
-      {/* Pending Orders Alert */}
-      {!!stats?.pendingOrders && (
-        <div className="card p-4 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-900/50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600" />
-            <span className="font-medium text-yellow-800 dark:text-yellow-200">
-              {stats.pendingOrders} pending order
-              {stats.pendingOrders > 1 ? "s" : ""} need attention
-            </span>
-          </div>
-          <Link
-            to="/admin/orders?status=pending"
-            className="text-yellow-700 dark:text-yellow-300 hover:underline text-sm flex items-center gap-1"
-          >
-            View Orders <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      )}
+      {/* Festival/event campaign */}
+      <CampaignCard />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Revenue Chart */}
         <div className="lg:col-span-2 card p-4">
-          <h2 className="font-semibold mb-4">Revenue & Orders (Last 7 Days)</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <h2 className="font-semibold">Revenue &amp; orders, last 7 days</h2>
+            <div className="flex items-center gap-4 text-xs text-[var(--color-text-muted)]">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-[var(--color-primary)]" aria-hidden="true" />
+                Revenue
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 border-t-2 border-dashed border-[var(--color-accent-dark)]" aria-hidden="true" />
+                Orders
+              </span>
+            </div>
+          </div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -253,30 +387,34 @@ const Dashboard = () => {
                   yAxisId="left"
                   stroke="var(--color-text-muted)"
                   fontSize={12}
-                  tickFormatter={(value: number) => `${value / 1000}k`}
+                  tickFormatter={(value: number) => (value >= 1000 ? `${value / 1000}k` : String(value))}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
                   stroke="var(--color-text-muted)"
                   fontSize={12}
+                  allowDecimals={false}
                 />
                 <Tooltip content={<ChartTooltip />} />
                 <Line
                   yAxisId="left"
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#10B981"
+                  name="Revenue"
+                  stroke={REVENUE_COLOR}
                   strokeWidth={2}
-                  dot={{ fill: "#10B981", strokeWidth: 2 }}
+                  dot={{ fill: REVENUE_COLOR, strokeWidth: 2 }}
                 />
                 <Line
                   yAxisId="right"
                   type="monotone"
                   dataKey="orders"
-                  stroke="#3B82F6"
+                  name="Orders"
+                  stroke={ORDERS_COLOR}
                   strokeWidth={2}
-                  dot={{ fill: "#3B82F6", strokeWidth: 2 }}
+                  strokeDasharray="5 3"
+                  dot={{ fill: ORDERS_COLOR, strokeWidth: 2 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -285,7 +423,10 @@ const Dashboard = () => {
 
         {/* Orders by Status Pie Chart */}
         <div className="card p-4">
-          <h2 className="font-semibold mb-4">Orders by Status</h2>
+          <h2 className="font-semibold mb-4">Orders by status</h2>
+          {ordersByStatus.length === 0 ? (
+            <p className="h-56 flex items-center justify-center text-sm text-[var(--color-text-muted)]">No orders yet</p>
+          ) : (
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -306,20 +447,116 @@ const Dashboard = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex flex-wrap justify-center gap-3 mt-2">
+          )}
+          <ul className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
             {ordersByStatus.map((item) => (
-              <div key={item.name} className="flex items-center gap-2 text-sm">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span>
+              <li key={item.name}>
+                <Link
+                  to={`/admin/orders?status=${item.name.toLowerCase()}`}
+                  className="flex items-center gap-2 text-sm hover:text-[var(--color-primary)]"
+                >
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                    aria-hidden="true"
+                  />
                   {item.name}: {item.value}
-                </span>
-              </div>
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
+      </div>
+
+      {/* Low stock and best sellers */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section className="card" aria-labelledby="low-stock-heading">
+          <div className="p-4 border-b border-[var(--color-border)] flex justify-between items-center gap-2">
+            <h2 id="low-stock-heading" className="font-semibold">
+              Low stock
+            </h2>
+            {(stats.lowStockCount || 0) > 0 && (
+              <Link
+                to="/admin/products?stock=low"
+                className="text-sm text-[var(--color-primary)] flex items-center gap-1"
+              >
+                View all {stats.lowStockCount}
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
+            )}
+          </div>
+          {(stats.lowStockProducts || []).length === 0 ? (
+            <p className="p-6 text-sm text-[var(--color-text-muted)]">Everything is well stocked.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)]">
+              {stats.lowStockProducts.map((product) => (
+                <li key={product._id}>
+                  <Link
+                    to={`/admin/products/${product._id}/edit`}
+                    className="flex items-center gap-3 p-3 hover:bg-[var(--color-surface-muted)]"
+                  >
+                    {product.image ? (
+                      <img src={product.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                    ) : (
+                      <span className="w-10 h-10 rounded-lg bg-[var(--color-surface-muted)] shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium truncate">{product.name}</span>
+                      {product.lowVariants.length > 0 && (
+                        <span className="block text-xs text-[var(--color-text-muted)] truncate">
+                          {product.lowVariants
+                            .slice(0, 4)
+                            .map((v) => `${v.size}${v.color ? ` / ${v.color}` : ""}: ${v.stock}`)
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`text-sm font-semibold shrink-0 ${
+                        product.stock <= 0 ? "text-[var(--color-error)]" : "text-[var(--color-warning)]"
+                      }`}
+                    >
+                      {product.stock <= 0 ? "Sold out" : `${product.stock} left`}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="card" aria-labelledby="top-products-heading">
+          <div className="p-4 border-b border-[var(--color-border)]">
+            <h2 id="top-products-heading" className="font-semibold">
+              Best sellers, last 30 days
+            </h2>
+          </div>
+          {(stats.topProducts || []).length === 0 ? (
+            <p className="p-6 text-sm text-[var(--color-text-muted)]">No confirmed sales in the last 30 days yet.</p>
+          ) : (
+            <ol className="divide-y divide-[var(--color-border)]">
+              {stats.topProducts.map((product, index) => (
+                <li key={product._id} className="flex items-center gap-3 p-3">
+                  <span className="w-6 text-center text-sm font-semibold text-[var(--color-text-muted)]">
+                    {index + 1}
+                  </span>
+                  {product.image ? (
+                    <img src={product.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                  ) : (
+                    <span className="w-10 h-10 rounded-lg bg-[var(--color-surface-muted)] shrink-0" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium truncate">{product.name}</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">
+                      {product.quantity} sold
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold shrink-0">{formatPrice(product.revenue)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
       </div>
 
       {/* Recent Orders */}
@@ -365,7 +602,7 @@ const Dashboard = () => {
                   >
                     <td className="p-4">
                       <Link
-                        to={`/admin/orders`}
+                        to={`/admin/orders?order=${order._id}`}
                         className="font-medium hover:text-[var(--color-primary)]"
                       >
                         #{order.orderNumber}
@@ -401,18 +638,18 @@ const Dashboard = () => {
       {/* Quick Links */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Add New Product", link: "/admin/products", icon: Package },
+          { label: "Add new product", link: "/admin/products/new", icon: Plus },
           {
-            label: "View All Orders",
+            label: "View all orders",
             link: "/admin/orders",
             icon: ShoppingCart,
           },
           {
-            label: "Manage Categories",
+            label: "Manage categories",
             link: "/admin/categories",
-            icon: TrendingUp,
+            icon: FolderTree,
           },
-          { label: "View Customers", link: "/admin/users", icon: Users },
+          { label: "View customers", link: "/admin/users", icon: Users },
         ].map((item) => (
           <Link
             key={item.label}

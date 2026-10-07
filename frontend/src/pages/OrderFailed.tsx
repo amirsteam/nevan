@@ -11,8 +11,10 @@ import { useAuth } from "../context/AuthContext";
 import PayNowButton from "../components/PayNowButton";
 import { canPayOnline } from "../utils/payment";
 import type { IOrder } from "../types";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const OrderFailed = () => {
+  usePageTitle("Payment not completed");
   const [searchParams] = useSearchParams();
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [order, setOrder] = useState<IOrder | null>(null);

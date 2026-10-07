@@ -5,10 +5,16 @@
 import Cart, { ICart } from "../models/Cart";
 import Product from "../models/Product";
 import AppError from "../utils/AppError";
+import { getLiveCampaign } from "./campaignService";
+import { priceFor } from "../utils/campaignPricing";
+
+/** Live campaign pricing for cart totals (null when no sale is running) */
+const livePricing = async () => (await getLiveCampaign())?.pricing ?? null;
 
 interface CartResult {
   items: any[];
   subtotal: number;
+  savings: number;
   itemCount: number;
 }
 
@@ -17,7 +23,7 @@ interface CartResult {
  */
 const getCart = async (userId: string): Promise<ICart> => {
   const cart = await (Cart as any).getOrCreate(userId);
-  return cart.calculateTotal();
+  return cart.calculateTotal(await livePricing());
 };
 
 /**
@@ -33,7 +39,7 @@ const addToCart = async (
   const product = await Product.findOne({
     _id: productId,
     isActive: true,
-  }).select("name price stock variants isActive");
+  }).select("name price stock variants isActive category");
   if (!product) {
     throw new AppError("Product not found", 404);
   }
@@ -75,15 +81,18 @@ const addToCart = async (
     cart = new Cart({ user: userId, items: [] });
   }
 
+  // Remember the price shown when adding (the sale price during a campaign), so
+  // the cart only flags a change when the price really changes later
+  price = priceFor(product as any, variant, await livePricing()).price;
   await (cart as any).addItem(productId, quantity, variantId, price);
 
   // Return populated cart
   await cart.populate({
     path: "items.product",
-    select: "name slug price comparePrice images stock variants isActive",
+    select: "name slug price comparePrice images stock variants isActive category",
   });
 
-  return (cart as any).calculateTotal();
+  return (cart as any).calculateTotal(await livePricing());
 };
 
 /**
@@ -132,10 +141,10 @@ const updateCartItem = async (
 
   await cart.populate({
     path: "items.product",
-    select: "name slug price comparePrice images stock variants isActive",
+    select: "name slug price comparePrice images stock variants isActive category",
   });
 
-  return (cart as any).calculateTotal();
+  return (cart as any).calculateTotal(await livePricing());
 };
 
 /**
@@ -154,10 +163,10 @@ const removeFromCart = async (
 
   await cart.populate({
     path: "items.product",
-    select: "name slug price comparePrice images stock variants isActive",
+    select: "name slug price comparePrice images stock variants isActive category",
   });
 
-  return (cart as any).calculateTotal();
+  return (cart as any).calculateTotal(await livePricing());
 };
 
 /**
@@ -168,7 +177,7 @@ const clearCart = async (userId: string): Promise<CartResult> => {
   if (cart) {
     await (cart as any).clear();
   }
-  return { items: [], subtotal: 0, itemCount: 0 };
+  return { items: [], subtotal: 0, savings: 0, itemCount: 0 };
 };
 
 export { getCart, addToCart, updateCartItem, removeFromCart, clearCart };

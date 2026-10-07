@@ -23,6 +23,8 @@ export interface NotificationData {
   type?: "order_update" | "promotion" | "back_in_stock" | "chat_message" | "general";
   orderId?: string;
   productSlug?: string;
+  // Campaign slug on festival/event sale notifications
+  campaign?: string;
   roomId?: string;
   senderId?: string;
   senderRole?: "customer" | "admin";

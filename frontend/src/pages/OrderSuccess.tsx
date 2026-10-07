@@ -13,8 +13,10 @@ import { CheckCircle, Package, Loader2, AlertCircle, Clock } from "lucide-react"
 import PayNowButton from "../components/PayNowButton";
 import { canPayOnline } from "../utils/payment";
 import toast from "react-hot-toast";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const OrderSuccess = () => {
+  usePageTitle("Order placed");
   const [searchParams] = useSearchParams();
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(true);

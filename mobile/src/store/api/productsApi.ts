@@ -19,6 +19,8 @@ export interface ProductQueryParams {
   minPrice?: number;
   maxPrice?: number;
   featured?: boolean;
+  // Campaign slug: only the products its sale covers
+  campaign?: string;
 }
 
 export const productsApi = baseApi.injectEndpoints({

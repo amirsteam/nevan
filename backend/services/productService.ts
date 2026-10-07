@@ -11,6 +11,7 @@ import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
 import { PRODUCT_SIZES, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { campaignProductFilter } from "./campaignService";
 
 interface ProductsOptions {
   page?: number;
@@ -23,6 +24,8 @@ interface ProductsOptions {
   sort?: string;
   age?: string;
   gender?: string;
+  // Campaign slug: only the products its sale/collection covers
+  campaign?: string;
 }
 
 interface ProductsResult {
@@ -138,10 +141,18 @@ const getProducts = async (
     sort = "-createdAt",
     age,
     gender,
+    campaign,
   } = options;
 
   // Build filter
   const filter: any = { isActive: true };
+
+  if (typeof campaign === "string" && campaign.trim()) {
+    const scope = await campaignProductFilter(campaign.trim().toLowerCase());
+    if (scope._id) filter._id = scope._id;
+    // Intersected with any category filter below via $and
+    if (scope.category) filter.$and = [{ category: scope.category }];
+  }
 
   if (category) {
     // Find category by slug or ID

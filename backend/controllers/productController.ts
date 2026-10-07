@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import * as productService from "../services/productService";
 import asyncHandler from "../utils/asyncHandler";
+import { decorateProducts } from "../services/campaignService";
 
 interface MulterRequest extends Request {
   file?: any;
@@ -23,7 +24,8 @@ const getProducts = asyncHandler(async (req: Request, res: Response) => {
     status: "success",
     results: products.length,
     pagination,
-    data: { products },
+    // Live campaign sale prices are added on the way out (never stored/cached)
+    data: { products: await decorateProducts(products) },
   });
 });
 
@@ -40,7 +42,7 @@ const getFeaturedProducts = asyncHandler(
     res.status(200).json({
       status: "success",
       results: products.length,
-      data: { products },
+      data: { products: await decorateProducts(products) },
     });
   },
 );
@@ -54,10 +56,11 @@ const getProduct = asyncHandler(async (req: Request, res: Response) => {
   const product = await productService.getProductBySlug(
     req.params.slug as string,
   );
+  const [decorated] = await decorateProducts([product]);
 
   res.status(200).json({
     status: "success",
-    data: { product },
+    data: { product: decorated },
   });
 });
 

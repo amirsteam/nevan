@@ -11,7 +11,8 @@ import { useAuth } from "../../context/AuthContext";
 import { selectCartCount } from "../../store/cartSlice";
 import { useWishlist } from "../../hooks/useWishlist";
 import NotificationBell from "../NotificationBell";
-import SearchOverlay, { rememberSearch } from "./SearchOverlay";
+import SearchOverlay from "./SearchOverlay";
+import { rememberSearch } from "../../utils/recentSearches";
 import ThemeToggle from "./ThemeToggle";
 import logo from "../../assets/logo.png";
 import type { RootState } from "../../store";
@@ -37,7 +38,6 @@ const Header = (): React.ReactElement => {
   const [searchQuery, setSearchQuery] = useState("");
   const [cartBump, setCartBump] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const previousCount = useRef<number | null>(null);
 
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const { count: wishlistCount } = useWishlist();
@@ -45,22 +45,25 @@ const Header = (): React.ReactElement => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Close menus on navigation
-  useEffect(() => {
+  // Close menus on navigation (adjusting state during render, not in an effect)
+  const [lastPath, setLastPath] = useState(location.pathname);
+  if (lastPath !== location.pathname) {
+    setLastPath(location.pathname);
     setMobileMenuOpen(false);
     setUserMenuOpen(false);
-  }, [location.pathname]);
+  }
 
   // Small bump when the cart count goes up
+  const [lastCartCount, setLastCartCount] = useState(cartCount);
+  if (lastCartCount !== cartCount) {
+    setLastCartCount(cartCount);
+    if (cartCount > lastCartCount) setCartBump(true);
+  }
   useEffect(() => {
-    if (previousCount.current !== null && cartCount > previousCount.current) {
-      setCartBump(true);
-      const timer = setTimeout(() => setCartBump(false), 400);
-      previousCount.current = cartCount;
-      return () => clearTimeout(timer);
-    }
-    previousCount.current = cartCount;
-  }, [cartCount]);
+    if (!cartBump) return;
+    const timer = setTimeout(() => setCartBump(false), 400);
+    return () => clearTimeout(timer);
+  }, [cartBump]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

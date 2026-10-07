@@ -8,6 +8,7 @@ import { ImageUploader, type ImageUploaderImage } from "../../components/admin";
 import { Plus, Trash2, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { PRODUCT_SIZES, MAX_SIZE_LENGTH } from "../../utils/constants";
+import { AGE_GROUPS, PRODUCT_GENDERS, GENDER_LABELS, formatAgeGroup } from "../../config/store";
 import type { IProduct, ICategory, IProductVariant, IImage } from "../../types";
 
 import { getErrorMessage, populated } from "../../utils/helpers";
@@ -29,6 +30,9 @@ interface FormData {
   material: string;
   careInstructions: string;
   ageRecommendation: string;
+  // Storefront filters ("Shop by Age", boy/girl)
+  ageGroups: string[];
+  gender: string;
   price: string;
   comparePrice: string;
   category: string;
@@ -158,6 +162,8 @@ const ProductForm: React.FC<ProductFormProps> = ({
     material: "",
     careInstructions: "",
     ageRecommendation: "",
+    ageGroups: [],
+    gender: "",
     price: "",
     comparePrice: "",
     category: "",
@@ -211,6 +217,8 @@ const ProductForm: React.FC<ProductFormProps> = ({
         material: product.material || "",
         careInstructions: product.careInstructions || "",
         ageRecommendation: product.ageRecommendation || "",
+        ageGroups: product.ageGroups || [],
+        gender: product.gender || "",
         price: String(product.price || ""),
         comparePrice: String(product.comparePrice || ""),
         category:
@@ -560,6 +568,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         material: formData.material.trim(),
         careInstructions: formData.careInstructions.trim(),
         ageRecommendation: formData.ageRecommendation.trim(),
+        ageGroups: formData.ageGroups,
         metaTitle: formData.metaTitle.trim(),
         metaDescription: formData.metaDescription.trim(),
       };
@@ -570,6 +579,7 @@ const ProductForm: React.FC<ProductFormProps> = ({
         shortDescription: formData.shortDescription.trim() || null,
         comparePrice: comparePrice > 0 ? comparePrice : null,
         sku: formData.sku.trim() || null,
+        gender: formData.gender || null,
       };
       for (const [key, value] of Object.entries(optionalFields)) {
         if (value !== null || isEdit) productData[key] = value;
@@ -746,6 +756,63 @@ const ProductForm: React.FC<ProductFormProps> = ({
               placeholder="e.g. 0–12 months"
               maxLength={100}
             />
+          </div>
+          <fieldset className="md:col-span-2">
+            <legend className="block text-sm font-medium mb-1">
+              Age groups{" "}
+              <span className="font-normal text-[var(--color-text-muted)]">
+                (used by "Shop by Age" — untagged products don't appear there)
+              </span>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {AGE_GROUPS.map((age) => {
+                const checked = formData.ageGroups.includes(age);
+                return (
+                  <label
+                    key={age}
+                    className={`cursor-pointer select-none rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      checked
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-medium"
+                        : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          ageGroups: checked
+                            ? prev.ageGroups.filter((a) => a !== age)
+                            : AGE_GROUPS.filter((a) => a === age || prev.ageGroups.includes(a)),
+                        }))
+                      }
+                    />
+                    {formatAgeGroup(age)}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          <div>
+            <label htmlFor="product-gender" className="block text-sm font-medium mb-1">
+              Gender
+            </label>
+            <select
+              id="product-gender"
+              name="gender"
+              value={formData.gender}
+              onChange={handleChange}
+              className="select w-full"
+            >
+              <option value="">Not specified</option>
+              {PRODUCT_GENDERS.map((g) => (
+                <option key={g} value={g}>
+                  {GENDER_LABELS[g]}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">

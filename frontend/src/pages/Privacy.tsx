@@ -3,8 +3,11 @@
  */
 import { Link } from "react-router-dom";
 import { Shield } from "lucide-react";
+import { CONTACT } from "../config/store";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const Privacy = () => {
+  usePageTitle("Privacy policy");
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}
@@ -107,10 +110,10 @@ const Privacy = () => {
             <p className="mt-3">
               To exercise these rights, please contact us at{" "}
               <a
-                href="mailto:anjanastha101@gmail.com"
+                href={`mailto:${CONTACT.email}`}
                 className="text-[var(--color-primary)] hover:underline"
               >
-                anjanastha101@gmail.com
+                {CONTACT.email}
               </a>.
             </p>
           </section>
@@ -145,8 +148,8 @@ const Privacy = () => {
               If you have questions about this Privacy Policy, contact us at:
             </p>
             <ul className="mt-2 space-y-1 ml-2">
-              <li>Email: anjanastha101@gmail.com</li>
-              <li>Phone: +977 9844575932</li>
+              <li>Email: {CONTACT.email}</li>
+              <li>Phone: {CONTACT.phoneDisplay}</li>
               <li>Address: Panauti, Kavre, Nepal</li>
             </ul>
           </section>

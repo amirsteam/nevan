@@ -5,6 +5,7 @@
 import { Link } from "react-router-dom";
 import { Mail, Phone, MapPin } from "lucide-react";
 import { FaFacebook, FaInstagram } from "react-icons/fa";
+import { CONTACT } from "../../config/store";
 
 const Footer = (): React.ReactElement => {
   const currentYear = new Date().getFullYear();
@@ -131,11 +132,11 @@ const Footer = (): React.ReactElement => {
               </li>
               <li className="flex items-center gap-3 text-sm text-[var(--color-text-muted)]">
                 <Phone className="w-4 h-4 flex-shrink-0" />
-                <span>+977 9844575932</span>
+                <span>{CONTACT.phoneDisplay}</span>
               </li>
               <li className="flex items-center gap-3 text-sm text-[var(--color-text-muted)]">
                 <Mail className="w-4 h-4 flex-shrink-0" />
-                <span>anjanastha101@gmail.com</span>
+                <span>{CONTACT.email}</span>
               </li>
             </ul>
           </div>

@@ -15,6 +15,9 @@ import {
   useAddToWishlistMutation,
   useRemoveFromWishlistMutation,
 } from "../store/api";
+import { colors } from "../theme";
+import { formatNPR } from "../theme/store";
+import { cardPrice } from "../utils/pricing";
 
 interface ProductCardProps {
   product: IProduct;
@@ -75,20 +78,10 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(
       [product.images],
     );
 
-    // Calculate discount if available (memoized)
-    const { hasDiscount, discountPercent } = useMemo(() => {
-      const has =
-        product.variants?.[0]?.comparePrice &&
-        product.variants[0].comparePrice > product.price;
-      const percent = has
-        ? Math.round(
-            ((product.variants![0].comparePrice! - product.price) /
-              product.variants![0].comparePrice!) *
-              100,
-          )
-        : 0;
-      return { hasDiscount: has, discountPercent: percent };
-    }, [product.price, product.variants]);
+    // Current price incl. festival/event sale prices from the API (memoized)
+    const pricing = useMemo(() => cardPrice(product), [product]);
+    const hasDiscount = pricing.percentOff > 0;
+    const discountPercent = pricing.percentOff;
 
     return (
       <TouchableOpacity
@@ -101,6 +94,13 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(
           {hasDiscount && (
             <View style={styles.discountBadge}>
               <Text style={styles.discountText}>-{discountPercent}%</Text>
+            </View>
+          )}
+          {!!pricing.campaignName && (
+            <View style={styles.saleBadge}>
+              <Text style={styles.saleBadgeText} numberOfLines={1}>
+                {pricing.campaignName}
+              </Text>
             </View>
           )}
           {showWishlist && (
@@ -127,11 +127,9 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(
             {product.name}
           </Text>
           <View style={styles.priceRow}>
-            <Text style={styles.price}>Rs. {product.price}</Text>
-            {hasDiscount && (
-              <Text style={styles.comparePrice}>
-                Rs. {product.variants![0].comparePrice}
-              </Text>
+            <Text style={styles.price}>{formatNPR(pricing.price)}</Text>
+            {pricing.was != null && (
+              <Text style={styles.comparePrice}>{formatNPR(pricing.was)}</Text>
             )}
           </View>
           {product.stock !== undefined && product.stock <= 0 && (
@@ -180,6 +178,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
+  saleBadge: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    maxWidth: "80%",
+    backgroundColor: colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  saleBadgeText: {
+    color: colors.onPrimary,
+    fontSize: 10,
+    fontWeight: "700",
+  },
   wishlistButton: {
     position: "absolute",
     top: 8,
@@ -216,7 +229,7 @@ const styles = StyleSheet.create({
   },
   price: {
     fontSize: 15,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
   },
   comparePrice: {

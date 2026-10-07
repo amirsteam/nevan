@@ -17,8 +17,10 @@ import {
     Truck,
     XCircle,
     Loader2,
+    Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { printPackingSlip } from '../../utils/packingSlip';
 
 interface OrderDetailProps {
     order: IOrder;
@@ -91,7 +93,17 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                         Placed on {formatDateTime(order.createdAt)}
                     </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (!printPackingSlip(order)) toast.error('Allow pop-ups for this site to print the packing slip');
+                        }}
+                        className="btn btn-secondary text-sm py-1.5"
+                    >
+                        <Printer className="w-4 h-4" aria-hidden="true" />
+                        Packing slip
+                    </button>
                     <StatusBadge status={order.status} size="lg" />
                     <StatusBadge
                         status={order.payment?.status}

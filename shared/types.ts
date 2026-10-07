@@ -107,6 +107,16 @@ export interface IProductVariant {
   comparePrice?: number;
   stock: number;
   image?: string; // URL string, not IImage object
+  // Present while a campaign sale discounts this variant
+  salePrice?: number;
+}
+
+/** Campaign sale price (added by the API while a festival/event sale is live) */
+export interface IProductSale {
+  price: number;
+  originalPrice: number;
+  percentOff: number;
+  campaign: { slug: string; name: string; endsAt: string };
 }
 
 export interface IProduct {
@@ -127,6 +137,7 @@ export interface IProduct {
   isFeatured?: boolean;
   isActive?: boolean;
   variants?: IProductVariant[];
+  sale?: IProductSale;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -337,4 +348,43 @@ export interface IReview {
   comment?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================
+// Campaigns (festivals and events)
+// ============================================
+
+export interface ICampaignTheme {
+  label: string;
+  bg: string;
+  text: string;
+  accent: string;
+  onAccent: string;
+  highlight: string;
+}
+
+/** GET /campaigns/live — the campaign running now */
+export interface IPublicCampaign {
+  _id: string;
+  name: string;
+  slug: string;
+  festival: string;
+  headline: string;
+  subheadline: string;
+  greeting: string;
+  emoji: string;
+  ctaLabel: string;
+  bannerDesktop: string | null;
+  bannerMobile: string | null;
+  startsAt: string;
+  endsAt: string;
+  state: "draft" | "scheduled" | "live" | "ended";
+  theme: ICampaignTheme;
+  sale: {
+    type: "none" | "percent" | "fixed";
+    value: number;
+    scope: "all" | "categories" | "products";
+    label: string | null;
+    categories: { _id: string; name: string; slug: string }[];
+  };
 }

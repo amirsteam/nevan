@@ -131,6 +131,7 @@ const openApiSpec = {
     { name: "Notifications" },
     { name: "Chat" },
     { name: "Contact" },
+    { name: "Campaigns" },
     { name: "Admin" },
     { name: "System" },
   ],
@@ -316,6 +317,7 @@ const openApiSpec = {
           { name: "maxPrice", in: "query", schema: { type: "number" } },
           { name: "age", in: "query", description: "Age band (products tagged with it)", schema: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] } },
           { name: "gender", in: "query", description: "boy/girl also include unisex products", schema: { type: "string", enum: ["boy", "girl", "unisex"] } },
+          { name: "campaign", in: "query", description: "Campaign slug: only the products its sale/collection covers (sale page)", schema: { type: "string" } },
           {
             name: "sort",
             in: "query",
@@ -325,6 +327,9 @@ const openApiSpec = {
       }, "none"),
     },
     "/products/featured": { get: op("Products", "Featured products", {}, "none") },
+    // While a campaign is live, product responses (list, featured, detail) carry
+    // `sale: { price, originalPrice, percentOff, campaign: { slug, name, endsAt } }`
+    // on discounted products and `salePrice` on discounted variants.
     "/products/{slug}": {
       get: op("Products", "Product by slug", { parameters: [pathParam("slug", "Product slug")] }, "none"),
     },
@@ -488,6 +493,14 @@ const openApiSpec = {
         }),
       }, "none"),
     },
+    "/campaigns/live": {
+      get: op("Campaigns", "The festival/event campaign running now (null when none), with its resolved colour theme and sale summary. Admins may pass ?preview=<id> to see any campaign.", {
+        parameters: [{ name: "preview", in: "query", description: "Campaign id (admins only)", schema: { type: "string" } }],
+      }, "none"),
+    },
+    "/campaigns/{slug}": {
+      get: op("Campaigns", "A published campaign for its sale page (state is live, scheduled or ended)", { parameters: [pathParam("slug", "Campaign slug")] }, "none"),
+    },
     "/newsletter/subscribe": {
       post: op("Contact", "Subscribe to the newsletter (idempotent; rate limited)", {
         requestBody: json({
@@ -509,6 +522,94 @@ const openApiSpec = {
     // ---------------- Admin ----------------
     "/admin/dashboard": {
       get: op("Admin", "Store stats, 7-day sales, orders by status, needs-attention counts, low-stock products and 30-day top products", {}, "admin"),
+    },
+    "/admin/campaigns/presets": {
+      get: op("Admin", "Festival presets (look and copy) and the colour palettes campaigns can use", {}, "admin"),
+    },
+    "/admin/campaigns": {
+      get: op("Admin", "All campaigns (newest first) with state draft/scheduled/live/ended", {}, "admin"),
+      post: op("Admin", "Create a campaign. Missing look fields come from the festival preset. Published campaigns may not overlap (409).", {
+        requestBody: json({
+            type: "object",
+            properties: {
+              name: { type: "string", maxLength: 80 },
+              festival: { type: "string", enum: ["dashain", "tihar", "chhath", "holi", "christmas", "new-year", "nepali-new-year", "teej", "lhosar", "custom"] },
+              headline: { type: "string", maxLength: 80 },
+              subheadline: { type: "string", maxLength: 160 },
+              greeting: { type: "string", maxLength: 80 },
+              emoji: { type: "string" },
+              palette: { type: "string", enum: ["brand", "marigold", "diyo", "sindoor", "holi", "pine", "himal", "teej"] },
+              ctaLabel: { type: "string", maxLength: 30 },
+              startsAt: { type: "string", format: "date-time" },
+              endsAt: { type: "string", format: "date-time" },
+              status: { type: "string", enum: ["draft", "published"] },
+              sale: {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["none", "percent", "fixed"] },
+                  value: { type: "number", description: "Percent (1-70) or NPR amount" },
+                  scope: { type: "string", enum: ["all", "categories", "products"] },
+                  categories: { type: "array", items: { type: "string" } },
+                  products: { type: "array", items: { type: "string" } },
+                  excludeProducts: { type: "array", items: { type: "string" } },
+                },
+              },
+              notify: { type: "object", properties: { pushOnLaunch: { type: "boolean" } } },
+            },
+          }),
+      }, "admin"),
+    },
+    "/admin/campaigns/{id}": {
+      get: op("Admin", "Campaign by id", { parameters: [pathParam("id")] }, "admin"),
+      put: op("Admin", "Update a campaign (same rules as create)", { parameters: [pathParam("id")], requestBody: json({
+            type: "object",
+            properties: {
+              name: { type: "string", maxLength: 80 },
+              festival: { type: "string", enum: ["dashain", "tihar", "chhath", "holi", "christmas", "new-year", "nepali-new-year", "teej", "lhosar", "custom"] },
+              headline: { type: "string", maxLength: 80 },
+              subheadline: { type: "string", maxLength: 160 },
+              greeting: { type: "string", maxLength: 80 },
+              emoji: { type: "string" },
+              palette: { type: "string", enum: ["brand", "marigold", "diyo", "sindoor", "holi", "pine", "himal", "teej"] },
+              ctaLabel: { type: "string", maxLength: 30 },
+              startsAt: { type: "string", format: "date-time" },
+              endsAt: { type: "string", format: "date-time" },
+              status: { type: "string", enum: ["draft", "published"] },
+              sale: {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["none", "percent", "fixed"] },
+                  value: { type: "number", description: "Percent (1-70) or NPR amount" },
+                  scope: { type: "string", enum: ["all", "categories", "products"] },
+                  categories: { type: "array", items: { type: "string" } },
+                  products: { type: "array", items: { type: "string" } },
+                  excludeProducts: { type: "array", items: { type: "string" } },
+                },
+              },
+              notify: { type: "object", properties: { pushOnLaunch: { type: "boolean" } } },
+            },
+          }) }, "admin"),
+      delete: op("Admin", "Delete a campaign and its banners", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/campaigns/{id}/duplicate": {
+      post: op("Admin", "Copy as a draft with dates moved forward a year (banners are not copied)", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/campaigns/{id}/banner": {
+      post: op("Admin", "Upload the desktop (?variant=desktop) or mobile (?variant=mobile) banner (multipart field `image`, max 3 MB)", {
+        parameters: [pathParam("id"), { name: "variant", in: "query", schema: { type: "string", enum: ["desktop", "mobile"] } }],
+      }, "admin"),
+      delete: op("Admin", "Remove a banner", {
+        parameters: [pathParam("id"), { name: "variant", in: "query", schema: { type: "string", enum: ["desktop", "mobile"] } }],
+      }, "admin"),
+    },
+    "/admin/campaigns/{id}/notify": {
+      post: op("Admin", "Send the campaign push notification now (published campaigns; not repeated at launch)", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/campaigns/{id}/stats": {
+      get: op("Admin", "Orders, units, revenue and customer savings from items sold at this campaign's prices", { parameters: [pathParam("id")] }, "admin"),
+    },
+    "/admin/badges": {
+      get: op("Admin", "Navigation badge counts: pendingOrders, refundRequired (cancelled but paid), unreadMessages", {}, "admin"),
     },
     "/admin/products": {
       get: op("Admin", "All products incl. inactive", {

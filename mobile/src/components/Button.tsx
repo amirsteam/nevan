@@ -7,6 +7,7 @@ import {
   ViewStyle,
   TextStyle,
 } from "react-native";
+import { colors } from "../theme";
 
 type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger";
 type ButtonSize = "small" | "medium" | "large";
@@ -53,7 +54,7 @@ const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           color={
-            variant === "outline" || variant === "ghost" ? "#FF9999" : "#fff"
+            variant === "outline" || variant === "ghost" ? colors.primary : "#fff"
           }
           size="small"
         />
@@ -88,8 +89,8 @@ const styles = StyleSheet.create({
   },
   // Variants
   primary: {
-    backgroundColor: "#FF9999",
-    shadowColor: "#FF9999",
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
   outline: {
     backgroundColor: "transparent",
     borderWidth: 2,
-    borderColor: "#FF9999",
+    borderColor: colors.primary,
   },
   ghost: {
     backgroundColor: "transparent",
@@ -144,10 +145,10 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   outlineText: {
-    color: "#FF9999",
+    color: colors.primary,
   },
   ghostText: {
-    color: "#FF9999",
+    color: colors.primary,
   },
   dangerText: {
     color: "#fff",

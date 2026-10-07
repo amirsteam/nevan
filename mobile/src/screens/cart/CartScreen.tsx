@@ -20,6 +20,7 @@ import {
 } from "../../store/cartSlice";
 import type { CartScreenProps } from "../../navigation/types";
 import type { ICartItem } from "@shared/types";
+import { colors } from "../../theme";
 
 // Memoized CartItem component to prevent unnecessary re-renders
 interface CartItemProps {
@@ -223,11 +224,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   browseButton: {
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     paddingHorizontal: 30,
     paddingVertical: 14,
     borderRadius: 25,
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -280,7 +281,7 @@ const styles = StyleSheet.create({
   },
   price: {
     fontSize: 15,
-    color: "#FF9999",
+    color: colors.primary,
     fontWeight: "700",
     marginTop: 4,
   },
@@ -336,11 +337,11 @@ const styles = StyleSheet.create({
     color: "#4A4A4A",
   },
   checkoutButton: {
-    backgroundColor: "#FF9999",
+    backgroundColor: colors.primary,
     paddingVertical: 18,
     borderRadius: 30,
     alignItems: "center",
-    shadowColor: "#FF9999",
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

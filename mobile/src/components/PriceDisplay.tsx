@@ -1,5 +1,6 @@
 import React from "react";
 import { Text, StyleSheet, TextStyle } from "react-native";
+import { colors } from "../theme";
 
 interface PriceDisplayProps {
   price: number;
@@ -43,7 +44,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   defaultColor: {
-    color: "#FF9999",
+    color: colors.primary,
   },
   strikethrough: {
     textDecorationLine: "line-through",

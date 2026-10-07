@@ -33,6 +33,8 @@ const fillBasics = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.selectOptions(screen.getByDisplayValue("Select category"), "cat1");
 };
 
+const stockInput = () => screen.getAllByPlaceholderText("0")[1] as HTMLInputElement;
+
 describe("ProductForm sizes", () => {
   beforeEach(() => {
     Object.values(api).forEach((fn) => fn.mockReset());
@@ -77,6 +79,25 @@ describe("ProductForm sizes", () => {
     expect(payload.variants[0]).not.toHaveProperty("_id");
   });
 
+  it("tags products with age groups and gender for the shop filters", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    render(<ProductForm categories={categories} onSuccess={onSuccess} onCancel={vi.fn()} />);
+
+    await fillBasics(user);
+    await user.type(stockInput(), "5");
+    // Picked out of order; saved in the canonical age order
+    await user.click(screen.getByLabelText("1–2 years"));
+    await user.click(screen.getByLabelText("6–12 months"));
+    await user.selectOptions(screen.getByLabelText("Gender"), "girl");
+    await user.click(screen.getByRole("button", { name: "Create Product" }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    const payload = api.createProduct.mock.calls[0][0];
+    expect(payload.ageGroups).toEqual(["6-12 Months", "1-2 Years"]);
+    expect(payload.gender).toBe("girl");
+  });
+
   it("blocks duplicate size/color variants before saving", async () => {
     const user = userEvent.setup();
     render(<ProductForm categories={categories} onSuccess={vi.fn()} onCancel={vi.fn()} />);
@@ -118,5 +139,8 @@ describe("ProductForm sizes", () => {
     const payload = api.updateProduct.mock.calls[0][1];
     expect(payload.variants[0]).toMatchObject({ _id: "v1", size: "18-24 Months" });
     expect(payload.comparePrice).toBeNull();
+    // Untouched tags stay empty; an unset gender is cleared rather than omitted
+    expect(payload.ageGroups).toEqual([]);
+    expect(payload.gender).toBeNull();
   });
 });

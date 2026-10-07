@@ -24,6 +24,8 @@ import {
   Clock,
 } from "lucide-react-native";
 import type { HelpSupportScreenProps } from "../../navigation/types";
+import { colors } from "../../theme";
+import { CONTACT, FREE_SHIPPING_THRESHOLD, formatNPR } from "../../theme/store";
 
 interface FAQ {
   id: string;
@@ -60,13 +62,13 @@ const faqs: FAQ[] = [
     id: "5",
     question: "How long does delivery take?",
     answer:
-      "Delivery within Kathmandu Valley takes 2-3 business days. For other areas in Nepal, it takes 5-7 business days. International shipping typically takes 10-15 business days.",
+      `Delivery takes 3–5 business days inside Kathmandu Valley and 5–10 business days elsewhere in Nepal. Shipping is free on orders of ${formatNPR(FREE_SHIPPING_THRESHOLD)} or more; otherwise it costs Rs. 100–300 depending on your location, shown at checkout.`,
   },
   {
     id: "6",
     question: "Do you ship internationally?",
     answer:
-      "Yes, we ship to select countries. Shipping costs and delivery times vary by destination. Contact us for specific information about your country.",
+      "Not yet — we currently deliver only within Nepal.",
   },
   {
     id: "7",
@@ -100,14 +102,13 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
   };
 
   const handleCall = () => {
-    const phoneNumber = "+977-1-4XXXXXX";
-    Linking.openURL(`tel:${phoneNumber}`).catch(() => {
+    Linking.openURL(CONTACT.phoneHref).catch(() => {
       Alert.alert("Error", "Unable to make phone call");
     });
   };
 
   const handleEmail = () => {
-    const email = "support@nevanhandicraft.com";
+    const email = CONTACT.email;
     const subject = "Support Request";
     Linking.openURL(`mailto:${email}?subject=${subject}`).catch(() => {
       Alert.alert("Error", "Unable to open email client");
@@ -115,17 +116,15 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
   };
 
   const handleWhatsApp = () => {
-    const phoneNumber = "+9779XXXXXXXXX";
     const message = "Hi, I need help with my order";
-    Linking.openURL(
-      `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`,
-    ).catch(() => {
-      Alert.alert("Error", "WhatsApp is not installed");
+    // wa.me opens the WhatsApp app when installed, otherwise WhatsApp Web
+    Linking.openURL(`${CONTACT.whatsappHref}?text=${encodeURIComponent(message)}`).catch(() => {
+      Alert.alert("Error", "Unable to open WhatsApp");
     });
   };
 
   const handleMaps = () => {
-    const address = "Thamel, Kathmandu, Nepal";
+    const address = "Taukhal, Panauti, Kavrepalanchok, Nepal";
     Linking.openURL(
       `https://maps.google.com/?q=${encodeURIComponent(address)}`,
     ).catch(() => {
@@ -140,7 +139,7 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
   const contactOptions: ContactOption[] = [
     {
       id: "chat",
-      icon: <MessageCircle size={22} color="#6366F1" />,
+      icon: <MessageCircle size={22} color={colors.primary} />,
       title: "Support Chat",
       subtitle: "Chat with our team",
       action: handleSupportChat,
@@ -149,14 +148,14 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
       id: "phone",
       icon: <Phone size={22} color="#4CAF50" />,
       title: "Call Us",
-      subtitle: "+977-1-4XXXXXX",
+      subtitle: CONTACT.phoneDisplay,
       action: handleCall,
     },
     {
       id: "email",
       icon: <Mail size={22} color="#2196F3" />,
       title: "Email Support",
-      subtitle: "support@nevanhandicraft.com",
+      subtitle: CONTACT.email,
       action: handleEmail,
     },
     {
@@ -169,8 +168,8 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
     {
       id: "location",
       icon: <MapPin size={22} color="#F44336" />,
-      title: "Visit Store",
-      subtitle: "Thamel, Kathmandu",
+      title: "Find Us",
+      subtitle: "Panauti, Kavre",
       action: handleMaps,
     },
   ];
@@ -185,8 +184,8 @@ const HelpSupportScreen: React.FC<HelpSupportScreenProps> = ({
             <Text style={styles.hoursTitle}>Business Hours</Text>
           </View>
           <Text style={styles.hoursText}>
-            Sunday - Friday: 10:00 AM - 6:00 PM{"\n"}
-            Saturday: 10:00 AM - 4:00 PM
+            Sunday – Friday: 10:00 AM – 7:00 PM{"\n"}
+            We usually reply to messages within a few hours.
           </Text>
         </View>
 

@@ -14,10 +14,13 @@ import {
 } from '../../components/admin';
 import { Shield, ShieldCheck, ToggleLeft, ToggleRight, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { usePageTitle } from '../../hooks/usePageTitle';
 import type { DataTableColumn, DataTableAction } from '../../components/admin/DataTable';
 import type { IUser, UserRole } from '../../types';
 
 const Users = () => {
+    usePageTitle('Users');
+
     // State
     const [users, setUsers] = useState<IUser[]>([]);
     const [loading, setLoading] = useState(true);
@@ -28,9 +31,10 @@ const Users = () => {
         itemsPerPage: 20,
     });
 
-    // Filters
+    // Filters (search runs on the server across all users)
     const [search, setSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
 
     // Dialogs
     const [roleDialog, setRoleDialog] = useState<{ open: boolean; user: IUser | null; newRole: UserRole | '' }>({ open: false, user: null, newRole: '' });
@@ -45,6 +49,8 @@ const Users = () => {
                 page: pagination.currentPage,
                 limit: pagination.itemsPerPage,
                 role: roleFilter || undefined,
+                isActive: statusFilter ? statusFilter === 'active' : undefined,
+                search: search || undefined,
             };
 
             const response = await adminAPI.getUsers(params);
@@ -60,21 +66,16 @@ const Users = () => {
         } finally {
             setLoading(false);
         }
-    }, [pagination.currentPage, pagination.itemsPerPage, roleFilter]);
+    }, [pagination.currentPage, pagination.itemsPerPage, roleFilter, statusFilter, search]);
 
     useEffect(() => {
         fetchUsers();
     }, [fetchUsers]);
 
-    // Filter users by search (client-side for name/email)
-    const filteredUsers = users.filter((user) => {
-        if (!search) return true;
-        const searchLower = search.toLowerCase();
-        return (
-            user.name?.toLowerCase().includes(searchLower) ||
-            user.email?.toLowerCase().includes(searchLower)
-        );
-    });
+    const handleSearch = (value: string) => {
+        setSearch(value.trim());
+        setPagination((prev) => ({ ...prev, currentPage: 1 }));
+    };
 
     // Handle page change
     const handlePageChange = (page: number) => {
@@ -232,8 +233,14 @@ const Users = () => {
     return (
         <div>
             {/* Header */}
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-wrap justify-between items-baseline gap-2 mb-6">
                 <h1 className="text-2xl font-bold">Users</h1>
+                {!loading && (
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                        {pagination.totalItems} user{pagination.totalItems === 1 ? '' : 's'}
+                        {search || roleFilter || statusFilter ? ' match' : ''}
+                    </p>
+                )}
             </div>
 
             {/* Filters */}
@@ -241,23 +248,40 @@ const Users = () => {
                 <div className="p-4 flex flex-col sm:flex-row gap-4">
                     <SearchInput
                         value={search}
-                        onChange={setSearch}
-                        placeholder="Search by name or email..."
+                        onChange={handleSearch}
+                        placeholder="Search by name, email or phone..."
                         className="flex-1"
                     />
 
-                    <select
-                        value={roleFilter}
-                        onChange={(e) => {
-                            setRoleFilter(e.target.value);
-                            setPagination((prev) => ({ ...prev, currentPage: 1 }));
-                        }}
-                        className="select w-auto"
-                    >
-                        <option value="">All Roles</option>
-                        <option value="customer">Customers</option>
-                        <option value="admin">Admins</option>
-                    </select>
+                    <div className="flex flex-wrap gap-3">
+                        <select
+                            value={roleFilter}
+                            onChange={(e) => {
+                                setRoleFilter(e.target.value);
+                                setPagination((prev) => ({ ...prev, currentPage: 1 }));
+                            }}
+                            className="select w-auto"
+                            aria-label="Filter by role"
+                        >
+                            <option value="">All Roles</option>
+                            <option value="customer">Customers</option>
+                            <option value="admin">Admins</option>
+                        </select>
+
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => {
+                                setStatusFilter(e.target.value);
+                                setPagination((prev) => ({ ...prev, currentPage: 1 }));
+                            }}
+                            className="select w-auto"
+                            aria-label="Filter by status"
+                        >
+                            <option value="">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Deactivated</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -265,14 +289,14 @@ const Users = () => {
             <div className="card">
                 <DataTable
                     columns={columns}
-                    data={filteredUsers}
+                    data={users}
                     loading={loading}
-                    emptyMessage="No users found"
+                    emptyMessage={search ? `No users match "${search}"` : 'No users found'}
                     actions={getRowActions}
                 />
 
                 {/* Pagination */}
-                {!loading && filteredUsers.length > 0 && (
+                {!loading && users.length > 0 && (
                     <div className="p-4 border-t border-[var(--color-border)]">
                         <Pagination
                             currentPage={pagination.currentPage}

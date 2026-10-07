@@ -11,26 +11,7 @@ import { productsAPI } from "../../api";
 import { formatPrice } from "../../utils/helpers";
 import { imageUrl } from "../../utils/image";
 import type { IProduct } from "../../types";
-
-const RECENT_KEY = "nevan-recent-searches";
-
-const readRecent = (): string[] => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string").slice(0, 5) : [];
-  } catch {
-    return [];
-  }
-};
-
-export const rememberSearch = (query: string): void => {
-  try {
-    const next = [query, ...readRecent().filter((q) => q.toLowerCase() !== query.toLowerCase())].slice(0, 5);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // Not remembered; search still works
-  }
-};
+import { readRecentSearches, rememberSearch } from "../../utils/recentSearches";
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -40,39 +21,40 @@ interface SearchOverlayProps {
 const SearchOverlay = ({ isOpen, onClose }: SearchOverlayProps) => {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<IProduct[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Results remember which query they answer, so "loading" is simply
+  // "the current query has no answer yet" (no state reset needed)
+  const [found, setFound] = useState<{ query: string; products: IProduct[] }>({ query: "", products: [] });
   const [recent, setRecent] = useState<string[]>([]);
 
-  useEffect(() => {
+  // Fresh state each time the overlay opens (adjusting state during render)
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (wasOpen !== isOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
-      setRecent(readRecent());
+      setRecent(readRecentSearches());
       setQuery("");
-      setResults([]);
     }
-  }, [isOpen]);
+  }
+
+  const trimmedQuery = query.trim();
+  const searching = trimmedQuery.length >= 2;
+  const results = searching && found.query === trimmedQuery ? found.products : [];
+  const loading = searching && found.query !== trimmedQuery;
 
   useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
+    if (trimmedQuery.length < 2) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       productsAPI
-        .getProducts({ search: q, limit: 5 })
-        .then((res) => !cancelled && setResults(res.data.products || []))
-        .catch(() => !cancelled && setResults([]))
-        .finally(() => !cancelled && setLoading(false));
+        .getProducts({ search: trimmedQuery, limit: 5 })
+        .then((res) => !cancelled && setFound({ query: trimmedQuery, products: res.data.products || [] }))
+        .catch(() => !cancelled && setFound({ query: trimmedQuery, products: [] }));
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [trimmedQuery]);
 
   const go = (q: string) => {
     const trimmed = q.trim();
