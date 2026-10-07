@@ -1,10 +1,15 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Where the dev server proxies /api and /socket.io. Set VITE_DEV_API_TARGET in
+  // .env.development.local when the backend isn't on port 5000.
+  const apiTarget = loadEnv(mode, __dirname, "").VITE_DEV_API_TARGET || "http://localhost:5000";
+
+  return {
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -22,14 +27,15 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        target: apiTarget,
         changeOrigin: true,
       },
       "/socket.io": {
-        target: "http://localhost:5000",
+        target: apiTarget,
         changeOrigin: true,
         ws: true,
       },
     },
   },
+  };
 });

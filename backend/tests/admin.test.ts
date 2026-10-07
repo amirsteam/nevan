@@ -266,3 +266,26 @@ describe("Admin user search", () => {
     expect(literal.body.data.users).toHaveLength(0);
   });
 });
+
+describe("Image uploads without Cloudinary credentials", () => {
+  it("answers 503 instead of crashing the server", async () => {
+    const product = await createProduct();
+    const token = await asAdmin();
+    const saved = process.env.CLOUDINARY_API_SECRET;
+    delete process.env.CLOUDINARY_API_SECRET;
+    try {
+      const res = await request(app)
+        .post(`/api/v1/admin/products/${product._id}/images`)
+        .set("Authorization", `Bearer ${token}`)
+        .attach("images", Buffer.from("fake image"), { filename: "photo.jpg", contentType: "image/jpeg" });
+      expect(res.status).toBe(503);
+      expect(res.body.message).toMatch(/Image uploads aren't set up/);
+    } finally {
+      process.env.CLOUDINARY_API_SECRET = saved;
+    }
+
+    // The API keeps serving
+    const list = await request(app).get("/api/v1/products");
+    expect(list.status).toBe(200);
+  });
+});

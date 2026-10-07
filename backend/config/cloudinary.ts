@@ -11,6 +11,7 @@ import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 // @ts-ignore
 import multer from "multer";
+import AppError from "../utils/AppError";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -100,6 +101,42 @@ const campaignStorage = new CloudinaryStorage({
   } as any,
 });
 
+/** All three Cloudinary credentials are set */
+const isCloudinaryConfigured = (): boolean =>
+  !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+
+/**
+ * Without credentials, Cloudinary rejects the upload inside the multer storage
+ * engine as an unhandled promise rejection, which shuts the whole server down
+ * (server.ts). Refuse uploads with a clear 503 before multer runs instead.
+ */
+const requireCloudinary = (instance: any) => {
+  const guard =
+    (method: string) =>
+    (...args: unknown[]) => {
+      const middleware = instance[method](...args);
+      return (req: any, res: any, next: any) => {
+        if (!isCloudinaryConfigured()) {
+          return next(
+            new AppError(
+              "Image uploads aren't set up on this server yet. Add the CLOUDINARY_* settings to backend/.env and restart.",
+              503,
+            ),
+          );
+        }
+        return middleware(req, res, next);
+      };
+    };
+  return {
+    ...instance,
+    single: guard("single"),
+    array: guard("array"),
+    fields: guard("fields"),
+    any: guard("any"),
+    none: instance.none.bind(instance),
+  };
+};
+
 // Multer upload instances
 const uploadProductImages = multer({
   storage: productStorage,
@@ -183,13 +220,24 @@ const getOptimizedUrl = (
   return cloudinary.url(publicId, defaultOptions);
 };
 
+const guardedProductImages = requireCloudinary(uploadProductImages);
+const guardedAvatar = requireCloudinary(uploadAvatar);
+const guardedCategoryImage = requireCloudinary(uploadCategoryImage);
+const guardedChatImage = requireCloudinary(uploadChatImage);
+const guardedCampaignBanner = requireCloudinary(uploadCampaignBanner);
+
+if (!isCloudinaryConfigured() && process.env.NODE_ENV !== "test") {
+  console.warn("⚠️  Cloudinary is not configured (CLOUDINARY_* in .env): image uploads will return 503.");
+}
+
 export {
   cloudinary,
-  uploadProductImages,
-  uploadAvatar,
-  uploadCategoryImage,
-  uploadChatImage,
-  uploadCampaignBanner,
+  isCloudinaryConfigured,
+  guardedProductImages as uploadProductImages,
+  guardedAvatar as uploadAvatar,
+  guardedCategoryImage as uploadCategoryImage,
+  guardedChatImage as uploadChatImage,
+  guardedCampaignBanner as uploadCampaignBanner,
   deleteImage,
   getOptimizedUrl,
 };
