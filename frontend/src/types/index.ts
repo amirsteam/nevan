@@ -13,6 +13,8 @@ export interface IImage {
   publicId: string;
   alt?: string;
   isPrimary?: boolean;
+  // Product photos: the colour this photo shows (null/absent = every colour)
+  color?: string | null;
 }
 
 export interface IApiResponse<T> {
@@ -106,9 +108,16 @@ export interface IProductVariant {
   price: number;
   comparePrice?: number;
   stock: number;
-  image?: string;
+  // Derived by the API: the first photo of this variant's colour
+  image?: string | null;
   // Present while a campaign sale discounts this variant
   salePrice?: number;
+}
+
+/** A product colour with its swatch */
+export interface IProductColor {
+  name: string;
+  hex?: string;
 }
 
 /** Campaign sale price on a product (set by the API while a campaign is live) */
@@ -147,6 +156,9 @@ export interface IProduct {
   metaTitle?: string;
   metaDescription?: string;
   variants?: IProductVariant[];
+  // Option lists in display order (products with variants)
+  sizes?: string[];
+  colors?: IProductColor[];
   sale?: IProductSale;
   createdAt?: string;
   updatedAt?: string;

@@ -56,30 +56,40 @@ const shippingAddress = {
 
 const variantSchema = {
   type: "object",
-  required: ["size", "color"],
+  required: ["size", "color", "price"],
   properties: {
     _id: { type: "string", description: "Existing variant id (update only)" },
     size: {
       type: "string",
       maxLength: 40,
-      description: "A built-in size (see GET /admin/products/sizes) or any custom size",
+      description: "A built-in size (see GET /admin/products/options) or any custom size",
       example: "3-6 Months",
     },
-    color: { type: "string" },
-    price: { type: "number", minimum: 0 },
+    color: { type: "string", maxLength: 30, description: "Matched to `colors` case-insensitively" },
+    price: { type: "number", exclusiveMinimum: true, minimum: 0 },
+    comparePrice: { type: "number", minimum: 0, nullable: true, description: "Ignored unless higher than price" },
     stock: { type: "integer", minimum: 0 },
-    image: { type: "string", nullable: true },
+    sku: { type: "string", maxLength: 50, nullable: true },
+    image: {
+      type: "string",
+      nullable: true,
+      readOnly: true,
+      description: "Derived: the first photo tagged with this variant's colour (ignored in requests)",
+    },
   },
 };
 
 const productBody = {
   type: "object",
-  required: ["name", "description", "price", "category"],
+  required: ["name", "description", "category"],
+  description:
+    "With variants, `price`/`comparePrice` are derived from the cheapest variant and `stock` is their total; " +
+    "`ageGroups` follow the sizes when they're on the age scale. Without variants `price` (> 0) is required.",
   properties: {
     name: { type: "string", maxLength: 100 },
     description: { type: "string", maxLength: 2000 },
     shortDescription: { type: "string", maxLength: 200, nullable: true },
-    price: { type: "number", minimum: 0 },
+    price: { type: "number", minimum: 0, description: "Required (> 0) for products without variants" },
     comparePrice: { type: "number", minimum: 0, nullable: true },
     category: { type: "string" },
     stock: { type: "integer", minimum: 0, description: "Used when the product has no variants" },
@@ -101,6 +111,16 @@ const productBody = {
       type: "array",
       description: "Size/color combinations must be unique (case-insensitive)",
       items: variantSchema,
+    },
+    sizes: { type: "array", description: "Size display order (sizes not listed follow in age order)", items: { type: "string" } },
+    colors: {
+      type: "array",
+      description: "Colour display order and swatches",
+      items: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string", maxLength: 30 }, hex: { type: "string", example: "#c1847b" } },
+      },
     },
   },
 };
@@ -318,6 +338,12 @@ const openApiSpec = {
           { name: "age", in: "query", description: "Age band (products tagged with it)", schema: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] } },
           { name: "gender", in: "query", description: "boy/girl also include unisex products", schema: { type: "string", enum: ["boy", "girl", "unisex"] } },
           { name: "campaign", in: "query", description: "Campaign slug: only the products its sale/collection covers (sale page)", schema: { type: "string" } },
+          {
+            name: "ids",
+            in: "query",
+            description: "Comma-separated product ids (max 24; recently viewed). Inactive, deleted and malformed ids are skipped; results follow `sort`, not the id order",
+            schema: { type: "string" },
+          },
           {
             name: "sort",
             in: "query",
@@ -626,8 +652,16 @@ const openApiSpec = {
     "/admin/products/sizes": {
       get: op("Admin", "Size options: built-in sizes plus custom sizes already used on products", {}, "admin"),
     },
+    "/admin/products/options": {
+      get: op(
+        "Admin",
+        "Product form options: `sizes` { builtIn, custom } and `colors` { palette, used } (colours on other products, with swatches)",
+        {},
+        "admin",
+      ),
+    },
     "/admin/products/{id}": {
-      get: op("Admin", "Product by id", { parameters: [pathParam("id")] }, "admin"),
+      get: op("Admin", "Product by id (older per-variant photos shown as colour photos)", { parameters: [pathParam("id")] }, "admin"),
       put: op("Admin", "Update product (send variant _id to update a variant in place; null clears comparePrice/sku/shortDescription)", {
         parameters: [pathParam("id")],
         requestBody: json({
@@ -635,20 +669,47 @@ const openApiSpec = {
           required: [],
           properties: {
             ...productBody.properties,
-            primaryImageId: { type: "string", description: "Existing image to mark as primary" },
+            images: {
+              type: "array",
+              description:
+                "Existing photos in display order with their colour (null = every colour), alt text and primary flag. " +
+                "Photos left out are removed (and deleted from Cloudinary after saving).",
+              items: {
+                type: "object",
+                required: ["_id"],
+                properties: {
+                  _id: { type: "string" },
+                  color: { type: "string", nullable: true },
+                  alt: { type: "string", nullable: true },
+                  isPrimary: { type: "boolean" },
+                },
+              },
+            },
+            primaryImageId: { type: "string", description: "Existing image to mark as primary (older clients)" },
           },
         }),
       }, "admin"),
       delete: op("Admin", "Delete product", { parameters: [pathParam("id")] }, "admin"),
     },
     "/admin/products/{id}/images": {
-      post: op("Admin", "Upload product images (multipart: `images` files, optional `primaryIndex` to make one of them primary)", { parameters: [pathParam("id")] }, "admin"),
+      post: op(
+        "Admin",
+        "Upload product images (multipart: `images` files; optional `meta` = JSON array, same order as the files, of " +
+          "{ color, alt, isPrimary }; older clients send `primaryIndex`)",
+        { parameters: [pathParam("id")] },
+        "admin",
+      ),
     },
     "/admin/products/{id}/images/{imageId}": {
       delete: op("Admin", "Delete product image", { parameters: [pathParam("id"), pathParam("imageId")] }, "admin"),
     },
     "/admin/products/{id}/variants/{variantId}/image": {
-      post: op("Admin", "Upload variant image (multipart, field `image`)", { parameters: [pathParam("id"), pathParam("variantId")] }, "admin"),
+      post: op(
+        "Admin",
+        "Upload a photo for a variant (multipart, field `image`; older clients). Added first among the variant's colour photos.",
+        { parameters: [pathParam("id"), pathParam("variantId")] },
+        "admin",
+      ),
     },
     "/admin/categories": {
       get: op("Admin", "All categories", {}, "admin"),

@@ -20,9 +20,13 @@ export const displayPrice = (product: IProduct, variant?: IProductVariant | null
   const base = variant ? variant.price : product.price;
   const salePrice = variant ? variant.salePrice : product.sale?.price;
   const price = typeof salePrice === "number" && salePrice < base ? salePrice : base;
+  // Compare-at price: each size's own; older products not yet saved in the
+  // new editor only have one for the whole product
+  const legacyCompare = !product.variants?.some((v) => v.comparePrice != null);
+  const compare = variant && !legacyCompare ? variant.comparePrice : product.comparePrice;
   // During a sale the pre-sale price is the "was" price, unless the product
   // already had a higher compare-at price
-  const reference = Math.max(base, product.comparePrice ?? 0);
+  const reference = Math.max(base, compare ?? 0);
   const was = reference > price ? reference : null;
   return {
     price,

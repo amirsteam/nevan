@@ -21,8 +21,13 @@ export const PRODUCT_SIZES = [
 export type ProductSize = (typeof PRODUCT_SIZES)[number];
 
 export interface IImage {
+  _id?: string;
   url: string;
   publicId: string;
+  alt?: string;
+  isPrimary?: boolean;
+  // Product photos: the colour this photo shows (null/absent = every colour)
+  color?: string | null;
 }
 
 export interface IApiResponse<T> {
@@ -106,9 +111,16 @@ export interface IProductVariant {
   price: number;
   comparePrice?: number;
   stock: number;
-  image?: string; // URL string, not IImage object
+  // URL string, derived by the API: the first photo of this variant's colour
+  image?: string | null;
   // Present while a campaign sale discounts this variant
   salePrice?: number;
+}
+
+/** A product colour with its swatch */
+export interface IProductColor {
+  name: string;
+  hex?: string;
 }
 
 /** Campaign sale price (added by the API while a festival/event sale is live) */
@@ -137,6 +149,9 @@ export interface IProduct {
   isFeatured?: boolean;
   isActive?: boolean;
   variants?: IProductVariant[];
+  // Option lists in display order (products with variants)
+  sizes?: string[];
+  colors?: IProductColor[];
   sale?: IProductSale;
   createdAt?: string;
   updatedAt?: string;

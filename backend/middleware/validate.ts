@@ -11,7 +11,7 @@ import {
   ValidationChain,
 } from "express-validator";
 import AppError from "../utils/AppError";
-import { MAX_SIZE_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { MAX_SIZE_LENGTH, MAX_COLOR_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 import { FESTIVAL_KEYS, PALETTE_KEYS } from "../utils/festivals";
 
 interface ValidationError {
@@ -166,11 +166,18 @@ const variantRules = (): ValidationChain[] => [
     .withMessage("Variant color is required")
     .trim()
     .notEmpty()
-    .withMessage("Variant color is required"),
+    .withMessage("Variant color is required")
+    .isLength({ max: MAX_COLOR_LENGTH })
+    .withMessage(`Colour names cannot exceed ${MAX_COLOR_LENGTH} characters`),
   body("variants.*.price")
-    .optional()
+    .exists({ values: "null" })
+    .withMessage("Every size needs a price")
+    .isFloat({ gt: 0 })
+    .withMessage("Variant prices must be more than 0"),
+  body("variants.*.comparePrice")
+    .optional({ values: "null" })
     .isFloat({ min: 0 })
-    .withMessage("Variant price must be a positive number"),
+    .withMessage("Variant compare price must be a positive number"),
   body("variants.*.stock")
     .optional()
     .isInt({ min: 0 })
@@ -180,6 +187,48 @@ const variantRules = (): ValidationChain[] => [
     .trim()
     .isLength({ max: 50 })
     .withMessage("Variant SKU cannot exceed 50 characters"),
+  // Option order and colour swatches
+  body("sizes").optional().isArray().withMessage("Sizes must be a list"),
+  body("sizes.*")
+    .isString()
+    .trim()
+    .notEmpty()
+    .isLength({ max: MAX_SIZE_LENGTH })
+    .withMessage(`Sizes cannot exceed ${MAX_SIZE_LENGTH} characters`),
+  body("colors").optional().isArray().withMessage("Colours must be a list"),
+  body("colors.*.name")
+    .isString()
+    .withMessage("Every colour needs a name")
+    .trim()
+    .notEmpty()
+    .withMessage("Every colour needs a name")
+    .isLength({ max: MAX_COLOR_LENGTH })
+    .withMessage(`Colour names cannot exceed ${MAX_COLOR_LENGTH} characters`),
+  body("colors.*.hex")
+    .optional({ values: "falsy" })
+    .matches(/^#[0-9a-f]{6}$/i)
+    .withMessage("Swatch colours look like #c1847b"),
+];
+
+/** True when the request creates/keeps variants (then the base price is derived) */
+const sendsVariants = (req: { body?: { variants?: unknown } }): boolean =>
+  Array.isArray(req.body?.variants) && req.body.variants.length > 0;
+
+// Photo order/colour/alt text for existing photos (edit form)
+const imageUpdateRules = (): ValidationChain[] => [
+  body("images").optional().isArray().withMessage("Images must be a list"),
+  body("images.*._id").isMongoId().withMessage("Invalid photo id"),
+  body("images.*.color")
+    .optional({ values: "null" })
+    .isString()
+    .isLength({ max: MAX_COLOR_LENGTH })
+    .withMessage("Invalid photo colour"),
+  body("images.*.alt")
+    .optional({ values: "null" })
+    .isString()
+    .isLength({ max: 150 })
+    .withMessage("Alt text cannot exceed 150 characters"),
+  body("images.*.isPrimary").optional().isBoolean().withMessage("isPrimary must be true or false"),
 ];
 
 // Age/gender tags used by the storefront filters
@@ -212,11 +261,14 @@ const createProductValidator: (ValidationChain | RequestHandler)[] = [
     .withMessage("Description is required")
     .isLength({ max: 2000 })
     .withMessage("Description cannot exceed 2000 characters"),
+  // With variants the price comes from them (cheapest size)
   body("price")
+    .if((_value: unknown, { req }: { req: { body?: { variants?: unknown } } }) => !sendsVariants(req))
     .notEmpty()
     .withMessage("Price is required")
-    .isFloat({ min: 0 })
-    .withMessage("Price must be a positive number"),
+    .isFloat({ gt: 0 })
+    .withMessage("Price must be more than 0"),
+  body("price").optional({ values: "null" }).isFloat({ min: 0 }).withMessage("Price must be a positive number"),
   body("comparePrice")
     .optional({ values: "null" })
     .isFloat({ min: 0 })
@@ -265,6 +317,7 @@ const updateProductValidator: (ValidationChain | RequestHandler)[] = [
     .isLength({ max: 50 })
     .withMessage("SKU cannot exceed 50 characters"),
   ...variantRules(),
+  ...imageUpdateRules(),
   ...audienceRules(),
   handleValidationErrors,
 ];

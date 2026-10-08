@@ -1,8 +1,9 @@
 /**
  * Product Detail Page
- * Gallery with lightbox, accessible size/colour pickers, exact stock for the
- * selected option, delivery facts from the store config, reviews, related
- * products, and a sticky add-to-cart bar on phones.
+ * Gallery with lightbox (photos follow the chosen colour), colour swatches
+ * then sizes (smallest first; ones not made in that colour disabled), exact
+ * stock for the selected option, delivery facts from the store config,
+ * reviews, related products, and a sticky add-to-cart bar on phones.
  */
 import { useState, useEffect, useMemo, useRef, useCallback, KeyboardEvent } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -56,9 +57,32 @@ import QuantitySelector from "../components/ui/QuantitySelector";
 import { StockBadge } from "../components/ui/Badge";
 import { ProductDetailSkeleton, Skeleton } from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
+import RecentlyViewed from "../components/RecentlyViewed";
+import { recordProductView } from "../utils/recentlyViewed";
+import { isLightSwatch, photosForColor, productColors, productSizes, sameName } from "../utils/productOptions";
 import { useAuth } from "../context/AuthContext";
 
 const MAIN_IMAGE_WIDTH = 720;
+
+/**
+ * Option to show first: an in-stock size of the main photo's colour if there
+ * is one, otherwise the first colour (and size) in stock, otherwise the first
+ */
+const defaultVariant = (product: IProduct): IProductVariant | undefined => {
+  const variants = product.variants || [];
+  if (!variants.length) return undefined;
+  const sizes = productSizes(product);
+  const colors = productColors(product).map((c) => c.name);
+  const primaryColor = (product.images || []).find((img) => img.isPrimary)?.color;
+  const byColor = primaryColor ? [primaryColor, ...colors.filter((c) => !sameName(c, primaryColor))] : colors;
+  for (const color of byColor) {
+    for (const size of sizes) {
+      const variant = variants.find((v) => sameName(v.color, color) && sameName(v.size, size));
+      if (variant && variant.stock > 0) return variant;
+    }
+  }
+  return variants[0];
+};
 
 /** Arrow-key navigation for a radio group of option buttons */
 const onRadioKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -107,24 +131,28 @@ const ProductDetail = () => {
 
   const variants = useMemo(() => product?.variants || [], [product]);
   const hasVariants = variants.length > 0;
-  const currentVariant: IProductVariant | undefined = variants.find(
-    (v) => v.size === selectedSize && v.color === selectedColor,
-  );
-
-  const uniqueSizes = useMemo(() => [...new Set(variants.map((v) => v.size))], [variants]);
-  const colorsForSize = useMemo(
-    () => [...new Set(variants.filter((v) => v.size === selectedSize).map((v) => v.color))],
-    [variants, selectedSize],
-  );
-  const sizeInStock = useCallback(
-    (size: string) => variants.some((v) => v.size === size && v.stock > 0),
+  const variantFor = useCallback(
+    (size: string, color: string) => variants.find((v) => sameName(v.size, size) && sameName(v.color, color)),
     [variants],
   );
+  const currentVariant: IProductVariant | undefined = variantFor(selectedSize, selectedColor);
 
-  // Gallery: product images plus any variant image not already in the gallery
+  const sizes = useMemo(() => (product ? productSizes(product) : []), [product]);
+  const colorOptions = useMemo(() => (product ? productColors(product) : []), [product]);
+  // Photos tagged by colour: the gallery follows the chosen colour
+  const photosByColor = !!product?.images?.some((img) => img.color);
+
   const gallery = useMemo(() => {
     if (!product) return [];
-    const images = [...(product.images || [])].sort((a, b) => Number(!!b.isPrimary) - Number(!!a.isPrimary));
+    const images = [...(product.images || [])];
+    if (photosByColor) {
+      return photosForColor(images, selectedColor).map((img) => ({
+        url: img.url,
+        alt: img.alt || (img.color ? `${product.name} in ${img.color}` : product.name),
+      }));
+    }
+    // Older products: product photos (main one first) plus each variant's photo
+    images.sort((a, b) => Number(!!b.isPrimary) - Number(!!a.isPrimary));
     const urls = new Set(images.map((img) => img.url));
     for (const v of variants) {
       if (v.image && !urls.has(v.image)) {
@@ -133,7 +161,7 @@ const ProductDetail = () => {
       }
     }
     return images.map((img) => ({ url: img.url, alt: img.alt || product.name }));
-  }, [product, variants]);
+  }, [product, variants, photosByColor, selectedColor]);
 
   const showVariantImage = useCallback(
     (variant?: IProductVariant) => {
@@ -154,11 +182,10 @@ const ProductDetail = () => {
         if (cancelled) return;
         const fetched = response.data.product;
         setProduct(fetched);
+        recordProductView(fetched._id);
         setImageIndex(0);
         setQuantity(1);
-        const fetchedVariants = fetched.variants || [];
-        // Default to the first in-stock option, falling back to the first option
-        const first = fetchedVariants.find((v) => v.stock > 0) || fetchedVariants[0];
+        const first = defaultVariant(fetched);
         setSelectedSize(first?.size || "");
         setSelectedColor(first?.color || "");
       })
@@ -256,16 +283,18 @@ const ProductDetail = () => {
 
   const handleSizeChange = (size: string) => {
     setSelectedSize(size);
-    const colors = variants.filter((v) => v.size === size);
-    const keep = colors.find((v) => v.color === selectedColor && v.stock > 0);
-    const next = keep || colors.find((v) => v.stock > 0) || colors[0];
-    setSelectedColor(next?.color || "");
-    showVariantImage(next);
+    if (!photosByColor) showVariantImage(variantFor(size, selectedColor));
   };
 
+  // Keep the size when it's made (and in stock) in the new colour
   const handleColorChange = (color: string) => {
     setSelectedColor(color);
-    showVariantImage(variants.find((v) => v.size === selectedSize && v.color === color));
+    const offered = sizes.map((size) => variantFor(size, color)).filter((v): v is IProductVariant => !!v);
+    const keep = offered.find((v) => sameName(v.size, selectedSize) && v.stock > 0);
+    const next = keep || offered.find((v) => v.stock > 0) || offered[0];
+    if (next) setSelectedSize(next.size);
+    if (photosByColor) setImageIndex(0);
+    else showVariantImage(next);
   };
 
   const handleAddToCart = async () => {
@@ -277,7 +306,12 @@ const ProductDetail = () => {
       price: displayPrice,
       quantity,
       variant: currentVariant
-        ? { _id: currentVariant._id, size: currentVariant.size, color: currentVariant.color, image: currentVariant.image }
+        ? {
+            _id: currentVariant._id,
+            size: currentVariant.size,
+            color: currentVariant.color,
+            image: currentVariant.image || gallery[0]?.url,
+          }
         : undefined,
     });
   };
@@ -445,9 +479,70 @@ const ProductDetail = () => {
 
           {product.shortDescription && <p className="text-[var(--color-text-muted)]">{product.shortDescription}</p>}
 
-          {/* Options */}
+          {/* Options: colour first (photos follow it), then size */}
           {hasVariants && (
             <div className="space-y-5">
+              {colorOptions.length > 0 && (
+                <div>
+                  <p id="color-label" className="font-medium mb-2.5">
+                    Colour{selectedColor && <span className="font-normal text-[var(--color-text-muted)]">: {selectedColor}</span>}
+                  </p>
+                  {colorOptions.length > 1 && (
+                    <div role="radiogroup" aria-labelledby="color-label" className="flex flex-wrap gap-2" onKeyDown={onRadioKeyDown}>
+                      {colorOptions.map(({ name, hex }) => {
+                        const inStock = variants.some((v) => sameName(v.color, name) && v.stock > 0);
+                        const checked = sameName(selectedColor, name);
+                        const radio = {
+                          type: "button" as const,
+                          role: "radio",
+                          "aria-checked": checked,
+                          tabIndex: checked ? 0 : -1,
+                          onClick: () => handleColorChange(name),
+                        };
+                        return hex ? (
+                          <button
+                            key={name}
+                            {...radio}
+                            aria-label={inStock ? name : `${name} (sold out)`}
+                            title={inStock ? name : `${name} (sold out)`}
+                            className={`relative w-11 h-11 rounded-full p-1 border-2 transition-colors ${
+                              checked ? "border-[var(--color-primary)]" : "border-transparent hover:border-[var(--color-border-strong)]"
+                            }`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={`block w-full h-full rounded-full ${
+                                isLightSwatch(hex) ? "ring-1 ring-inset ring-[var(--color-border-strong)]" : ""
+                              } ${inStock ? "" : "opacity-40"}`}
+                              style={{ backgroundColor: hex }}
+                            />
+                            {!inStock && (
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-1/2 top-1/2 w-[85%] h-0.5 -translate-x-1/2 -translate-y-1/2 -rotate-45 rounded bg-[var(--color-text-muted)]"
+                              />
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            key={name}
+                            {...radio}
+                            className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
+                              checked
+                                ? "border-[var(--color-primary)] ring-1 ring-[var(--color-primary)] font-medium"
+                                : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                            } ${inStock ? "" : "line-through decoration-1 text-[var(--color-text-muted)]"}`}
+                          >
+                            {name}
+                            {!inStock && <span className="sr-only"> (sold out)</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <div className="flex items-center justify-between mb-2.5">
                   <p id="size-label" className="font-medium">
@@ -462,61 +557,38 @@ const ProductDetail = () => {
                     Size guide
                   </button>
                 </div>
-                <div role="radiogroup" aria-labelledby="size-label" className="flex flex-wrap gap-2" onKeyDown={onRadioKeyDown}>
-                  {uniqueSizes.map((size) => {
-                    const checked = selectedSize === size;
-                    const inStock = sizeInStock(size);
-                    return (
-                      <button
-                        key={size}
-                        type="button"
-                        role="radio"
-                        aria-checked={checked}
-                        tabIndex={checked ? 0 : -1}
-                        onClick={() => handleSizeChange(size)}
-                        className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
-                          checked
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-on-primary)]"
-                            : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                        } ${!inStock ? "line-through decoration-1 text-[var(--color-text-muted)]" : ""}`}
-                      >
-                        {size}
-                        {!inStock && <span className="sr-only"> (sold out)</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p id="color-label" className="font-medium mb-2.5">
-                  Colour{selectedColor && <span className="font-normal text-[var(--color-text-muted)]">: {selectedColor}</span>}
-                </p>
-                <div role="radiogroup" aria-labelledby="color-label" className="flex flex-wrap gap-2" onKeyDown={onRadioKeyDown}>
-                  {colorsForSize.map((color) => {
-                    const variant = variants.find((v) => v.size === selectedSize && v.color === color);
-                    const outOfStock = (variant?.stock ?? 0) <= 0;
-                    const checked = selectedColor === color;
-                    return (
-                      <button
-                        key={color}
-                        type="button"
-                        role="radio"
-                        aria-checked={checked}
-                        tabIndex={checked ? 0 : -1}
-                        onClick={() => handleColorChange(color)}
-                        className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
-                          checked
-                            ? "border-[var(--color-primary)] ring-1 ring-[var(--color-primary)] font-medium"
-                            : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                        } ${outOfStock ? "line-through decoration-1 text-[var(--color-text-muted)]" : ""}`}
-                      >
-                        {color}
-                        {outOfStock && <span className="sr-only"> (sold out)</span>}
-                      </button>
-                    );
-                  })}
-                </div>
+                {sizes.length > 1 && (
+                  <div role="radiogroup" aria-labelledby="size-label" className="flex flex-wrap gap-2" onKeyDown={onRadioKeyDown}>
+                    {sizes.map((size) => {
+                      const variant = variantFor(size, selectedColor);
+                      const inStock = (variant?.stock ?? 0) > 0;
+                      const checked = sameName(selectedSize, size);
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          role="radio"
+                          aria-checked={checked}
+                          tabIndex={checked ? 0 : -1}
+                          disabled={!variant}
+                          onClick={() => handleSizeChange(size)}
+                          className={`px-4 py-2 rounded-lg border text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                            checked
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-on-primary)]"
+                              : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                          } ${variant && !inStock ? "line-through decoration-1 text-[var(--color-text-muted)]" : ""}`}
+                        >
+                          {size}
+                          {!variant ? (
+                            <span className="sr-only"> (not made in {selectedColor})</span>
+                          ) : (
+                            !inStock && <span className="sr-only"> (sold out)</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -759,6 +831,13 @@ const ProductDetail = () => {
         </section>
       )}
 
+      <RecentlyViewed
+        excludeId={product._id}
+        contained={false}
+        compact
+        className="mt-12 pt-8 border-t border-[var(--color-border)]"
+      />
+
       {/* Sticky add-to-cart (phones) */}
       <div
         className={`md:hidden fixed inset-x-0 bottom-0 z-40 bg-[var(--color-surface)] border-t border-[var(--color-border)] shadow-[var(--shadow-lg)] px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-transform duration-300 ${
@@ -800,7 +879,7 @@ const ProductDetail = () => {
         onIndexChange={setImageIndex}
         title={product.name}
       />
-      <SizeGuide isOpen={showSizeGuide} onClose={() => setShowSizeGuide(false)} currentSize={selectedSize} />
+      <SizeGuide isOpen={showSizeGuide} onClose={() => setShowSizeGuide(false)} currentSize={selectedSize} sizes={sizes} />
     </div>
   );
 };

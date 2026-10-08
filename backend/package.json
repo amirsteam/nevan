@@ -12,6 +12,7 @@
     "seed": "ts-node seeder.ts",
     "sync-stock": "ts-node scripts/syncStock.ts",
     "fix-chat-rooms": "ts-node scripts/fixChatRooms.ts",
+    "migrate-variant-media": "ts-node scripts/migrateVariantMedia.ts",
     "test-email": "ts-node scripts/testEmail.ts"
   },
   "keywords": [

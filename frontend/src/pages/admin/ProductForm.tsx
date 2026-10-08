@@ -1,1266 +1,815 @@
 /**
  * ProductForm Component
- * Create/Edit product form with variants and image management
+ * Create/edit a product. Products are either one version (one price and
+ * stock count) or come in sizes × colours: sizes are chips on the age
+ * scale, colours have swatches and their own photos, prices are set per
+ * size (optionally per colour) and stock in a sizes × colours grid.
+ *
+ * Everything — photo removals and order included — is kept in the form until
+ * Save. New products stay hidden until their photos finish uploading.
+ * State and rules live in components/admin/product/editorState.ts.
  */
-import { useState, useEffect, ChangeEvent, FormEvent } from "react";
-import { adminAPI } from "../../api";
-import { ImageUploader, type ImageUploaderImage } from "../../components/admin";
-import { Plus, Trash2, Loader2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import toast from "react-hot-toast";
-import { PRODUCT_SIZES, MAX_SIZE_LENGTH } from "../../utils/constants";
+import { ArrowDown, ArrowUp, Layers, Loader2, Package, Plus, Trash2 } from "lucide-react";
+import { adminAPI } from "../../api";
+import { ConfirmModal } from "../../components/ui";
 import { AGE_GROUPS, PRODUCT_GENDERS, GENDER_LABELS, formatAgeGroup } from "../../config/store";
-import type { IProduct, ICategory, IProductVariant, IImage } from "../../types";
-
 import { getErrorMessage, populated } from "../../utils/helpers";
-// ============================================
-// Type Definitions
-// ============================================
+import type { ICategory, IProduct } from "../../types";
+import PhotoStrip from "../../components/admin/product/PhotoStrip";
+import SizePicker from "../../components/admin/product/SizePicker";
+import ColorPicker, { Swatch } from "../../components/admin/product/ColorPicker";
+import OptionsTable from "../../components/admin/product/OptionsTable";
+import ProductSummary from "../../components/admin/product/ProductSummary";
+import {
+  ACCEPTED_TYPES,
+  addColor,
+  addPhotos,
+  buildPayload,
+  cellKey,
+  derivedAgeGroups,
+  fromProduct,
+  moveColor,
+  movePhoto,
+  pendingUploads,
+  photoOrder,
+  photosOf,
+  removeColor,
+  removePhoto,
+  savedVariantCount,
+  setMode,
+  snapshot,
+  toggleSize,
+  updateColor,
+  validate,
+  type Details,
+  type EditorState,
+  type Mode,
+} from "../../components/admin/product/editorState";
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 interface ProductFormProps {
   product?: IProduct | null;
   categories: ICategory[];
-  onSuccess: () => void;
+  /** `reopen`: keep editing (e.g. some photos didn't upload) */
+  onSaved: (product: IProduct, options: { reopen: boolean }) => void;
   onCancel: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-interface FormData {
-  name: string;
-  description: string;
-  shortDescription: string;
-  material: string;
-  careInstructions: string;
-  ageRecommendation: string;
-  // Storefront filters ("Shop by Age", boy/girl)
-  ageGroups: string[];
-  gender: string;
-  price: string;
-  comparePrice: string;
-  category: string;
-  stock: string;
-  sku: string;
-  isFeatured: boolean;
-  isActive: boolean;
-  metaTitle: string;
-  metaDescription: string;
+interface Confirmation {
+  title: string;
+  message: ReactNode;
+  confirmText: string;
+  onConfirm: () => void;
 }
 
-interface LocalVariant {
-  _id: string;
-  size: string;
-  color: string;
-  price: number;
-  stock: number;
-  image: string;
-  imageFile?: File | null;
-  // UI only: the admin chose "Custom size…" for this row
-  customSize?: boolean;
-}
+// ============================================
+// Small layout pieces
+// ============================================
 
-const CUSTOM_SIZE_OPTION = "__custom__";
-const isTempId = (id: string): boolean => id.startsWith("temp-");
-const variantKey = (size: string, color: string): string =>
-  `${size.trim().toLowerCase()}|${color.trim().toLowerCase()}`;
-
-interface SizeSelectProps {
-  value: string;
-  customMode: boolean;
-  customSizes: string[];
-  onChange: (size: string, customMode: boolean) => void;
-}
-
-// Built-in sizes, custom sizes already in use, or a new custom size
-const SizeSelect = ({ value, customMode, customSizes, onChange }: SizeSelectProps) => {
-  const known = [...PRODUCT_SIZES, ...customSizes] as string[];
-  const showInput = customMode || (value !== "" && !known.includes(value));
-
-  return (
-    <div className="space-y-2">
-      <select
-        value={showInput ? CUSTOM_SIZE_OPTION : value}
-        onChange={(e) =>
-          e.target.value === CUSTOM_SIZE_OPTION
-            ? onChange(showInput ? value : "", true)
-            : onChange(e.target.value, false)
-        }
-        className="select w-full text-sm"
-      >
-        <option value="">Select Size...</option>
-        <optgroup label="Standard sizes">
-          {PRODUCT_SIZES.map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </optgroup>
-        {customSizes.length > 0 && (
-          <optgroup label="Custom sizes">
-            {customSizes.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </optgroup>
-        )}
-        <option value={CUSTOM_SIZE_OPTION}>+ Custom size…</option>
-      </select>
-      {showInput && (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value, true)}
-          className="input w-full text-sm"
-          placeholder="e.g. 3-6 Months, 2T, 90 cm"
-          maxLength={MAX_SIZE_LENGTH}
-          autoFocus={value === ""}
-          aria-label="Custom size"
-        />
-      )}
+const Card = ({ id, title, description, children }: { id: string; title: string; description?: ReactNode; children: ReactNode }) => (
+  <section aria-labelledby={id} className="card p-4 sm:p-6 space-y-4 overflow-visible">
+    <div>
+      <h2 id={id} className="font-semibold text-lg font-sans tracking-normal">
+        {title}
+      </h2>
+      {description && <p className="text-sm text-[var(--color-text-muted)] mt-0.5">{description}</p>}
     </div>
-  );
-};
+    {children}
+  </section>
+);
 
-interface ExistingImage {
-  _id: string;
-  url: string;
-  publicId?: string;
-  isPrimary: boolean;
-}
-
-interface NewImage {
+const Field = ({
+  id,
+  label,
+  required,
+  hint,
+  error,
+  children,
+}: {
   id: string;
-  file: File;
-  preview: string;
-  isPrimary: boolean;
-}
+  label: string;
+  required?: boolean;
+  hint?: ReactNode;
+  error?: string;
+  children: ReactNode;
+}) => (
+  <div>
+    <label htmlFor={id} className="block text-sm font-medium mb-1">
+      {label}
+      {required && (
+        <span className="text-[var(--color-error)]" aria-hidden="true">
+          {" "}
+          *
+        </span>
+      )}
+    </label>
+    {children}
+    {hint && !error && (
+      <p id={`${id}-hint`} className="text-xs text-[var(--color-text-muted)] mt-1">
+        {hint}
+      </p>
+    )}
+    {error && (
+      <p id={`${id}-error`} className="text-sm text-[var(--color-error)] mt-1">
+        {error}
+      </p>
+    )}
+  </div>
+);
 
-interface FormErrors {
-  name?: string;
-  description?: string;
-  price?: string;
-  category?: string;
-  stock?: string;
-  [key: string]: string | undefined;
-}
+/** id, error wiring and the error border for an input */
+const inputProps = (id: string, errors: Record<string, string>, base = "input", hasHint = false) => ({
+  id,
+  "aria-invalid": errors[id] ? true : undefined,
+  "aria-describedby": errors[id] ? `${id}-error` : hasHint ? `${id}-hint` : undefined,
+  className: `${base} ${errors[id] ? "border-[var(--color-error)]" : ""}`,
+});
+
+const MODES: { value: Mode; title: string; text: string; icon: typeof Package }[] = [
+  { value: "single", title: "One version", text: "One price and stock count, e.g. a blanket or gift set", icon: Package },
+  { value: "variants", title: "Sizes & colours", text: "Each size and colour has its own stock (and price if you like)", icon: Layers },
+];
 
 // ============================================
 // Component
 // ============================================
 
-const ProductForm: React.FC<ProductFormProps> = ({
-  product,
-  categories,
-  onSuccess,
-  onCancel,
-}) => {
-  const isEdit = Boolean(product);
-
-  // Form state
-  const [formData, setFormData] = useState<FormData>({
-    name: "",
-    description: "",
-    shortDescription: "",
-    material: "",
-    careInstructions: "",
-    ageRecommendation: "",
-    ageGroups: [],
-    gender: "",
-    price: "",
-    comparePrice: "",
-    category: "",
-    stock: "",
-    sku: "",
-    isFeatured: false,
-    isActive: true,
-    metaTitle: "",
-    metaDescription: "",
+const ProductForm = ({ product, categories, onSaved, onCancel, onDirtyChange }: ProductFormProps) => {
+  const isEdit = Boolean(product?._id);
+  const [state, setState] = useState<EditorState>(() => fromProduct(product));
+  const [initialSnapshot] = useState(() => snapshot(fromProduct(product)));
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState<null | "saving" | "photos">(null);
+  const [options, setOptions] = useState<{ customSizes: string[]; colors: { name: string; hex?: string }[] }>({
+    customSizes: [],
+    colors: [],
   });
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
 
-  // Variants state
-  const [hasVariants, setHasVariants] = useState(false);
-  const [variants, setVariants] = useState<LocalVariant[]>([]);
+  const update = useCallback((change: (s: EditorState) => EditorState) => setState((s) => change(s)), []);
+  const setDetail = <K extends keyof Details>(field: K, value: Details[K]) =>
+    update((s) => ({ ...s, details: { ...s.details, [field]: value } }));
 
-  // Images state
-  const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
-  const [newImages, setNewImages] = useState<NewImage[]>([]);
-  const [uploadingImages, setUploadingImages] = useState(false);
+  // After the first save attempt, errors update as fields are fixed
+  const errors = submitted ? validate(state) : {};
+  const dirty = snapshot(state) !== initialSnapshot;
 
-  // Form state
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<FormErrors>({});
-
-  // Custom sizes already used on other products (built-in sizes come from PRODUCT_SIZES)
-  const [savedCustomSizes, setSavedCustomSizes] = useState<string[]>([]);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     adminAPI
-      .getProductSizeOptions()
-      .then((res) => setSavedCustomSizes(res.data.data.sizes.custom))
-      .catch(() => setSavedCustomSizes([]));
+      .getProductOptions()
+      .then((res) => setOptions({ customSizes: res.data.data.sizes.custom, colors: res.data.data.colors.used }))
+      .catch(() => {});
   }, []);
 
-  // Offer custom sizes from other products and from other rows in this form
-  const customSizeOptions = Array.from(
-    new Set(
-      [...savedCustomSizes, ...variants.map((v) => v.size.trim())].filter(
-        (size) => size && !(PRODUCT_SIZES as readonly string[]).includes(size),
-      ),
-    ),
-  ).sort((a, b) => a.localeCompare(b));
-
-  // Initialize form with product data
+  // Free local photo previews when leaving the page
+  const photosRef = useRef(state.photos);
   useEffect(() => {
-    if (product) {
-      setFormData({
-        name: product.name || "",
-        description: product.description || "",
-        shortDescription: product.shortDescription || "",
-        material: product.material || "",
-        careInstructions: product.careInstructions || "",
-        ageRecommendation: product.ageRecommendation || "",
-        ageGroups: product.ageGroups || [],
-        gender: product.gender || "",
-        price: String(product.price || ""),
-        comparePrice: String(product.comparePrice || ""),
-        category:
-          typeof product.category === "object"
-            ? product.category._id
-            : product.category || "",
-        stock: String(product.stock || ""),
-        sku: product.sku || "",
-        isFeatured: product.isFeatured || false,
-        isActive: product.isActive !== false,
-        metaTitle: product.metaTitle || "",
-        metaDescription: product.metaDescription || "",
+    photosRef.current = state.photos;
+  }, [state.photos]);
+  useEffect(
+    () => () =>
+      photosRef.current.forEach((photo) => {
+        if (photo.file) URL.revokeObjectURL(photo.url);
+      }),
+    [],
+  );
+
+  // ---------- Photos ----------
+  const handleAddPhotos = (files: File[], colorKey: string | null) => {
+    const skipped: string[] = [];
+    const valid = files.filter((file) => {
+      if (!ACCEPTED_TYPES.includes(file.type)) skipped.push(`${file.name}: use JPG, PNG or WebP`);
+      else if (file.size > MAX_FILE_SIZE) skipped.push(`${file.name}: larger than 10 MB`);
+      else return true;
+      return false;
+    });
+    if (skipped.length) toast.error(`Some photos were skipped:\n${skipped.join("\n")}`, { duration: 6000 });
+    if (valid.length) update((s) => addPhotos(s, valid, colorKey));
+  };
+
+  const handleRemovePhoto = (key: string) => {
+    const photo = state.photos.find((p) => p.key === key);
+    if (photo?.file) URL.revokeObjectURL(photo.url);
+    update((s) => removePhoto(s, key));
+  };
+
+  const photoHandlers = {
+    primaryKey: state.primaryKey,
+    onRemove: handleRemovePhoto,
+    onMove: (key: string, direction: -1 | 1) => update((s) => movePhoto(s, key, direction)),
+    onSetPrimary: (key: string) => update((s) => ({ ...s, primaryKey: key })),
+  };
+
+  // ---------- Options ----------
+  const handleModeChange = (mode: Mode) => {
+    const saved = savedVariantCount(state);
+    if (mode === "single" && saved > 0) {
+      setConfirmation({
+        title: "Remove the sizes and colours?",
+        message: `This product's ${saved} saved size/colour option${saved === 1 ? "" : "s"} will be deleted when you save, and removed from shoppers' carts. Colour photos will show for the whole product.`,
+        confirmText: "Use one version",
+        onConfirm: () => update((s) => setMode(s, "single")),
       });
-
-      // Map variants to local format
-      const mappedVariants: LocalVariant[] = (product.variants || []).map(
-        (v: IProductVariant) => ({
-          _id: v._id,
-          size: v.size,
-          color: v.color,
-          price: v.price,
-          stock: v.stock,
-          image: v.image || "",
-          imageFile: null,
-        }),
-      );
-      setVariants(mappedVariants);
-
-      // Map images
-      const mappedImages: ExistingImage[] = (product.images || []).map(
-        (img: IImage) => ({
-          _id: img._id || img.publicId,
-          url: img.url,
-          publicId: img.publicId,
-          isPrimary: img.isPrimary || false,
-        }),
-      );
-      setExistingImages(mappedImages);
-
-      // Sync hasVariants toggle with actual data
-      setHasVariants((product.variants?.length || 0) > 0);
-    }
-  }, [product]);
-
-  // Toggle Variants
-  const handleHasVariantsChange = (checked: boolean): void => {
-    setHasVariants(checked);
-    if (checked && variants.length === 0) {
-      handleAddVariant();
-    }
-  };
-
-  // Handle input change
-  const handleChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
-  ): void => {
-    const { name, value, type } = e.target;
-    const checked = (e.target as HTMLInputElement).checked;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-
-    // Clear error on change
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: undefined }));
-    }
-  };
-
-  // Validate form
-  const validate = (): boolean => {
-    const newErrors: FormErrors = {};
-    if (!formData.name.trim()) newErrors.name = "Product name is required";
-    if (!formData.description.trim())
-      newErrors.description = "Description is required";
-    if (!formData.price || parseFloat(formData.price) <= 0)
-      newErrors.price = "Valid price is required";
-    if (!formData.category) newErrors.category = "Category is required";
-    if (
-      formData.comparePrice &&
-      parseFloat(formData.comparePrice) > 0 &&
-      parseFloat(formData.comparePrice) <= parseFloat(formData.price)
-    ) {
-      newErrors.comparePrice = "Compare price must be higher than the price";
-    }
-    if (!hasVariants && (formData.stock === "" || parseInt(formData.stock) < 0)) {
-      newErrors.stock = "Stock is required when no variants";
-    }
-
-    if (hasVariants) {
-      const seen = new Set<string>();
-      if (variants.length === 0) {
-        newErrors.variants = "Add at least one variant or turn variants off";
-      }
-      for (const v of variants) {
-        if (!v.size.trim() || !v.color.trim()) {
-          newErrors.variants = "Every variant needs a size and a color";
-          break;
-        }
-        if (v.size.trim().length > MAX_SIZE_LENGTH) {
-          newErrors.variants = `Sizes can be at most ${MAX_SIZE_LENGTH} characters`;
-          break;
-        }
-        const key = variantKey(v.size, v.color);
-        if (seen.has(key)) {
-          newErrors.variants = `Duplicate variant: ${v.size.trim()} / ${v.color.trim()}`;
-          break;
-        }
-        seen.add(key);
-      }
-    }
-
-    setErrors(newErrors);
-    if (Object.keys(newErrors).length > 0) {
-      toast.error("Please fix the highlighted fields");
-    }
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // Add new variant (flat structure)
-  const handleAddVariant = (): void => {
-    setVariants((prev) => [
-      ...prev,
-      {
-        _id: `temp-${Date.now()}`,
-        size: "",
-        color: "",
-        customSize: false,
-        price: parseFloat(formData.price) || 0,
-        stock: 0,
-        image: "",
-        imageFile: null,
-      },
-    ]);
-  };
-
-  // Update variant field
-  const handleVariantSizeChange = (
-    index: number,
-    size: string,
-    customMode: boolean,
-  ): void => {
-    setVariants((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], size, customSize: customMode };
-      return updated;
-    });
-    if (errors.variants) setErrors((prev) => ({ ...prev, variants: undefined }));
-  };
-
-  const handleVariantChange = (
-    index: number,
-    field: keyof LocalVariant,
-    value: string | number,
-  ): void => {
-    setVariants((prev) => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        [field]:
-          field === "price" || field === "stock"
-            ? parseFloat(String(value)) || 0
-            : value,
-      };
-      return updated;
-    });
-  };
-
-  // Remove variant
-  const handleRemoveVariant = (index: number): void => {
-    setVariants((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  // Duplicate variant
-  const handleDuplicateVariant = (index: number): void => {
-    setVariants((prev) => {
-      const original = prev[index];
-      return [
-        ...prev,
-        {
-          ...original,
-          _id: `temp-${Date.now()}`,
-          stock: 0,
-          imageFile: null,
-        },
-      ];
-    });
-  };
-
-  // Handle variant image upload
-  const handleVariantImageUpload = async (
-    index: number,
-    file: File,
-  ): Promise<void> => {
-    // Client-side file size validation (10MB limit)
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(
-        `File too large. Maximum size is 10MB. Your file: ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
-      );
       return;
     }
+    update((s) => setMode(s, mode));
+  };
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      toast.error("Only image files are allowed");
+  const handleToggleSize = (size: string) => {
+    const removing = state.sizes.some((s) => s.trim().toLowerCase() === size.trim().toLowerCase());
+    const saved = removing ? state.colors.filter((c) => state.cells[cellKey(size, c.key)]?.id).length : 0;
+    if (saved > 0) {
+      setConfirmation({
+        title: `Remove size ${size}?`,
+        message: `Its ${saved} saved option${saved === 1 ? "" : "s"} will be deleted when you save, and removed from shoppers' carts.`,
+        confirmText: "Remove size",
+        onConfirm: () => update((s) => toggleSize(s, size)),
+      });
       return;
     }
-
-    const previewUrl = URL.createObjectURL(file);
-
-    setVariants((prev) => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        image: previewUrl,
-        imageFile: file,
-      };
-      return updated;
-    });
-
-    const variant = variants[index];
-    const isNewVariant = variant._id.toString().startsWith("temp-");
-
-    // Only upload immediately if product AND variant exist in DB (Edit Mode)
-    if (product?._id && !isNewVariant) {
-      try {
-        const formDataUpload = new FormData();
-        formDataUpload.append("image", file);
-
-        const response = await adminAPI.uploadVariantImage(
-          product._id,
-          variant._id,
-          formDataUpload,
-        );
-
-        const updatedProduct = response.data.data.product;
-        const updatedVariant = updatedProduct.variants?.find(
-          (v: IProductVariant) => v._id === variant._id,
-        );
-        const newImage = updatedVariant?.image;
-
-        if (newImage) {
-          setVariants((prev) => {
-            const updated = [...prev];
-            updated[index] = {
-              ...updated[index],
-              image: newImage,
-              imageFile: null,
-            };
-            return updated;
-          });
-          toast.success("Variant image uploaded");
-        }
-      } catch (error) {
-        console.error("Variant image upload error:", error);
-        toast.error("Failed to upload variant image");
-      }
-    }
+    update((s) => toggleSize(s, size));
   };
 
-  // Handle new image upload
-  const handleImageUpload = (files: File[]): void => {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    const validFiles: File[] = [];
-    const invalidFiles: string[] = [];
-
-    files.forEach((file) => {
-      if (!file.type.startsWith("image/")) {
-        invalidFiles.push(`${file.name}: Not an image file`);
-      } else if (file.size > MAX_FILE_SIZE) {
-        invalidFiles.push(
-          `${file.name}: Too large (${(file.size / (1024 * 1024)).toFixed(1)}MB > 10MB)`,
-        );
-      } else {
-        validFiles.push(file);
-      }
-    });
-
-    if (invalidFiles.length > 0) {
-      toast.error(`Some files were skipped:\n${invalidFiles.join("\n")}`);
-    }
-
-    if (validFiles.length === 0) return;
-
-    const previews: NewImage[] = validFiles.map((file) => ({
-      id: `new-${Date.now()}-${Math.random()}`,
-      file,
-      preview: URL.createObjectURL(file),
-      isPrimary: existingImages.length === 0 && newImages.length === 0,
-    }));
-    setNewImages((prev) => [...prev, ...previews]);
-  };
-
-  // Remove new image before upload
-  const handleRemoveNewImage = (id: string): void => {
-    setNewImages((prev) => {
-      const removed = prev.find((img) => img.id === id);
-      if (removed?.preview) {
-        URL.revokeObjectURL(removed.preview);
-      }
-      return prev.filter((img) => img.id !== id);
+  const handleRemoveColor = (key: string) => {
+    const color = state.colors.find((c) => c.key === key);
+    const saved = state.sizes.filter((size) => state.cells[cellKey(size, key)]?.id).length;
+    const photos = photosOf(state, key).length;
+    const remove = () => update((s) => removeColor(s, key, true));
+    if (!saved && !photos) return remove();
+    const parts = [
+      saved ? `${saved} saved option${saved === 1 ? "" : "s"} (removed from shoppers' carts)` : null,
+      photos ? `${photos} photo${photos === 1 ? "" : "s"}` : null,
+    ].filter(Boolean);
+    setConfirmation({
+      title: `Remove ${color?.name || "this colour"}?`,
+      message: `This deletes its ${parts.join(" and ")} when you save.`,
+      confirmText: "Remove colour",
+      onConfirm: remove,
     });
   };
 
-  // Set primary image
-  const handleSetPrimary = (id: string): void => {
-    setExistingImages((prev) =>
-      prev.map((img) => ({ ...img, isPrimary: img._id === id })),
-    );
-    setNewImages((prev) =>
-      prev.map((img) => ({ ...img, isPrimary: img.id === id })),
-    );
-  };
-
-  // Delete existing image
-  const handleDeleteExistingImage = async (imageId: string): Promise<void> => {
-    if (!product?._id) return;
-
-    try {
-      await adminAPI.deleteProductImage(product._id, imageId);
-      setExistingImages((prev) => prev.filter((img) => img._id !== imageId));
-      toast.success("Image deleted");
-    } catch (error) {
-      toast.error("Failed to delete image");
-    }
-  };
-
-  // Submit form
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+  // ---------- Save ----------
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!validate()) return;
-
-    setLoading(true);
-    try {
-      // Prepare product data
-      const productData: Record<string, unknown> = {
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        price: parseFloat(formData.price),
-        category: formData.category,
-        stock: hasVariants ? 0 : parseInt(formData.stock) || 0,
-        isFeatured: formData.isFeatured,
-        isActive: formData.isActive,
-        // Always sent so clearing a field in the form clears it on the product
-        material: formData.material.trim(),
-        careInstructions: formData.careInstructions.trim(),
-        ageRecommendation: formData.ageRecommendation.trim(),
-        ageGroups: formData.ageGroups,
-        metaTitle: formData.metaTitle.trim(),
-        metaDescription: formData.metaDescription.trim(),
-      };
-
-      // Optional fields: on edit, null clears a value that was removed in the form
-      const comparePrice = parseFloat(formData.comparePrice);
-      const optionalFields: Record<string, unknown> = {
-        shortDescription: formData.shortDescription.trim() || null,
-        comparePrice: comparePrice > 0 ? comparePrice : null,
-        sku: formData.sku.trim() || null,
-        gender: formData.gender || null,
-      };
-      for (const [key, value] of Object.entries(optionalFields)) {
-        if (value !== null || isEdit) productData[key] = value;
-      }
-
-      // Existing variants keep their _id so the API updates them in place
-      // (carts reference variant ids); new rows have temporary ids.
-      productData.variants = hasVariants
-        ? variants.map((v) => ({
-            ...(isTempId(v._id) ? {} : { _id: v._id }),
-            size: v.size.trim(),
-            color: v.color.trim(),
-            price: parseFloat(String(v.price)) || 0,
-            stock: parseInt(String(v.stock)) || 0,
-            image: v.imageFile ? null : v.image || null,
-          }))
-        : [];
-
-      // Persist the primary image choice for images that already exist
-      const primaryExisting = existingImages.find((img) => img.isPrimary);
-      if (isEdit && primaryExisting && !newImages.some((img) => img.isPrimary)) {
-        productData.primaryImageId = primaryExisting._id;
-      }
-
-      let savedProduct: IProduct;
-      if (isEdit && product?._id) {
-        const response = await adminAPI.updateProduct(
-          product._id,
-          productData as Partial<IProduct>,
-        );
-        savedProduct = response.data.data.product;
-      } else {
-        const response = await adminAPI.createProduct(
-          productData as Partial<IProduct>,
-        );
-        savedProduct = response.data.data.product;
-      }
-
-      // The product is saved from here on. Upload failures are reported but must
-      // not keep the form open: submitting again would create a duplicate product.
-      const failedUploads: string[] = [];
-
-      if (newImages.length > 0) {
-        setUploadingImages(true);
-        const formDataImages = new FormData();
-        newImages.forEach((img) => formDataImages.append("images", img.file));
-        const primaryIndex = newImages.findIndex((img) => img.isPrimary);
-        if (primaryIndex >= 0) {
-          formDataImages.append("primaryIndex", String(primaryIndex));
-        }
-        try {
-          await adminAPI.uploadProductImages(savedProduct._id, formDataImages);
-        } catch (err) {
-          console.error("Failed to upload product images", err);
-          failedUploads.push("product images");
-        }
-      }
-
-      // Upload pending variant images, matched to the saved variants by size + color
-      const savedVariants = savedProduct.variants || [];
-      for (const pendingVar of variants.filter((v) => v.imageFile)) {
-        const savedVariant = savedVariants.find(
-          (sv: IProductVariant) =>
-            variantKey(sv.size, sv.color) === variantKey(pendingVar.size, pendingVar.color),
-        );
-        if (!savedVariant?._id || !pendingVar.imageFile) continue;
-
-        const variantFormData = new FormData();
-        variantFormData.append("image", pendingVar.imageFile);
-        try {
-          await adminAPI.uploadVariantImage(savedProduct._id, savedVariant._id, variantFormData);
-        } catch (err) {
-          console.error("Failed to upload variant image", err);
-          failedUploads.push(`${pendingVar.size} / ${pendingVar.color} image`);
-        }
-      }
-
-      if (failedUploads.length > 0) {
-        toast.error(
-          `Product saved, but these uploads failed: ${failedUploads.join(", ")}. Edit the product to try again.`,
-          { duration: 8000 },
-        );
-      } else {
-        toast.success(isEdit ? "Product updated successfully" : "Product created successfully");
-      }
-
-      onSuccess();
-    } catch (error) {
-      console.error("Form error:", error);
-      toast.error(getErrorMessage(error, "Failed to save product"));
-    } finally {
-      setLoading(false);
-      setUploadingImages(false);
+    setSubmitted(true);
+    const found = validate(state);
+    const first = Object.keys(found)[0];
+    if (first) {
+      toast.error("Please fix the highlighted fields");
+      requestAnimationFrame(() => {
+        const el = document.getElementById(first);
+        el?.focus({ preventScroll: true });
+        el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      });
+      return;
     }
+
+    setSaving("saving");
+    const wantVisible = state.details.isActive;
+    const uploads = pendingUploads(state);
+    const payload = buildPayload(state, isEdit);
+    // New products stay hidden until their photos are in
+    if (!isEdit) payload.isActive = wantVisible && uploads.files.length === 0;
+
+    let saved: IProduct;
+    try {
+      const response = isEdit && product
+        ? await adminAPI.updateProduct(product._id, payload)
+        : await adminAPI.createProduct(payload);
+      saved = response.data.data.product;
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Couldn't save the product"));
+      setSaving(null);
+      return;
+    }
+
+    // Saved from here on. If photos fail the editor reopens on the saved
+    // product (saving the "new" form again would create a duplicate).
+    let photosFailed = false;
+    if (uploads.files.length) {
+      setSaving("photos");
+      try {
+        const known = new Set((saved.images || []).map((img) => img._id));
+        const form = new FormData();
+        uploads.files.forEach((file) => form.append("images", file));
+        form.append("meta", JSON.stringify(uploads.meta));
+        saved = (await adminAPI.uploadProductImages(saved._id, form)).data.data.product;
+
+        // Uploaded photos are appended; put them where the admin placed them
+        const added = (saved.images || []).filter((img) => img._id && !known.has(img._id));
+        const idsByKey: Record<string, string> = {};
+        uploads.keys.forEach((key, i) => {
+          if (added[i]?._id) idsByKey[key] = added[i]._id!;
+        });
+        const order = photoOrder(state, idsByKey);
+        const followUp: Record<string, unknown> = {};
+        if (order.map((p) => p._id).join() !== (saved.images || []).map((img) => img._id).join()) followUp.images = order;
+        if (!isEdit && wantVisible) followUp.isActive = true;
+        if (Object.keys(followUp).length) saved = (await adminAPI.updateProduct(saved._id, followUp)).data.data.product;
+      } catch (error) {
+        console.error("Product photos failed to upload", error);
+        photosFailed = true;
+      }
+    }
+
+    setSaving(null);
+    if (photosFailed) {
+      toast.error(
+        isEdit
+          ? "Saved, but some photos didn't upload. Add them again and save."
+          : "Saved as hidden: the photos didn't upload. Add them again, then make the product visible.",
+        { duration: 8000 },
+      );
+      onSaved(saved, { reopen: true });
+      return;
+    }
+    toast.success(isEdit ? "Product saved" : wantVisible ? "Product created and visible in the store" : "Product created (hidden)");
+    onSaved(saved, { reopen: false });
   };
 
-  // Combine images for preview
-  const allImages: ImageUploaderImage[] = [
-    ...existingImages.map((img) => ({
-      ...img,
-      id: img._id,
-      url: img.url,
-      preview: img.url,
-    })),
-    ...newImages.map((img) => ({ ...img, url: img.preview })),
-  ];
+  const { details } = state;
+  const derived = derivedAgeGroups(state);
+  const generalPhotos = photosOf(state, null);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Information */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-lg border-b border-[var(--color-border)] pb-2">
-          Basic Information
-        </h3>
+    <form onSubmit={handleSubmit} noValidate>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
+        {/* Main column */}
+        <div className="space-y-6 min-w-0">
+          <Card id="details-heading" title="Details">
+            <Field id="product-name" label="Product name" required error={errors["product-name"]}>
+              <input
+                type="text"
+                value={details.name}
+                maxLength={100}
+                onChange={(e) => setDetail("name", e.target.value)}
+                placeholder="e.g. Muslin Jhabla Set"
+                {...inputProps("product-name", errors)}
+              />
+            </Field>
+            <Field
+              id="product-short-description"
+              label="Short description"
+              hint={`Shown on product pages and in search results. ${200 - details.shortDescription.length} characters left.`}
+            >
+              <input
+                type="text"
+                value={details.shortDescription}
+                maxLength={200}
+                onChange={(e) => setDetail("shortDescription", e.target.value)}
+                placeholder="One line about what makes it special"
+                {...inputProps("product-short-description", errors, "input", true)}
+              />
+            </Field>
+            <Field id="product-description" label="Description" required error={errors["product-description"]}>
+              <textarea
+                value={details.description}
+                maxLength={2000}
+                rows={5}
+                onChange={(e) => setDetail("description", e.target.value)}
+                placeholder="Fabric, fit, how it's made, what's included…"
+                {...inputProps("product-description", errors, "textarea")}
+              />
+            </Field>
+          </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Name */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">
-              Product Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className={`input ${errors.name ? "border-red-500" : ""}`}
-              placeholder="Enter product name"
+          <Card
+            id="photos-heading"
+            title={state.mode === "variants" ? "Photos for every colour" : "Photos"}
+            description={
+              state.mode === "variants"
+                ? "Shown whichever colour a shopper picks, e.g. detail shots or a size chart. Each colour's photos are under Sizes & colours."
+                : "The first photo, or the one marked Main, is shown on product cards. JPG, PNG or WebP, up to 10 MB."
+            }
+          >
+            <PhotoStrip
+              label={state.mode === "variants" ? "every colour" : "this product"}
+              photos={generalPhotos}
+              onAdd={(files) => handleAddPhotos(files, null)}
+              {...photoHandlers}
             />
-            {errors.name && (
-              <p className="text-red-500 text-sm mt-1">{errors.name}</p>
-            )}
-          </div>
+          </Card>
 
-          {/* Short Description */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">
-              Short Description
-            </label>
-            <input
-              type="text"
-              name="shortDescription"
-              value={formData.shortDescription}
-              onChange={handleChange}
-              className="input"
-              placeholder="Brief description for listings"
-              maxLength={200}
-            />
-          </div>
+          <Card id="options-heading" title="Price & options">
+            <fieldset>
+              <legend className="text-sm font-medium mb-2">Does this product come in different sizes or colours?</legend>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {MODES.map(({ value, title, text, icon: Icon }) => {
+                  const checked = state.mode === value;
+                  return (
+                    <label
+                      key={value}
+                      className={`flex gap-3 rounded-xl border-2 p-3 cursor-pointer transition-colors ${
+                        checked ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]" : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="product-mode"
+                        value={value}
+                        checked={checked}
+                        onChange={() => handleModeChange(value)}
+                        className="mt-1 w-4 h-4"
+                      />
+                      <span>
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Icon className="w-4 h-4" aria-hidden="true" />
+                          {title}
+                        </span>
+                        <span className="block text-sm text-[var(--color-text-muted)]">{text}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
 
-          {/* Material & Care */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Material</label>
-            <input
-              type="text"
-              name="material"
-              value={formData.material}
-              onChange={handleChange}
-              className="input"
-              placeholder="e.g. 100% organic cotton"
-              maxLength={200}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Age Recommendation
-            </label>
-            <input
-              type="text"
-              name="ageRecommendation"
-              value={formData.ageRecommendation}
-              onChange={handleChange}
-              className="input"
-              placeholder="e.g. 0–12 months"
-              maxLength={100}
-            />
-          </div>
-          <fieldset className="md:col-span-2">
-            <legend className="block text-sm font-medium mb-1">
-              Age groups{" "}
-              <span className="font-normal text-[var(--color-text-muted)]">
-                (used by "Shop by Age" — untagged products don't appear there)
-              </span>
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {AGE_GROUPS.map((age) => {
-                const checked = formData.ageGroups.includes(age);
-                return (
-                  <label
-                    key={age}
-                    className={`cursor-pointer select-none rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                      checked
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-medium"
-                        : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={checked}
-                      onChange={() =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          ageGroups: checked
-                            ? prev.ageGroups.filter((a) => a !== age)
-                            : AGE_GROUPS.filter((a) => a === age || prev.ageGroups.includes(a)),
-                        }))
-                      }
+            {state.mode === "single" ? (
+              <div className="grid sm:grid-cols-3 gap-4">
+                <Field id="product-price" label="Price (NPR)" required error={errors["product-price"]}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={details.price}
+                    onChange={(e) => setDetail("price", e.target.value)}
+                    placeholder="0"
+                    {...inputProps("product-price", errors)}
+                  />
+                </Field>
+                <Field
+                  id="product-compare-price"
+                  label="Compare-at price"
+                  hint="Optional. Shown struck out."
+                  error={errors["product-compare-price"]}
+                >
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={details.comparePrice}
+                    onChange={(e) => setDetail("comparePrice", e.target.value)}
+                    placeholder="—"
+                    {...inputProps("product-compare-price", errors, "input", true)}
+                  />
+                </Field>
+                <Field id="product-stock" label="In stock" required error={errors["product-stock"]}>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    value={details.stock}
+                    onChange={(e) => setDetail("stock", e.target.value)}
+                    placeholder="0"
+                    {...inputProps("product-stock", errors)}
+                  />
+                </Field>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h3 className="font-medium font-sans tracking-normal">Sizes</h3>
+                  <SizePicker
+                    selected={state.sizes}
+                    usedElsewhere={options.customSizes}
+                    onToggle={handleToggleSize}
+                    error={errors["product-sizes"]}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-medium font-sans tracking-normal">Colours</h3>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      Add each colour's photos here: shoppers see them when they pick the colour.
+                    </p>
+                  </div>
+                  <ul id="product-colors" tabIndex={-1} className="space-y-3 outline-none">
+                    {state.colors.map((color, index) => {
+                      const nameId = `color-name-${color.key}`;
+                      const label = color.name.trim() || `colour ${index + 1}`;
+                      return (
+                        <li key={color.key} className="rounded-xl border border-[var(--color-border)] p-3 sm:p-4 space-y-3">
+                          <div className="flex flex-wrap items-start gap-3">
+                            {/* The swatch is the colour input: tap it to change the colour */}
+                            <label
+                              className="relative mt-0.5 rounded-full cursor-pointer focus-within:ring-2 focus-within:ring-[var(--color-primary)] focus-within:ring-offset-2"
+                              title="Change swatch"
+                            >
+                              <Swatch hex={color.hex} className="w-9 h-9" />
+                              <span className="sr-only">Swatch for {label}</span>
+                              <input
+                                id={`color-hex-${color.key}`}
+                                type="color"
+                                value={color.hex || "#ffffff"}
+                                onChange={(e) => update((s) => updateColor(s, color.key, { hex: e.target.value }))}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              />
+                            </label>
+                            <div className="flex-1 min-w-[10rem]">
+                              <label htmlFor={nameId} className="sr-only">
+                                Colour name
+                              </label>
+                              <input
+                                type="text"
+                                value={color.name}
+                                maxLength={30}
+                                onChange={(e) => update((s) => updateColor(s, color.key, { name: e.target.value }))}
+                                {...inputProps(nameId, errors)}
+                              />
+                              {errors[nameId] && (
+                                <p id={`${nameId}-error`} className="text-sm text-[var(--color-error)] mt-1">
+                                  {errors[nameId]}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => update((s) => moveColor(s, color.key, -1))}
+                                disabled={index === 0}
+                                aria-label={`Move ${label} up`}
+                                className="p-2 rounded-lg hover:bg-[var(--color-surface-muted)] disabled:opacity-35"
+                              >
+                                <ArrowUp className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => update((s) => moveColor(s, color.key, 1))}
+                                disabled={index === state.colors.length - 1}
+                                aria-label={`Move ${label} down`}
+                                className="p-2 rounded-lg hover:bg-[var(--color-surface-muted)] disabled:opacity-35"
+                              >
+                                <ArrowDown className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveColor(color.key)}
+                                aria-label={`Remove ${label}`}
+                                className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-error)] hover:bg-[var(--color-surface-muted)]"
+                              >
+                                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
+                          <PhotoStrip
+                            compact
+                            label={label}
+                            photos={photosOf(state, color.key)}
+                            onAdd={(files) => handleAddPhotos(files, color.key)}
+                            {...photoHandlers}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {errors["product-colors"] && <p className="text-sm text-[var(--color-error)]">{errors["product-colors"]}</p>}
+                  {colorPickerOpen ? (
+                    <ColorPicker
+                      existing={state.colors.map((c) => c.name)}
+                      usedElsewhere={options.colors}
+                      onAdd={(name, hex) => update((s) => addColor(s, name, hex))}
+                      onClose={() => setColorPickerOpen(false)}
                     />
-                    {formatAgeGroup(age)}
-                  </label>
-                );
-              })}
+                  ) : (
+                    <button type="button" onClick={() => setColorPickerOpen(true)} className="btn btn-secondary text-sm">
+                      <Plus className="w-4 h-4" aria-hidden="true" />
+                      Add colour
+                    </button>
+                  )}
+                </div>
+
+                <OptionsTable state={state} errors={errors} update={update} />
+              </div>
+            )}
+          </Card>
+
+          <details className="card p-4 sm:p-6 group">
+            <summary className="cursor-pointer font-semibold text-lg list-none flex items-center justify-between">
+              Search engine listing
+              <span className="text-sm font-normal text-[var(--color-text-muted)] group-open:hidden">Optional</span>
+            </summary>
+            <div className="space-y-4 mt-4">
+              <Field id="product-meta-title" label="Search result title" hint="Defaults to the product name">
+                <input
+                  type="text"
+                  value={details.metaTitle}
+                  maxLength={70}
+                  onChange={(e) => setDetail("metaTitle", e.target.value)}
+                  {...inputProps("product-meta-title", errors, "input", true)}
+                />
+              </Field>
+              <Field id="product-meta-description" label="Search result description" hint="Defaults to the short description">
+                <textarea
+                  value={details.metaDescription}
+                  maxLength={160}
+                  rows={2}
+                  onChange={(e) => setDetail("metaDescription", e.target.value)}
+                  {...inputProps("product-meta-description", errors, "textarea", true)}
+                />
+              </Field>
             </div>
-          </fieldset>
-          <div>
-            <label htmlFor="product-gender" className="block text-sm font-medium mb-1">
-              Gender
-            </label>
-            <select
-              id="product-gender"
-              name="gender"
-              value={formData.gender}
-              onChange={handleChange}
-              className="select w-full"
-            >
-              <option value="">Not specified</option>
-              {PRODUCT_GENDERS.map((g) => (
-                <option key={g} value={g}>
-                  {GENDER_LABELS[g]}
-                </option>
+          </details>
+        </div>
+
+        {/* Sidebar */}
+        <aside className="space-y-6">
+          <Card id="status-heading" title="Status">
+            <fieldset className="space-y-2">
+              <legend className="sr-only">Visibility</legend>
+              {[
+                { value: true, title: "Visible in store", text: isEdit ? "Shoppers can find and buy it" : "Goes live once its photos have uploaded" },
+                { value: false, title: "Hidden", text: "Only admins can see it (draft)" },
+              ].map((option) => (
+                <label key={option.title} className="flex gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="product-visibility"
+                    checked={details.isActive === option.value}
+                    onChange={() => setDetail("isActive", option.value)}
+                    className="mt-1 w-4 h-4"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">{option.title}</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">{option.text}</span>
+                  </span>
+                </label>
               ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">
-              Care Instructions
-            </label>
-            <input
-              type="text"
-              name="careInstructions"
-              value={formData.careInstructions}
-              onChange={handleChange}
-              className="input"
-              placeholder="e.g. Machine wash cold, gentle cycle"
-              maxLength={500}
-            />
-          </div>
-
-          {/* Description */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium mb-1">
-              Description <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              className={`textarea ${errors.description ? "border-red-500" : ""}`}
-              placeholder="Detailed product description"
-              rows={4}
-            />
-            {errors.description && (
-              <p className="text-red-500 text-sm mt-1">{errors.description}</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Pricing */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-lg border-b border-[var(--color-border)] pb-2">
-          Pricing
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Price */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Price (NPR) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              name="price"
-              value={formData.price}
-              onChange={handleChange}
-              className={`input ${errors.price ? "border-red-500" : ""}`}
-              placeholder="0"
-              min="0"
-              step="0.01"
-            />
-            {errors.price && (
-              <p className="text-red-500 text-sm mt-1">{errors.price}</p>
-            )}
-          </div>
-
-          {/* Compare Price */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Compare Price (NPR)
-            </label>
-            <input
-              type="number"
-              name="comparePrice"
-              value={formData.comparePrice}
-              onChange={handleChange}
-              className={`input ${errors.comparePrice ? "border-red-500" : ""}`}
-              placeholder="Original price (optional)"
-              min="0"
-              step="0.01"
-            />
-            {errors.comparePrice && (
-              <p className="text-red-500 text-sm mt-1">{errors.comparePrice}</p>
-            )}
-          </div>
-
-          {/* SKU */}
-          <div>
-            <label className="block text-sm font-medium mb-1">SKU</label>
-            <input
-              type="text"
-              name="sku"
-              value={formData.sku}
-              onChange={handleChange}
-              className="input"
-              placeholder="Stock keeping unit"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Organization */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-lg border-b border-[var(--color-border)] pb-2">
-          Organization
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Category <span className="text-red-500">*</span>
-            </label>
-            <select
-              name="category"
-              value={formData.category}
-              onChange={handleChange}
-              className={`select ${errors.category ? "border-red-500" : ""}`}
-            >
-              <option value="">Select category</option>
-              {categories.map((cat) => (
-                <option key={cat._id} value={cat._id}>
-                  {populated(cat.parent) ? `${populated(cat.parent)?.name} → ` : ""}
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-            {errors.category && (
-              <p className="text-red-500 text-sm mt-1">{errors.category}</p>
-            )}
-          </div>
-
-          {/* Stock */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Stock{" "}
-              {!hasVariants && <span className="text-red-500">*</span>}
-            </label>
-            <input
-              type="number"
-              name="stock"
-              value={formData.stock}
-              onChange={handleChange}
-              className={`input ${errors.stock ? "border-red-500" : ""}`}
-              placeholder={hasVariants ? "Managed per variant" : "0"}
-              min="0"
-              disabled={hasVariants}
-            />
-            {errors.stock && (
-              <p className="text-red-500 text-sm mt-1">{errors.stock}</p>
-            )}
-            {hasVariants && (
-              <p className="text-sm text-[var(--color-text-muted)] mt-1">
-                Stock is managed per variant option
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Toggles */}
-        <div className="flex gap-6">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              name="isFeatured"
-              checked={formData.isFeatured}
-              onChange={handleChange}
-              className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
-            />
-            <span className="text-sm">Featured Product</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              name="isActive"
-              checked={formData.isActive}
-              onChange={handleChange}
-              className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
-            />
-            <span className="text-sm">Active</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Variants */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center border-b border-[var(--color-border)] pb-2">
-          <h3 className="font-semibold text-lg">Variants</h3>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer bg-[var(--color-surface-muted)] px-3 py-1.5 rounded-lg border border-[var(--color-border)]">
+            </fieldset>
+            <label className="flex items-center gap-2.5 cursor-pointer border-t border-[var(--color-border)] pt-3">
               <input
                 type="checkbox"
-                checked={hasVariants}
-                onChange={(e) => handleHasVariantsChange(e.target.checked)}
-                className="w-4 h-4 rounded border-[var(--color-border)] text-[var(--color-primary)]"
+                checked={details.isFeatured}
+                onChange={(e) => setDetail("isFeatured", e.target.checked)}
+                className="w-4 h-4"
               />
-              <span className="text-sm font-medium">Enable Variants</span>
+              <span className="text-sm">Feature on the home page</span>
             </label>
-          </div>
-        </div>
+          </Card>
 
-        {hasVariants && (
-          <div className="space-y-4 animate-fadeIn">
-            {/* Headers */}
-            <div className="hidden md:grid grid-cols-12 gap-4 text-sm font-medium text-[var(--color-text-muted)] border-b pb-2">
-              <div className="col-span-3">
-                Size <span className="text-red-500">*</span>
-              </div>
-              <div className="col-span-3">
-                Color <span className="text-red-500">*</span>
-              </div>
-              <div className="col-span-2">Price</div>
-              <div className="col-span-2">Stock</div>
-              <div className="col-span-2">Image</div>
-            </div>
-
-            {/* Variant List */}
-            {variants.map((variant, index) => (
-              <div
-                key={variant._id || index}
-                className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start p-4 md:p-0 border md:border-0 rounded-lg md:rounded-none bg-[var(--color-surface-muted)] md:bg-transparent"
+          <Card id="organisation-heading" title="Organisation">
+            <Field id="product-category" label="Category" required error={errors["product-category"]}>
+              <select
+                value={details.category}
+                onChange={(e) => setDetail("category", e.target.value)}
+                {...inputProps("product-category", errors, "select")}
               >
-                {/* Size */}
-                <div className="col-span-3">
-                  <label className="md:hidden text-xs font-medium mb-1 block">
-                    Size
-                  </label>
-                  <SizeSelect
-                    value={variant.size}
-                    customMode={Boolean(variant.customSize)}
-                    customSizes={customSizeOptions}
-                    onChange={(size, customMode) =>
-                      handleVariantSizeChange(index, size, customMode)
-                    }
-                  />
-                </div>
-
-                {/* Color */}
-                <div className="col-span-3">
-                  <label className="md:hidden text-xs font-medium mb-1 block">
-                    Color
-                  </label>
-                  <input
-                    type="text"
-                    value={variant.color}
-                    onChange={(e) =>
-                      handleVariantChange(index, "color", e.target.value)
-                    }
-                    className="input w-full text-sm"
-                    placeholder="Color (e.g. Red)"
-                    required
-                  />
-                </div>
-
-                {/* Price */}
-                <div className="col-span-2">
-                  <label className="md:hidden text-xs font-medium mb-1 block">
-                    Price
-                  </label>
-                  <input
-                    type="number"
-                    value={variant.price}
-                    onChange={(e) =>
-                      handleVariantChange(index, "price", e.target.value)
-                    }
-                    className="input w-full text-sm"
-                    placeholder="0"
-                    min="0"
-                    required
-                  />
-                </div>
-
-                {/* Stock */}
-                <div className="col-span-2">
-                  <label className="md:hidden text-xs font-medium mb-1 block">
-                    Stock
-                  </label>
-                  <input
-                    type="number"
-                    value={variant.stock}
-                    onChange={(e) =>
-                      handleVariantChange(index, "stock", e.target.value)
-                    }
-                    className="input w-full text-sm"
-                    placeholder="0"
-                    min="0"
-                    required
-                  />
-                </div>
-
-                {/* Image & Actions */}
-                <div className="col-span-2 flex items-center gap-2">
-                  {variant.image ? (
-                    <div className="relative group">
-                      <img
-                        src={variant.image}
-                        alt="Variant"
-                        className="w-10 h-10 object-cover rounded border"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleVariantChange(index, "image", "")}
-                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer">
-                      <div className="w-10 h-10 border border-dashed border-[var(--color-border)] rounded flex items-center justify-center hover:bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]">
-                        <Plus className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleVariantImageUpload(index, file);
-                        }}
-                      />
-                    </label>
-                  )}
-
-                  <div className="flex ml-auto gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleDuplicateVariant(index)}
-                      className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"
-                      title="Duplicate Variant"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveVariant(index)}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                      title="Remove Variant"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                <option value="">Choose a category</option>
+                {categories.map((cat) => (
+                  <option key={cat._id} value={cat._id}>
+                    {populated(cat.parent) ? `${populated(cat.parent)?.name} → ` : ""}
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="product-gender" label="For">
+              <select value={details.gender} onChange={(e) => setDetail("gender", e.target.value)} {...inputProps("product-gender", errors, "select")}>
+                <option value="">Anyone (not specified)</option>
+                {PRODUCT_GENDERS.map((g) => (
+                  <option key={g} value={g}>
+                    {GENDER_LABELS[g]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <fieldset>
+              <legend className="block text-sm font-medium mb-1">Shop by age</legend>
+              {derived.length > 0 ? (
+                <>
+                  <ul className="flex flex-wrap gap-1.5" aria-label="Age groups">
+                    {derived.map((age) => (
+                      <li key={age} className="rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] px-2.5 py-1 text-xs font-medium">
+                        {formatAgeGroup(age)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1.5">Set automatically from the sizes.</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {AGE_GROUPS.map((age) => {
+                      const checked = details.ageGroups.includes(age);
+                      return (
+                        <label
+                          key={age}
+                          className={`cursor-pointer select-none rounded-full border px-2.5 py-1 text-xs transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[var(--color-primary)] ${
+                            checked
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-medium"
+                              : "border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={checked}
+                            onChange={() =>
+                              setDetail(
+                                "ageGroups",
+                                checked ? details.ageGroups.filter((a) => a !== age) : AGE_GROUPS.filter((a) => a === age || details.ageGroups.includes(a)),
+                              )
+                            }
+                          />
+                          {formatAgeGroup(age)}
+                        </label>
+                      );
+                    })}
                   </div>
-                </div>
-              </div>
-            ))}
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+                    {state.mode === "variants" ? "Sizes on the age scale set these automatically." : "Untagged products don't appear in Shop by age."}
+                  </p>
+                </>
+              )}
+            </fieldset>
+          </Card>
 
-            {errors.variants && (
-              <p className="text-red-500 text-sm">{errors.variants}</p>
-            )}
+          <Card id="more-heading" title="More details">
+            <Field id="product-material" label="Material">
+              <input
+                type="text"
+                value={details.material}
+                maxLength={200}
+                onChange={(e) => setDetail("material", e.target.value)}
+                placeholder="e.g. 100% organic cotton"
+                {...inputProps("product-material", errors)}
+              />
+            </Field>
+            <Field id="product-care" label="Care instructions">
+              <input
+                type="text"
+                value={details.careInstructions}
+                maxLength={500}
+                onChange={(e) => setDetail("careInstructions", e.target.value)}
+                placeholder="e.g. Machine wash cold, gentle cycle"
+                {...inputProps("product-care", errors)}
+              />
+            </Field>
+            <Field id="product-age-recommendation" label="Age note" hint="Optional, e.g. “Best from 3 months”">
+              <input
+                type="text"
+                value={details.ageRecommendation}
+                maxLength={100}
+                onChange={(e) => setDetail("ageRecommendation", e.target.value)}
+                {...inputProps("product-age-recommendation", errors, "input", true)}
+              />
+            </Field>
+            <Field id="product-sku" label="Product code (SKU)">
+              <input
+                type="text"
+                value={details.sku}
+                maxLength={50}
+                onChange={(e) => setDetail("sku", e.target.value)}
+                {...inputProps("product-sku", errors, "input uppercase")}
+              />
+            </Field>
+          </Card>
 
-            <button
-              type="button"
-              onClick={handleAddVariant}
-              className="flex items-center gap-2 text-sm text-[var(--color-primary)] font-medium hover:underline mt-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Variant
-            </button>
-          </div>
-        )}
+          <ProductSummary state={state} />
+        </aside>
       </div>
 
-      {/* Images */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-lg border-b border-[var(--color-border)] pb-2">
-          Images
-        </h3>
-
-        <ImageUploader
-          images={allImages}
-          onUpload={handleImageUpload}
-          onDelete={(id: string) => {
-            if (existingImages.find((img) => img._id === id)) {
-              handleDeleteExistingImage(id);
-            } else {
-              handleRemoveNewImage(id);
-            }
-          }}
-          onSetPrimary={handleSetPrimary}
-          uploading={uploadingImages}
-        />
-      </div>
-
-      {/* SEO */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-lg border-b border-[var(--color-border)] pb-2">
-          SEO (Optional)
-        </h3>
-
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Meta Title</label>
-            <input
-              type="text"
-              name="metaTitle"
-              value={formData.metaTitle}
-              onChange={handleChange}
-              className="input"
-              placeholder="Custom title for search engines"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Meta Description
-            </label>
-            <textarea
-              name="metaDescription"
-              value={formData.metaDescription}
-              onChange={handleChange}
-              className="textarea"
-              placeholder="Custom description for search engines"
-              rows={2}
-            />
-          </div>
+      {/* Sticky actions (right padding keeps Save clear of the floating chat button) */}
+      <div className="sticky bottom-0 z-20 mt-6 -mx-4 sm:-mx-6 pl-4 sm:pl-6 pr-20 sm:pr-24 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-[var(--color-text-muted)]" role="status">
+          {saving === "photos" ? "Uploading photos…" : saving ? "Saving…" : dirty ? "Unsaved changes" : isEdit ? "All changes saved" : "New product"}
+        </p>
+        <div className="flex gap-3">
+          <button type="button" onClick={onCancel} className="btn btn-secondary" disabled={!!saving}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={!!saving} aria-busy={!!saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+            {isEdit ? "Save changes" : "Create product"}
+          </button>
         </div>
       </div>
 
-      {/* Form Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)]">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="btn btn-secondary"
-          disabled={loading}
-        >
-          Cancel
-        </button>
-        <button type="submit" className="btn btn-primary" disabled={loading}>
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {uploadingImages ? "Uploading Images..." : "Saving..."}
-            </>
-          ) : (
-            <>{isEdit ? "Update Product" : "Create Product"}</>
-          )}
-        </button>
-      </div>
+      <ConfirmModal
+        isOpen={!!confirmation}
+        onClose={() => setConfirmation(null)}
+        onConfirm={() => {
+          confirmation?.onConfirm();
+          setConfirmation(null);
+        }}
+        title={confirmation?.title || ""}
+        message={confirmation?.message || ""}
+        confirmText={confirmation?.confirmText}
+        cancelText="Keep it"
+        variant="warning"
+      />
     </form>
   );
 };

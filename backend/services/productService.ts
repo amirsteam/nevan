@@ -10,7 +10,8 @@ import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
-import { PRODUCT_SIZES, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { PRODUCT_SIZES, AGE_GROUPS, PRODUCT_GENDERS, COLOR_PALETTE } from "../utils/constants";
+import { adoptVariantImages, forgetRemovedPhotos } from "../utils/productVariants";
 import { campaignProductFilter } from "./campaignService";
 
 interface ProductsOptions {
@@ -26,6 +27,8 @@ interface ProductsOptions {
   gender?: string;
   // Campaign slug: only the products its sale/collection covers
   campaign?: string;
+  // Comma-separated product ids (recently viewed): just those products
+  ids?: string | string[];
 }
 
 interface ProductsResult {
@@ -38,9 +41,26 @@ interface VariantData {
   size: string;
   color: string;
   price?: number;
+  comparePrice?: number | null;
   stock?: number;
+  // Ignored: a variant's photo is derived from its colour's photos
   image?: string | null;
-  sku?: string;
+  sku?: string | null;
+}
+
+/** Existing photo in the order the admin wants, with its colour and alt text */
+interface ImageUpdate {
+  _id: string;
+  color?: string | null;
+  alt?: string | null;
+  isPrimary?: boolean;
+}
+
+/** Per-file details for uploaded photos (same order as the files) */
+export interface UploadMeta {
+  color?: string | null;
+  alt?: string | null;
+  isPrimary?: boolean;
 }
 
 interface ProductData {
@@ -59,7 +79,10 @@ interface ProductData {
   sku?: string;
   images?: any[];
   variants?: VariantData[];
-  // Not stored: selects which existing image is primary
+  // Option order and colour swatches (products with variants)
+  sizes?: string[];
+  colors?: { name: string; hex?: string | null }[];
+  // Not stored: selects which existing image is primary (older clients)
   primaryImageId?: string;
   isFeatured?: boolean;
   isActive?: boolean;
@@ -119,6 +142,19 @@ const SORT_OPTIONS: Record<string, string> = {
   "-soldCount": "-soldCount",
 };
 
+const MAX_IDS = 24;
+
+/**
+ * "id1,id2" (or a repeated ?ids= array) -> unique ObjectIds, at most MAX_IDS;
+ * malformed ids are dropped. null when the parameter wasn't sent.
+ */
+const parseIds = (ids: unknown): Types.ObjectId[] | null => {
+  if (ids === undefined) return null;
+  const raw = (Array.isArray(ids) ? ids : [ids]).flatMap((value) => String(value).split(","));
+  const valid = raw.map((id) => id.trim()).filter((id) => /^[a-f\d]{24}$/i.test(id));
+  return [...new Set(valid)].slice(0, MAX_IDS).map((id) => new Types.ObjectId(id));
+};
+
 const resolveSort = (sort: unknown): string =>
   typeof sort === "string" && Object.prototype.hasOwnProperty.call(SORT_OPTIONS, sort)
     ? SORT_OPTIONS[sort]
@@ -142,6 +178,7 @@ const getProducts = async (
     age,
     gender,
     campaign,
+    ids,
   } = options;
 
   // Build filter
@@ -152,6 +189,13 @@ const getProducts = async (
     if (scope._id) filter._id = scope._id;
     // Intersected with any category filter below via $and
     if (scope.category) filter.$and = [{ category: scope.category }];
+  }
+
+  // Specific products (inactive or deleted ones simply don't come back; no
+  // valid ids at all means no results, not the whole catalogue)
+  const idList = parseIds(ids);
+  if (idList) {
+    filter.$and = [...(filter.$and || []), { _id: { $in: idList } }];
   }
 
   if (category) {
@@ -270,12 +314,24 @@ const normalizeProductInput = <T extends Partial<ProductData>>(data: T): T => {
     }
   }
   if (Array.isArray(normalized.variants)) {
-    normalized.variants = normalized.variants.map((v: VariantData) => ({
+    normalized.variants = normalized.variants.map(({ image: _derived, ...v }: VariantData) => ({
       ...v,
       size: String(v.size).trim(),
       color: String(v.color).trim(),
+      comparePrice: v.comparePrice == null || Number(v.comparePrice) <= 0 ? undefined : Number(v.comparePrice),
+      sku: v.sku ? String(v.sku).trim() : undefined,
     }));
   }
+  if (Array.isArray(normalized.colors)) {
+    normalized.colors = normalized.colors.map((c: { name: string; hex?: string | null }) =>
+      c.hex ? { name: String(c.name).trim(), hex: String(c.hex).toLowerCase() } : { name: String(c.name).trim() },
+    );
+  }
+  if (Array.isArray(normalized.sizes)) {
+    normalized.sizes = normalized.sizes.map((size: string) => String(size).trim());
+  }
+  // Photos change through image updates (edit) and uploads, never wholesale
+  delete normalized.images;
   delete normalized.primaryImageId;
   return normalized;
 };
@@ -316,6 +372,78 @@ const getSizeOptions = async (): Promise<{ builtIn: string[]; custom: string[] }
 };
 
 /**
+ * Colour suggestions for the admin form: the built-in palette plus colours
+ * already used on other products (with their swatches), so spellings match.
+ */
+const getColorOptions = async (): Promise<{
+  palette: { name: string; hex: string }[];
+  used: { name: string; hex?: string }[];
+}> => {
+  const [withSwatches, variantColors] = await Promise.all([
+    Product.aggregate<{ _id: string; hex?: string }>([
+      { $unwind: "$colors" },
+      { $group: { _id: { $toLower: "$colors.name" }, name: { $first: "$colors.name" }, hex: { $first: "$colors.hex" } } },
+      { $project: { _id: "$name", hex: 1 } },
+    ]),
+    Product.distinct("variants.color") as Promise<string[]>,
+  ]);
+  const inPalette = (name: string) =>
+    COLOR_PALETTE.some((c) => c.name.toLowerCase() === String(name).trim().toLowerCase());
+  const used = new Map<string, { name: string; hex?: string }>();
+  for (const color of withSwatches) {
+    if (color._id && !inPalette(color._id)) {
+      used.set(color._id.toLowerCase(), { name: color._id, hex: color.hex || undefined });
+    }
+  }
+  for (const name of variantColors) {
+    const key = String(name).trim().toLowerCase();
+    if (key && !inPalette(name) && !used.has(key)) used.set(key, { name: String(name).trim() });
+  }
+  return {
+    palette: [...COLOR_PALETTE],
+    used: [...used.values()].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+};
+
+/**
+ * Apply the admin's photo list (edit form): order, colour, alt text and the
+ * primary photo for existing photos. Photos left out are removed; their
+ * Cloudinary public ids are returned so they're deleted after the save.
+ */
+const applyImageUpdates = (product: any, updates: ImageUpdate[]): string[] => {
+  const current: any[] = [...product.images];
+  const byId = new Map(current.map((img) => [String(img._id), img]));
+  const kept: any[] = [];
+  for (const update of updates) {
+    const image = byId.get(String(update._id));
+    if (!image) {
+      throw new AppError("A photo in this update isn't on the product any more. Reload the page and try again.", 400);
+    }
+    if (kept.includes(image)) continue;
+    if (update.color !== undefined) image.color = update.color ? String(update.color).trim() : null;
+    if (update.alt !== undefined) image.alt = update.alt ? String(update.alt).trim() : undefined;
+    kept.push(image);
+  }
+  const primary = updates.find((u) => u.isPrimary);
+  const removed = current.filter((img) => !kept.includes(img));
+  forgetRemovedPhotos(product, removed.map((img) => img.url));
+  product.images = kept.map((img) => ({
+    ...img.toObject(),
+    isPrimary: primary ? String(img._id) === String(primary._id) : img.isPrimary,
+  }));
+  return removed.map((img) => img.publicId).filter(Boolean);
+};
+
+/** Delete photos from Cloudinary; a failure only leaves an unused file behind */
+const destroyImages = async (publicIds: string[]): Promise<void> => {
+  await Promise.all(
+    publicIds.map((publicId) =>
+      deleteImage(publicId).catch((error: unknown) => console.error(`Could not delete image ${publicId}:`, error)),
+    ),
+  );
+};
+
+/**
  * Update product (Admin)
  */
 const updateProduct = async (
@@ -336,7 +464,12 @@ const updateProduct = async (
   }
 
   const { primaryImageId } = updateData;
+  const imageUpdates = (updateData as { images?: ImageUpdate[] }).images;
   const data = normalizeProductInput(updateData);
+
+  // Older products keep photos on their variants: move them into the gallery
+  // before the variants are replaced (clients don't send variant photos back)
+  adoptVariantImages(product);
 
   // Check for removed variants and clean up carts
   if (data.variants) {
@@ -370,7 +503,10 @@ const updateProduct = async (
 
   Object.assign(product, data);
 
-  if (primaryImageId) {
+  let removedPublicIds: string[] = [];
+  if (Array.isArray(imageUpdates)) {
+    removedPublicIds = applyImageUpdates(product, imageUpdates);
+  } else if (primaryImageId) {
     const images = (product as any).images;
     if (!images.id(primaryImageId)) {
       throw new AppError("Primary image not found on this product", 400);
@@ -382,6 +518,8 @@ const updateProduct = async (
 
   await product.save();
   invalidateProductCaches();
+  // Only once the product no longer points at them
+  await destroyImages(removedPublicIds);
 
   return product;
 };
@@ -400,14 +538,12 @@ const deleteProduct = async (
   // Clean up cart items referencing this product
   await cleanupCartsForProduct(productId);
 
-  // Delete images from Cloudinary in parallel for better performance
-  const imageDeletions = (product as any).images
-    .filter((image: any) => image.publicId)
-    .map((image: any) => deleteImage(image.publicId));
-
-  await Promise.all(imageDeletions);
+  // Older products keep some photos only on variants; include those
+  adoptVariantImages(product);
+  const publicIds: string[] = (product as any).images.map((image: any) => image.publicId).filter(Boolean);
 
   await product.deleteOne();
+  await destroyImages(publicIds);
 
   invalidateProductCaches();
 
@@ -415,25 +551,32 @@ const deleteProduct = async (
 };
 
 /**
- * Add images to product (Admin)
+ * Add photos to a product (Admin). `meta` (same order as the files) can tag a
+ * photo with a colour, give it alt text or make it the primary photo; older
+ * clients send `primaryIndex` instead.
  */
 const addProductImages = async (
   productId: string,
   files: MulterFile[],
   primaryIndex?: number,
+  meta: UploadMeta[] = [],
 ): Promise<IProduct> => {
   const product = await Product.findById(productId);
   if (!product) {
     throw new AppError("Product not found", 404);
   }
 
+  adoptVariantImages(product);
   const images = (product as any).images;
-  // An explicit primaryIndex (chosen in the admin form) wins; otherwise the
-  // first image becomes primary only if the product has none yet
-  const explicitPrimary =
-    primaryIndex !== undefined && primaryIndex >= 0 && primaryIndex < files.length;
+  const primaryAt = meta.findIndex((m) => m?.isPrimary);
+  const chosenPrimary =
+    primaryAt >= 0
+      ? primaryAt
+      : primaryIndex !== undefined && primaryIndex >= 0 && primaryIndex < files.length
+        ? primaryIndex
+        : -1;
 
-  if (explicitPrimary) {
+  if (chosenPrimary >= 0) {
     images.forEach((img: any) => {
       img.isPrimary = false;
     });
@@ -442,9 +585,10 @@ const addProductImages = async (
   const newImages = files.map((file, index) => ({
     url: file.path,
     publicId: file.filename,
-    isPrimary: explicitPrimary
-      ? index === primaryIndex
-      : images.length === 0 && index === 0,
+    // Unknown colours are dropped when the product is saved
+    color: meta[index]?.color ? String(meta[index].color).trim() : null,
+    alt: meta[index]?.alt ? String(meta[index].alt).trim() : undefined,
+    isPrimary: chosenPrimary >= 0 ? index === chosenPrimary : images.length === 0 && index === 0,
   }));
 
   images.push(...newImages);
@@ -466,24 +610,26 @@ const deleteProductImage = async (
     throw new AppError("Product not found", 404);
   }
 
+  adoptVariantImages(product);
   const image = (product as any).images.id(imageId);
   if (!image) {
     throw new AppError("Image not found", 404);
   }
 
-  // Delete from Cloudinary
-  if (image.publicId) {
-    await deleteImage(image.publicId);
-  }
-
+  const { publicId, url } = image;
+  forgetRemovedPhotos(product, [url]);
   image.deleteOne();
   await product.save();
+  invalidateProductCaches();
+  if (publicId) await destroyImages([publicId]);
 
   return product;
 };
 
 /**
- * Upload image for a specific variant (Admin)
+ * Photo for one variant (Admin; older clients). Photos belong to colours, so
+ * this adds the photo to the variant's colour, first in line so it becomes
+ * the photo of every size in that colour.
  */
 const uploadVariantImage = async (
   productId: string,
@@ -500,10 +646,16 @@ const uploadVariantImage = async (
     throw new AppError("Variant not found", 404);
   }
 
-  // If there was a previous image, we could delete it from Cloudinary here
-  // For now, just overwrite the URL
-  variant.image = file.path; // Cloudinary URL
+  adoptVariantImages(product);
+  const images = (product as any).images;
+  const color = String(variant.color).trim().toLowerCase();
+  const firstOfColor = images.findIndex((img: any) => String(img.color || "").trim().toLowerCase() === color);
+  const photo = { url: file.path, publicId: file.filename, color: variant.color, isPrimary: images.length === 0 };
+  if (firstOfColor === -1) images.push(photo);
+  else images.splice(firstOfColor, 0, photo);
+
   await product.save();
+  invalidateProductCaches();
 
   return product;
 };
@@ -516,6 +668,7 @@ export {
   updateProduct,
   deleteProduct,
   getSizeOptions,
+  getColorOptions,
   addProductImages,
   deleteProductImage,
   uploadVariantImage,

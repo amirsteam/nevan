@@ -24,6 +24,8 @@ export interface ProductQueryParams {
   gender?: string;
   // Campaign slug: only the products its sale/collection covers (sale page)
   campaign?: string;
+  // Comma-separated product ids (recently viewed); results aren't in this order
+  ids?: string;
 }
 
 export const productsAPI = {

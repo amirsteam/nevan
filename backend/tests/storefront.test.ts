@@ -35,6 +35,24 @@ describe("Product age and gender filters", () => {
     expect(unisexOnly.body.data.products.map((p: any) => p._id)).toEqual([String(unisex._id)]);
   });
 
+  it("returns just the requested ids (recently viewed), skipping hidden and malformed ones", async () => {
+    const romper = await createProduct({ name: "Romper" });
+    const jhabla = await createProduct({ name: "Jhabla" });
+    const hidden = await createProduct({ name: "Hidden", isActive: false });
+    await createProduct({ name: "Not asked for" });
+
+    const res = await request(app)
+      .get("/api/v1/products")
+      .query({ ids: [romper._id, hidden._id, "nonsense", jhabla._id, romper._id].join(",") });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.products.map((p: any) => p._id).sort()).toEqual([String(romper._id), String(jhabla._id)].sort());
+
+    // Nothing valid asked for: nothing back, not the whole catalogue
+    const none = await request(app).get("/api/v1/products").query({ ids: "nonsense" });
+    expect(none.body.data.products).toEqual([]);
+  });
+
   it("ignores unknown filter values instead of returning nothing", async () => {
     await createProduct();
     const res = await request(app).get("/api/v1/products").query({ age: "99 Years", gender: "x" });

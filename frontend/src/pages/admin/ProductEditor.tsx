@@ -2,9 +2,10 @@
  * Product Editor Page
  * Full-page create/edit for products (/admin/products/new, /admin/products/:id/edit).
  * Replaces the old modal so the long form is usable on small screens; warns
- * before leaving with unsaved changes.
+ * before leaving with unsaved changes. If a save only partly worked (photos
+ * didn't upload) the form reopens on the saved product.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import toast from "react-hot-toast";
@@ -25,6 +26,8 @@ const ProductEditor = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Bumped to restart the form on freshly saved data
+  const [formKey, setFormKey] = useState(0);
   // Set once saved so the redirect to the list isn't blocked
   const savedRef = useRef(false);
 
@@ -68,11 +71,24 @@ const ProductEditor = () => {
 
   const backToList = () => navigate("/admin/products");
 
-  const handleSuccess = () => {
+  const handleSaved = (saved: IProduct, { reopen }: { reopen: boolean }) => {
     savedRef.current = true;
     setDirty(false);
-    backToList();
+    if (!reopen) {
+      backToList();
+      return;
+    }
+    if (isEdit) {
+      // Same page: restart the form on the saved product
+      setProduct(saved);
+      setFormKey((k) => k + 1);
+      savedRef.current = false;
+    } else {
+      navigate(`/admin/products/${saved._id}/edit`, { replace: true });
+    }
   };
+
+  const handleDirtyChange = useCallback((value: boolean) => setDirty(value), []);
 
   if (loadError) {
     return (
@@ -87,7 +103,7 @@ const ProductEditor = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="min-w-0">
           <Link
@@ -125,15 +141,14 @@ const ProductEditor = () => {
           </div>
         </LoadingRegion>
       ) : (
-        // Any edit inside the form marks the page dirty (input events bubble)
-        <div className="card p-4 sm:p-6" onInput={() => setDirty(true)}>
-          <ProductForm
-            product={product}
-            categories={categories}
-            onSuccess={handleSuccess}
-            onCancel={backToList}
-          />
-        </div>
+        <ProductForm
+          key={`${id || "new"}-${formKey}`}
+          product={product}
+          categories={categories}
+          onSaved={handleSaved}
+          onCancel={backToList}
+          onDirtyChange={handleDirtyChange}
+        />
       )}
 
       <ConfirmModal

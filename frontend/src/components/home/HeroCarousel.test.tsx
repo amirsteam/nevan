@@ -54,11 +54,36 @@ describe("HeroCarousel", () => {
   });
 
   it("requests resized images and only for the current and next slide", () => {
-    const { container } = renderCarousel([product(1), product(2), product(3)]);
-    const images = container.querySelectorAll("img");
+    renderCarousel([product(1), product(2), product(3)]);
+    const [, ...productSlides] = screen.getAllByRole("group", { hidden: true });
+    const images = productSlides.flatMap((slide) => [...slide.querySelectorAll("img")]);
     expect(images).toHaveLength(1);
-    expect(images[0].getAttribute("src")).toContain("/upload/f_auto,q_auto,c_limit,w_420/");
-    expect(images[0].getAttribute("srcset")).toContain("w_840");
+    expect(images[0].getAttribute("src")).toContain("/upload/f_auto,q_auto,c_limit,w_720/");
+    // Width descriptors: the browser picks a file for the layout (capped at 1080px)
+    expect(images[0].getAttribute("srcset")).toBe(
+      ["480w", "720w", "1080w"].map((w) => `https://res.cloudinary.com/demo/image/upload/f_auto,q_auto,c_limit,w_${parseInt(w)}/v1/romper-1.jpg ${w}`).join(", "),
+    );
+    expect(images[0].getAttribute("sizes")).toBeTruthy();
+    // Fills the slide's height instead of sitting on a white card
+    expect(images[0]).toHaveClass("object-cover", "h-full", "w-full");
+  });
+
+  it("fans the first three product photos out beside the brand pitch", () => {
+    renderCarousel([product(1), product(2), product(3), product(4)]);
+    const [brand] = screen.getAllByRole("group", { hidden: true });
+    const images = [...brand.querySelectorAll("img")];
+    expect(images).toHaveLength(3);
+    expect(images[0].getAttribute("src")).toContain("w_420/v1/romper-1.jpg");
+    expect(images.every((img) => img.getAttribute("loading") === "lazy")).toBe(true);
+    const collageLinks = [...brand.querySelectorAll('a[href^="/products/"]')];
+    expect(collageLinks.map((a) => a.getAttribute("href"))).toEqual(["/products/romper-1", "/products/romper-2", "/products/romper-3"]);
+    expect(collageLinks.every((a) => a.getAttribute("tabindex") === "-1")).toBe(true);
+  });
+
+  it("leaves the collage out when no featured product has a photo", () => {
+    renderCarousel([product(1, { images: [] })]);
+    const [brand] = screen.getAllByRole("group", { hidden: true });
+    expect(brand.querySelectorAll("img")).toHaveLength(0);
   });
 
   it("autoplays, and pauses while hovered", () => {

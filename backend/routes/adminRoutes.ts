@@ -25,6 +25,7 @@ import {
 import Order from "../models/Order";
 import User from "../models/User";
 import Product from "../models/Product";
+import { adoptVariantImages, syncDerivedFields } from "../utils/productVariants";
 import Category from "../models/Category";
 import { paginate, escapeRegex } from "../utils/helpers";
 import { disconnectUserSockets } from "../config/socketRegistry";
@@ -208,8 +209,9 @@ router.get(
   }),
 );
 
-// Before "/products/:id" so "sizes" isn't treated as an id
+// Before "/products/:id" so "sizes"/"options" aren't treated as ids
 router.get("/products/sizes", productController.getSizeOptions);
+router.get("/products/options", productController.getProductOptions);
 
 // Get single product by ID for admin
 router.get(
@@ -225,6 +227,12 @@ router.get(
       res.status(404).json({ status: "fail", message: "Product not found" });
       return;
     }
+
+    // Older products keep photos on variants: show them the way the editor
+    // works (photos per colour). Not saved here; saving the form does that,
+    // and adopted photos get the same ids then.
+    adoptVariantImages(product);
+    syncDerivedFields(product);
 
     res.status(200).json({
       status: "success",

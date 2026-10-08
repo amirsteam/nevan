@@ -2,7 +2,8 @@
  * ProductCard Component
  * The one product card used by Home, Products, Wishlist and related items:
  * sized images (Cloudinary), second image on hover, stock and discount
- * badges, wishlist toggle, and quick add for products without options.
+ * badges, colour swatches, wishlist toggle, and quick add for products
+ * without options.
  */
 import { memo } from "react";
 import { Link } from "react-router-dom";
@@ -14,6 +15,7 @@ import { imageUrl, imageSrcSet, onImageError } from "../utils/image";
 import { LOW_STOCK_DISPLAY } from "../config/store";
 import { useWishlist } from "../hooks/useWishlist";
 import { useAddToCart } from "../hooks/useAddToCart";
+import { isLightSwatch, productColors } from "../utils/productOptions";
 import type { IProduct } from "../types";
 
 interface ProductCardProps {
@@ -26,6 +28,7 @@ interface ProductCardProps {
 }
 
 const CARD_IMAGE_WIDTH = 360;
+const MAX_SWATCHES = 5;
 
 const ProductCard = memo(
   ({ product, priority = false, showQuickAdd = true, showCategory = true, className = "" }: ProductCardProps) => {
@@ -47,6 +50,8 @@ const ProductCard = memo(
     const category = populated(product.category);
     const href = `/products/${product.slug}`;
     const rating = product.ratings;
+    // Colour dots when a product comes in more than one colour
+    const swatches = product.variants?.length ? productColors(product).filter((c) => c.hex) : [];
 
     return (
       <article
@@ -156,7 +161,27 @@ const ProductCard = memo(
             </div>
           )}
 
-          <div className="flex items-end justify-between gap-2 mt-auto pt-1">
+          {swatches.length > 1 && (
+            <p className="flex items-center gap-1 mb-1.5" aria-label={`${swatches.length} colours: ${swatches.map((c) => c.name).join(", ")}`}>
+              {swatches.slice(0, MAX_SWATCHES).map((color) => (
+                <span
+                  key={color.name}
+                  aria-hidden="true"
+                  title={color.name}
+                  className={`w-3.5 h-3.5 rounded-full ${isLightSwatch(color.hex) ? "ring-1 ring-inset ring-[var(--color-border-strong)]" : ""}`}
+                  style={{ backgroundColor: color.hex }}
+                />
+              ))}
+              {swatches.length > MAX_SWATCHES && (
+                <span aria-hidden="true" className="text-xs text-[var(--color-text-muted)]">
+                  +{swatches.length - MAX_SWATCHES}
+                </span>
+              )}
+            </p>
+          )}
+
+          {/* Wraps on narrow cards (phones) so "Options" never covers the price */}
+          <div className="flex flex-wrap items-end justify-between gap-x-2 gap-y-1.5 mt-auto pt-1">
             <div className="min-w-0">
               <p className="font-bold text-[var(--color-primary)] leading-tight">
                 {from && <span className="text-xs font-medium text-[var(--color-text-muted)] mr-1">From</span>}

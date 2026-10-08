@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
-import { PRODUCT_SIZES, MAX_SIZE_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { PRODUCT_SIZES, MAX_SIZE_LENGTH, MAX_COLOR_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
+import { adoptVariantImages, syncDerivedFields } from "../utils/productVariants";
 
 // Re-export for backward compatibility
 export const VALID_SIZES = PRODUCT_SIZES;
@@ -10,8 +11,11 @@ export interface IVariant {
   size: string;
   color: string;
   price: number;
+  // Optional "was" price for this size/colour
+  comparePrice?: number;
   stock: number;
-  image?: string;
+  // Derived: the first photo of this variant's colour (see utils/productVariants)
+  image?: string | null;
   sku?: string;
 }
 
@@ -21,6 +25,14 @@ export interface IProductImage {
   publicId?: string;
   alt?: string;
   isPrimary: boolean;
+  // Photo of one colour; null/absent = shown for every colour
+  color?: string | null;
+}
+
+export interface IProductColor {
+  name: string;
+  // Swatch colour, e.g. "#c1847b"
+  hex?: string;
 }
 
 export interface IProductMethods {
@@ -48,6 +60,9 @@ export interface IProduct extends Document, IProductMethods {
   category: Types.ObjectId;
   images: IProductImage[];
   variants: IVariant[];
+  // Option lists in display order (products with variants only)
+  sizes: string[];
+  colors: IProductColor[];
   stock: number;
   sku?: string;
   isFeatured: boolean;
@@ -93,6 +108,10 @@ const variantSchema = new Schema<IVariant>(
       required: [true, "Variant price is required"],
       min: [0, "Price cannot be negative"],
     },
+    comparePrice: {
+      type: Number,
+      min: [0, "Compare price cannot be negative"],
+    },
     stock: {
       type: Number,
       required: true,
@@ -124,8 +143,30 @@ const imageSchema = new Schema<IProductImage>(
       type: Boolean,
       default: false,
     },
+    color: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   { _id: true },
+);
+
+const colorSchema = new Schema<IProductColor>(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [MAX_COLOR_LENGTH, `Colour names cannot exceed ${MAX_COLOR_LENGTH} characters`],
+    },
+    hex: {
+      type: String,
+      lowercase: true,
+      match: [/^#[0-9a-f]{6}$/, "Swatch colours look like #c1847b"],
+    },
+  },
+  { _id: false },
 );
 
 const productSchema = new Schema<IProduct, IProductModel>(
@@ -189,6 +230,14 @@ const productSchema = new Schema<IProduct, IProductModel>(
     },
     images: [imageSchema],
     variants: [variantSchema],
+    sizes: {
+      type: [{ type: String, trim: true, maxlength: MAX_SIZE_LENGTH }],
+      default: [],
+    },
+    colors: {
+      type: [colorSchema],
+      default: [],
+    },
     stock: {
       type: Number,
       required: true,
@@ -259,21 +308,15 @@ productSchema.index(
 );
 
 // Virtuals
+// `price`/`comparePrice` of a product with variants are its cheapest variant's
 productSchema.virtual("discountPercentage").get(function (this: IProduct) {
-  const displayPrice =
-    this.variants.length > 0 ? this.variants[0].price : this.price;
-  if (this.comparePrice && this.comparePrice > displayPrice) {
-    return Math.round(
-      ((this.comparePrice - displayPrice) / this.comparePrice) * 100,
-    );
+  if (this.comparePrice && this.comparePrice > this.price) {
+    return Math.round(((this.comparePrice - this.price) / this.comparePrice) * 100);
   }
   return 0;
 });
 
 productSchema.virtual("displayPrice").get(function (this: IProduct) {
-  if (this.variants.length > 0) {
-    return this.variants[0].price;
-  }
   return this.price;
 });
 
@@ -294,12 +337,14 @@ productSchema.virtual("inStock").get(function (this: IProduct) {
 
 // Middleware
 
-// For products with variants, `stock` is the total across variants. Listings,
-// cards and the mobile app read `stock`, so it must never drift from the variants.
-productSchema.pre("save", function (this: IProduct) {
-  if (this.variants && this.variants.length > 0) {
-    this.stock = this.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
-  }
+// Before validation (so the derived price satisfies `required`): adopt photos
+// older products stored per variant, then derive price/compare price/stock
+// (cheapest variant / total), option order, colour spelling, each variant's
+// photo and age groups. Listings, cards and the mobile app read these fields,
+// so they must never drift from the variants. See utils/productVariants.ts.
+productSchema.pre("validate", function (this: IProduct) {
+  adoptVariantImages(this);
+  syncDerivedFields(this);
 });
 
 productSchema.pre("save", async function (this: IProduct) {

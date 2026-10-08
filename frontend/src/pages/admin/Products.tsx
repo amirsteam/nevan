@@ -189,9 +189,15 @@ const Products = () => {
             key: 'price',
             label: 'Price',
             sortable: true,
+            // With sizes/colours, `price` is the cheapest option's
             render: (price, product) => (
                 <div>
-                    <p className="font-medium">{formatPrice(price)}</p>
+                    <p className="font-medium">
+                        {product.variants?.some((v) => v.price !== price) && (
+                            <span className="text-xs font-normal text-[var(--color-text-muted)] mr-1">From</span>
+                        )}
+                        {formatPrice(price)}
+                    </p>
                     {(product.comparePrice ?? 0) > price && (
                         <p className="text-sm line-through text-[var(--color-text-muted)]">
                             {formatPrice(product.comparePrice)}

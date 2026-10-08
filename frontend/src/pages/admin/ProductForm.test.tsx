@@ -1,15 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import toast from "react-hot-toast";
 import ProductForm from "./ProductForm";
 import type { IProduct, ICategory } from "../../types";
 
 const api = vi.hoisted(() => ({
-  getProductSizeOptions: vi.fn(),
+  getProductOptions: vi.fn(),
   createProduct: vi.fn(),
   updateProduct: vi.fn(),
   uploadProductImages: vi.fn(),
-  uploadVariantImage: vi.fn(),
   deleteProductImage: vi.fn(),
 }));
 
@@ -18,129 +18,197 @@ vi.mock("react-hot-toast", () => ({
   default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() }),
 }));
 
-const categories: ICategory[] = [{ _id: "cat1", name: "Rompers", slug: "rompers" }];
-
-const savedResponse = (product: Partial<IProduct>) => ({
-  data: { data: { product: { _id: "p1", variants: [], ...product } } },
+beforeAll(() => {
+  URL.createObjectURL = vi.fn(() => "blob:preview");
+  URL.revokeObjectURL = vi.fn();
 });
 
-const fillBasics = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.type(screen.getByPlaceholderText("Enter product name"), "Muslin Romper");
-  await user.type(screen.getByPlaceholderText("Detailed product description"), "Soft");
-  const price = screen.getAllByPlaceholderText("0")[0];
-  await user.clear(price);
-  await user.type(price, "1200");
-  await user.selectOptions(screen.getByDisplayValue("Select category"), "cat1");
+const categories: ICategory[] = [{ _id: "cat1", name: "Rompers", slug: "rompers" }];
+
+const response = (product: Partial<IProduct>) => ({
+  data: { data: { product: { _id: "p1", variants: [], images: [], ...product } } },
+});
+
+const renderForm = (props: Partial<Parameters<typeof ProductForm>[0]> = {}) => {
+  const onSaved = vi.fn();
+  const onDirtyChange = vi.fn();
+  render(
+    <ProductForm categories={categories} onSaved={onSaved} onCancel={vi.fn()} onDirtyChange={onDirtyChange} {...props} />,
+  );
+  return { onSaved, onDirtyChange };
 };
 
-const stockInput = () => screen.getAllByPlaceholderText("0")[1] as HTMLInputElement;
+const fillDetails = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.type(screen.getByLabelText(/Product name/), "Muslin Romper");
+  await user.type(screen.getByLabelText(/^Description/), "Soft and breathable");
+  await user.selectOptions(screen.getByLabelText(/Category/), "cat1");
+};
 
-describe("ProductForm sizes", () => {
+const savedProduct = (): IProduct =>
+  ({
+    _id: "p1",
+    name: "Jhabla",
+    slug: "jhabla",
+    description: "Soft",
+    price: 1200,
+    category: "cat1",
+    stock: 3,
+    isActive: true,
+    sizes: ["0-3 Months"],
+    colors: [{ name: "Red", hex: "#c62828" }],
+    variants: [{ _id: "v1", size: "0-3 Months", color: "Red", price: 1200, stock: 3 }],
+    images: [
+      { _id: "i1", url: "https://example.com/general.jpg", publicId: "g", isPrimary: true },
+      { _id: "i2", url: "https://example.com/red.jpg", publicId: "r", color: "Red" },
+    ],
+  }) as IProduct;
+
+describe("ProductForm", () => {
   beforeEach(() => {
     Object.values(api).forEach((fn) => fn.mockReset());
-    api.getProductSizeOptions.mockResolvedValue({
-      data: { data: { sizes: { builtIn: [], custom: ["90 cm"] } } },
+    vi.mocked(toast.error).mockClear();
+    api.getProductOptions.mockResolvedValue({
+      data: { data: { sizes: { builtIn: [], custom: ["90 cm"] }, colors: { palette: [], used: [{ name: "Marigold", hex: "#f2a30f" }] } } },
     });
-    api.createProduct.mockImplementation(async (data) => savedResponse(data));
-    api.updateProduct.mockImplementation(async (_id, data) => savedResponse(data));
+    api.createProduct.mockImplementation(async (data) => response(data));
+    api.updateProduct.mockImplementation(async (_id, data) => response(data));
   });
 
-  it("offers built-in sizes, saved custom sizes and a custom size option", async () => {
+  it("creates a one-version product", async () => {
     const user = userEvent.setup();
-    render(<ProductForm categories={categories} onSuccess={vi.fn()} onCancel={vi.fn()} />);
+    const { onSaved } = renderForm();
+    await fillDetails(user);
+    await user.type(screen.getByLabelText(/Price \(NPR\)/), "1200");
+    await user.type(screen.getByLabelText(/In stock/), "4");
+    await user.click(screen.getByRole("button", { name: "Create product" }));
 
-    await user.click(screen.getByLabelText("Enable Variants"));
-    const sizeSelect = await screen.findByDisplayValue("Select Size...");
-
-    await waitFor(() =>
-      expect(within(sizeSelect).getByRole("option", { name: "90 cm" })).toBeInTheDocument(),
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ _id: "p1" }), { reopen: false }));
+    expect(api.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Muslin Romper", price: 1200, stock: 4, variants: [], isActive: true, category: "cat1" }),
     );
-    expect(within(sizeSelect).getByRole("option", { name: "One Size" })).toBeInTheDocument();
-    expect(within(sizeSelect).getByRole("option", { name: "+ Custom size…" })).toBeInTheDocument();
   });
 
-  it("creates a product with a custom size typed by the admin", async () => {
+  it("builds sizes × colours with one price per size and a stock grid", async () => {
     const user = userEvent.setup();
-    const onSuccess = vi.fn();
-    render(<ProductForm categories={categories} onSuccess={onSuccess} onCancel={vi.fn()} />);
+    renderForm();
+    await fillDetails(user);
+    await user.click(screen.getByLabelText(/Sizes & colours/));
 
-    await fillBasics(user);
-    await user.click(screen.getByLabelText("Enable Variants"));
-    await user.selectOptions(screen.getByDisplayValue("Select Size..."), "+ Custom size…");
-    await user.type(screen.getByLabelText("Custom size"), "3-6 Months");
-    await user.type(screen.getByPlaceholderText("Color (e.g. Red)"), "White");
-    await user.click(screen.getByRole("button", { name: "Create Product" }));
+    await user.click(screen.getByRole("button", { name: "0-3 Months" }));
+    await user.click(screen.getByRole("button", { name: "3-6 Months" }));
+    // Custom sizes used on other products are offered too
+    expect(await screen.findByRole("button", { name: "90 cm" })).toHaveAttribute("aria-pressed", "false");
 
-    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Add colour" }));
+    const suggested = screen.getByRole("group", { name: "Suggested colours" });
+    await user.click(within(suggested).getByRole("button", { name: "Mint" }));
+    await user.click(within(suggested).getByRole("button", { name: "White" }));
+    expect(within(suggested).getByRole("button", { name: /Mint/ })).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Same price for every size (NPR)"), "900");
+    await user.click(screen.getAllByRole("button", { name: "Apply" })[0]);
+    await user.clear(screen.getByLabelText("Price for 3-6 Months"));
+    await user.type(screen.getByLabelText("Price for 3-6 Months"), "950");
+    await user.type(screen.getByLabelText("Same stock for every option"), "2");
+    await user.click(screen.getAllByRole("button", { name: "Apply" })[1]);
+    await user.click(screen.getByRole("button", { name: "Not made: 3-6 Months, White" }));
+
+    await user.click(screen.getByRole("button", { name: "Create product" }));
+    await waitFor(() => expect(api.createProduct).toHaveBeenCalled());
     const payload = api.createProduct.mock.calls[0][0];
-    expect(payload.variants).toEqual([
-      expect.objectContaining({ size: "3-6 Months", color: "White" }),
+    expect(payload.sizes).toEqual(["0-3 Months", "3-6 Months"]);
+    expect(payload.colors).toEqual([
+      { name: "Mint", hex: "#a8e6cf" },
+      { name: "White", hex: "#ffffff" },
     ]);
-    expect(payload.variants[0]).not.toHaveProperty("_id");
+    expect(payload.variants).toEqual([
+      { size: "0-3 Months", color: "Mint", price: 900, comparePrice: null, stock: 2, sku: null },
+      { size: "0-3 Months", color: "White", price: 900, comparePrice: null, stock: 2, sku: null },
+      { size: "3-6 Months", color: "Mint", price: 950, comparePrice: null, stock: 2, sku: null },
+    ]);
+    expect(payload.ageGroups).toEqual(["0-3 Months", "3-6 Months"]);
   });
 
-  it("tags products with age groups and gender for the shop filters", async () => {
+  it("keeps a new product hidden until its photos have uploaded, then shows it", async () => {
     const user = userEvent.setup();
-    const onSuccess = vi.fn();
-    render(<ProductForm categories={categories} onSuccess={onSuccess} onCancel={vi.fn()} />);
+    api.uploadProductImages.mockResolvedValue(response({ images: [{ _id: "img1", url: "https://example.com/1.jpg", publicId: "1" }] }));
+    const { onSaved } = renderForm();
+    await fillDetails(user);
+    await user.type(screen.getByLabelText(/Price \(NPR\)/), "800");
+    await user.type(screen.getByLabelText(/In stock/), "1");
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await user.upload(input, new File(["x"], "front.jpg", { type: "image/jpeg" }));
+    expect(screen.getByRole("img", { name: "this product photo 1" })).toBeInTheDocument();
 
-    await fillBasics(user);
-    await user.type(stockInput(), "5");
-    // Picked out of order; saved in the canonical age order
-    await user.click(screen.getByLabelText("1–2 years"));
-    await user.click(screen.getByLabelText("6–12 months"));
-    await user.selectOptions(screen.getByLabelText("Gender"), "girl");
-    await user.click(screen.getByRole("button", { name: "Create Product" }));
-
-    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    const payload = api.createProduct.mock.calls[0][0];
-    expect(payload.ageGroups).toEqual(["6-12 Months", "1-2 Years"]);
-    expect(payload.gender).toBe("girl");
+    await user.click(screen.getByRole("button", { name: "Create product" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), { reopen: false }));
+    expect(api.createProduct.mock.calls[0][0].isActive).toBe(false);
+    const form: FormData = api.uploadProductImages.mock.calls[0][1];
+    expect(JSON.parse(String(form.get("meta")))).toEqual([{ color: null, isPrimary: true }]);
+    expect(api.updateProduct).toHaveBeenCalledWith("p1", { isActive: true });
   });
 
-  it("blocks duplicate size/color variants before saving", async () => {
+  it("reopens a new product that saved without its photos instead of creating it again", async () => {
     const user = userEvent.setup();
-    render(<ProductForm categories={categories} onSuccess={vi.fn()} onCancel={vi.fn()} />);
+    api.uploadProductImages.mockRejectedValue(new Error("offline"));
+    const { onSaved } = renderForm();
+    await fillDetails(user);
+    await user.type(screen.getByLabelText(/Price \(NPR\)/), "800");
+    await user.type(screen.getByLabelText(/In stock/), "1");
+    await user.upload(document.querySelector<HTMLInputElement>('input[type="file"]')!, new File(["x"], "a.png", { type: "image/png" }));
+    await user.click(screen.getByRole("button", { name: "Create product" }));
 
-    await fillBasics(user);
-    await user.click(screen.getByLabelText("Enable Variants"));
-    await user.selectOptions(screen.getByDisplayValue("Select Size..."), "One Size");
-    await user.type(screen.getByPlaceholderText("Color (e.g. Red)"), "Red");
-    await user.click(screen.getByTitle("Duplicate Variant"));
-    await user.click(screen.getByRole("button", { name: "Create Product" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ _id: "p1" }), { reopen: true }));
+    expect(api.updateProduct).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Saved as hidden/), expect.anything());
+  });
 
-    expect(await screen.findByText(/Duplicate variant: One Size \/ Red/)).toBeInTheDocument();
+  it("points at what's missing and doesn't save", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole("button", { name: "Create product" }));
+
+    expect(toast.error).toHaveBeenCalledWith("Please fix the highlighted fields");
+    expect(screen.getByLabelText(/Product name/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("Give the product a name")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/Product name/)).toHaveFocus());
     expect(api.createProduct).not.toHaveBeenCalled();
+
+    // Errors clear as they're fixed
+    await user.type(screen.getByLabelText(/Product name/), "Bib");
+    expect(screen.queryByText("Give the product a name")).toBeNull();
   });
 
-  it("keeps variant ids, shows existing custom sizes and clears removed fields on edit", async () => {
+  it("removes photos only when the product is saved, and keeps variant ids", async () => {
     const user = userEvent.setup();
-    const product: IProduct = {
-      _id: "p1",
-      name: "Romper",
-      slug: "romper",
-      description: "Soft",
-      price: 1200,
-      comparePrice: 1500,
-      category: "cat1",
-      images: [],
-      stock: 0,
-      variants: [{ _id: "v1", size: "18-24 Months", color: "Blue", price: 1200, stock: 4 }],
-    };
-    render(<ProductForm product={product} categories={categories} onSuccess={vi.fn()} onCancel={vi.fn()} />);
+    const { onDirtyChange } = renderForm({ product: savedProduct() });
+    expect(screen.getByRole("img", { name: "Red photo 1" })).toBeInTheDocument();
 
-    // A custom size that isn't in the suggestions still shows as an editable value
-    expect(await screen.findByDisplayValue("18-24 Months")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove every colour photo 1" }));
+    expect(api.deleteProductImage).not.toHaveBeenCalled();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
-    await user.clear(screen.getByPlaceholderText("Original price (optional)"));
-    await user.click(screen.getByRole("button", { name: "Update Product" }));
-
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.updateProduct).toHaveBeenCalled());
-    const payload = api.updateProduct.mock.calls[0][1];
-    expect(payload.variants[0]).toMatchObject({ _id: "v1", size: "18-24 Months" });
-    expect(payload.comparePrice).toBeNull();
-    // Untouched tags stay empty; an unset gender is cleared rather than omitted
-    expect(payload.ageGroups).toEqual([]);
-    expect(payload.gender).toBeNull();
+    const [id, payload] = api.updateProduct.mock.calls[0];
+    expect(id).toBe("p1");
+    // The remaining photo becomes the main one
+    expect(payload.images).toEqual([{ _id: "i2", color: "Red", isPrimary: true }]);
+    expect(payload.variants).toEqual([{ _id: "v1", size: "0-3 Months", color: "Red", price: 1200, comparePrice: null, stock: 3, sku: null }]);
+  });
+
+  it("asks before turning a product with saved sizes into one version", async () => {
+    const user = userEvent.setup();
+    renderForm({ product: savedProduct() });
+    await user.click(screen.getByLabelText(/One version/));
+
+    const dialog = await screen.findByRole("dialog", { name: "Remove the sizes and colours?" });
+    await user.click(within(dialog).getByRole("button", { name: "Keep it" }));
+    expect(screen.getByLabelText(/Sizes & colours/)).toBeChecked();
+
+    await user.click(screen.getByLabelText(/One version/));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Use one version" }));
+    expect(screen.getByLabelText(/One version/)).toBeChecked();
+    expect(screen.getByLabelText(/Price \(NPR\)/)).toHaveValue(1200);
   });
 });

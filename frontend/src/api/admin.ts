@@ -93,13 +93,23 @@ export const getProductSizeOptions = (): ApiResponse<{
   sizes: { builtIn: string[]; custom: string[] };
 }> => api.get("/admin/products/sizes");
 
+// Size and colour choices for the product editor
+export const getProductOptions = (): ApiResponse<{
+  sizes: { builtIn: string[]; custom: string[] };
+  colors: { palette: { name: string; hex: string }[]; used: { name: string; hex?: string }[] };
+}> => api.get("/admin/products/options");
+
+// Product create/update bodies (see backend docs/openapi.ts); variants,
+// photo order (`images`) and option lists differ from the IProduct read shape
+export type ProductWriteBody = Record<string, unknown>;
+
 export const createProduct = (
-  data: Partial<IProduct>,
+  data: ProductWriteBody | Partial<IProduct>,
 ): ApiResponse<{ product: IProduct }> => api.post("/admin/products", data);
 
 export const updateProduct = (
   id: string,
-  data: Partial<IProduct>,
+  data: ProductWriteBody | Partial<IProduct>,
 ): ApiResponse<{ product: IProduct }> => api.put(`/admin/products/${id}`, data);
 
 export const deleteProduct = (id: string): ApiResponse<null> =>
@@ -298,6 +308,7 @@ export const adminAPI = {
   getProducts,
   getProductById,
   getProductSizeOptions,
+  getProductOptions,
   createProduct,
   updateProduct,
   deleteProduct,

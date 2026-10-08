@@ -565,6 +565,42 @@
     }
   }
 
+  /* Landing sections fade up as they scroll into view. Scroll-driven (no
+     JS), so where it isn't supported, or motion is reduced, content simply
+     shows. Keep fixed-position UI (modals) out of .reveal: the animated
+     translate would become its containing block. Ancestors must not use
+     overflow: hidden (a scroll container, which the view timeline would
+     track instead of the page); use overflow-clip. */
+  @media (prefers-reduced-motion: no-preference) {
+    @supports (animation-timeline: view()) {
+      .reveal {
+        animation: revealUp linear both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 20%;
+      }
+    }
+  }
+
+  @keyframes revealUp {
+    from {
+      opacity: 0;
+      translate: 0 1.5rem;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  /* Horizontal rails: still scrollable by touch, trackpad and keyboard */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .animate-slow-zoom {
     animation: slowZoom 20s linear infinite alternate;
   }

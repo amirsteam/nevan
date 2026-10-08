@@ -23,6 +23,7 @@ npm test                          # Jest + mongodb-memory-server (no real DB nee
 npx jest tests/payment.test.ts    # single file
 npx jest -t "replayed against"    # single test by name
 npm run seed                      # seeder.ts
+npm run migrate-variant-media     # preview moving older products to photos-per-colour (add -- --apply to save)
 
 # Frontend (port 5173; Vite proxies /api and /socket.io -> http://localhost:5000)
 cd frontend
@@ -69,6 +70,13 @@ Request flow: `server.ts` (HTTP + Socket.IO bootstrap, Sentry init) → `app.ts`
 - Transport (`controllers/authController.ts`): requests with an `Origin` header (browsers) get the refresh token only as an httpOnly cookie scoped to `/api/v1/auth`; requests without one (React Native) get it in the JSON body and send it back in the body.
 - Password reset: 6-digit code from the crypto RNG, stored hashed, 10-minute expiry, invalidated after 5 wrong guesses. `forgot-password` responds the same whether or not the email exists.
 
+### Products, sizes and colours
+
+- Prices vary by size (optionally by colour); photos belong to colours. A product either has no variants (`price`, `comparePrice`, `stock`) or variants = size × colour combinations (`price` > 0, optional `comparePrice`, `stock`, `sku`). `sizes` / `colors` (name + swatch `hex`) hold the display order. Each photo in `images` may carry a `color`; untagged photos show for every colour.
+- `utils/productVariants.ts` holds the rules, applied by the model's `pre("validate")` hook on every save. For products with variants it derives `price`/`comparePrice` (cheapest variant), `stock` (total), colour spelling and swatches (`COLOR_PALETTE`), size order (`SIZE_ORDER`: the age scale `PRODUCT_SIZES`, then older S–XXL names), each variant's `image` (first photo of its colour; client values are ignored), and `ageGroups` from the sizes (`SIZE_AGE_GROUPS`). Keep `backend/utils/constants.ts` and `frontend/src/utils/constants.ts` in sync.
+- Older products stored one photo URL per variant. `adoptVariantImages` moves those into `images` tagged by colour (stable ids, Cloudinary `publicId` parsed from the URL). It runs automatically only while no photo has a colour, and explicitly before every admin write (so clients that don't send variant photos can't wipe them). `GET /admin/products/:id` returns products adopted in memory. `npm run migrate-variant-media` converts them all.
+- Admin writes: `PUT /admin/products/:id` takes `images` = existing photos in order with `color`/`alt`/`isPrimary`. Photos left out are removed, and deleted from Cloudinary only after the save. Uploads take `meta` (JSON, per file: `color`, `isPrimary`). `GET /admin/products/options` lists sizes and colours. Variant prices must be > 0; without variants the product price is required.
+
 ### Orders, stock, payments
 
 - `services/orderService.ts` builds orders from the user's server-side Cart; prices always come from the DB, never from the client. `reserveStock` decrements stock with conditional `$inc` updates (the filter requires enough stock) before the order is created and releases it if anything fails — this, not the earlier read check, prevents overselling. No transactions are used, so it also works on standalone MongoDB and mongodb-memory-server.
@@ -104,13 +112,15 @@ Request flow: `server.ts` (HTTP + Socket.IO bootstrap, Sentry init) → `app.ts`
 - HTTP: one axios instance (`withCredentials`) in `src/api/axios.ts` with transparent 401 → refresh → retry; per-domain API modules in `src/api/`; shapes in `src/types/index.ts` (`IApiResponse`, `IPagination`, …).
 - Helpers in `src/utils/helpers.ts`: `getErrorMessage(err, fallback)` for API errors, `populated(ref)` for fields the API returns either populated or as an id.
 - Store facts (contact details, free-shipping threshold, shipping zones, age groups) live in `shared/store.ts`, re-exported by `src/config/store.ts`; never hard-code them in pages. Every page sets its title with `hooks/usePageTitle`.
-- Admin: product create/edit is a full page (`pages/admin/ProductEditor.tsx`, `/admin/products/new` and `/:id/edit`) wrapping `ProductForm`; list filters live in the URL (`/admin/orders?status=pending`, `?refund=1`, `?order=<id>` opens an order; `/admin/products?stock=low`), which the dashboard's "Needs attention" links rely on. `AdminLayout` polls `GET /admin/badges` and refreshes on the `admin-badges-refresh` window event. Contact-form messages and newsletter subscribers are in `pages/admin/Messages.tsx`.
+- Admin: product create/edit is a full page (`pages/admin/ProductEditor.tsx`, `/admin/products/new` and `/:id/edit`) wrapping `ProductForm`. That is a two-column editor whose state and rules live in `components/admin/product/editorState.ts` (pure, unit-tested): one version, or sizes (chips on the age scale) × colours (swatches, photos per colour), with prices per size (optionally per colour) and a stock grid. Every change, photo removals and order included, waits for Save. New products are created hidden and made visible once their photos have uploaded; if photos fail, the editor reopens on the saved product. Storefront: `utils/productOptions.ts` (sizes/colours in order, photos for a colour); the product page picks colour first (swatches, photos follow the colour), then size.
+- Admin lists: list filters live in the URL (`/admin/orders?status=pending`, `?refund=1`, `?order=<id>` opens an order; `/admin/products?stock=low`), which the dashboard's "Needs attention" links rely on. `AdminLayout` polls `GET /admin/badges` and refreshes on the `admin-badges-refresh` window event. Contact-form messages and newsletter subscribers are in `pages/admin/Messages.tsx`.
 
 ## Mobile architecture
 
 - Navigation: `RootNavigator` switches between auth stack and app tabs (`TabNavigator`, or `AdminTabNavigator` for admins); typed params in `navigation/types.ts`, deep links (`nevanhandicraft://`) in `navigation/linking.ts`.
 - Data: RTK Query APIs in `src/store/api/` plus slices; tokens in `expo-secure-store` (`utils/storage.ts`). Mobile sends the refresh token in the request body (no cookies), including on logout.
 - Tokens: `api/tokenRefresh.ts` is the single (single-flight) refresh used by axios, RTK Query and the chat socket. Chat: `screens/chat/ChatScreen.tsx` serves customers (own room) and admins (`roomId` param, from `AdminChatTab` → `AdminChatRoomsScreen`).
+- Admin products: `AdminProductEditScreen` is a quick editor (visibility, featured, price/stock per variant, add photos). Creating products and changing sizes, colours or photo order link to the web admin.
 - Payments: `screens/checkout/PaymentScreen.tsx` runs the gateway in a WebView and intercepts the storefront's `/order-success` / `/order-failed` redirect URLs to finish natively.
 - Theme: colours in `src/theme/index.ts` (aligned with the web tokens; don't hard-code hex values). Metro doesn't bundle `../shared` at runtime, so store facts and the shipping-cost preview are a copy in `src/theme/store.ts` — keep it in sync with `shared/store.ts` and the backend.
 - API base URL: `src/utils/config.ts` (`getApiUrl`/`getSocketUrl`), driven by `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_DEV_HOST` in development and the production URL in release builds.

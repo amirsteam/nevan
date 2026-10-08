@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import * as productService from "../services/productService";
 import asyncHandler from "../utils/asyncHandler";
+import AppError from "../utils/AppError";
 import { decorateProducts } from "../services/campaignService";
 
 interface MulterRequest extends Request {
@@ -94,6 +95,20 @@ const getSizeOptions = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 /**
+ * @desc    Size and colour choices for the product form
+ * @route   GET /api/v1/admin/products/options
+ * @access  Private/Admin
+ */
+const getProductOptions = asyncHandler(async (_req: Request, res: Response) => {
+  const [sizes, colors] = await Promise.all([productService.getSizeOptions(), productService.getColorOptions()]);
+
+  res.status(200).json({
+    status: "success",
+    data: { sizes, colors },
+  });
+});
+
+/**
  * @desc    Update product (Admin)
  * @route   PUT /api/v1/admin/products/:id
  * @access  Private/Admin
@@ -133,10 +148,21 @@ const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
 const uploadImages = asyncHandler(async (req: Request, res: Response) => {
   const primaryIndex =
     req.body?.primaryIndex !== undefined ? Number(req.body.primaryIndex) : undefined;
+  // Per-file colour / alt text / primary, as a JSON array in the same order as the files
+  let meta: productService.UploadMeta[] = [];
+  if (typeof req.body?.meta === "string" && req.body.meta) {
+    try {
+      const parsed = JSON.parse(req.body.meta);
+      if (Array.isArray(parsed)) meta = parsed.map((m) => (m && typeof m === "object" ? m : {}));
+    } catch {
+      throw new AppError("Photo details (meta) must be a JSON array", 400);
+    }
+  }
   const product = await productService.addProductImages(
     req.params.id as string,
     (req as MulterRequest).files,
     Number.isInteger(primaryIndex) ? primaryIndex : undefined,
+    meta,
   );
 
   res.status(200).json({
@@ -192,6 +218,7 @@ export {
   updateProduct,
   deleteProduct,
   getSizeOptions,
+  getProductOptions,
   uploadImages,
   deleteImage,
   uploadVariantImage,
