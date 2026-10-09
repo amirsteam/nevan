@@ -47,12 +47,18 @@ const initiatePayment = asyncHandler(async (req: Request, res: Response) => {
     }
 });
 
-const orderSuccessUrl = (orderId: unknown): string =>
-    `${getFrontendUrl()}/order-success?orderId=${encodeURIComponent(String(orderId ?? ''))}`;
+// `payment`: "pending" (the gateway is still confirming) or "duplicate" (paid twice)
+const orderSuccessUrl = (orderId: unknown, payment?: 'pending' | 'duplicate'): string => {
+    const params = new URLSearchParams({ orderId: String(orderId ?? '') });
+    if (payment) params.set('payment', payment);
+    return `${getFrontendUrl()}/order-success?${params.toString()}`;
+};
 
-const orderFailedUrl = (orderId: unknown, message: string, gateway: string): string => {
+// `status`: "refund_required" when the money arrived but the order couldn't be kept
+const orderFailedUrl = (orderId: unknown, message: string, gateway: string, status?: 'refund_required'): string => {
     const params = new URLSearchParams({ gateway, message });
     if (orderId) params.set('orderId', String(orderId));
+    if (status) params.set('status', status);
     return `${getFrontendUrl()}/order-failed?${params.toString()}`;
 };
 
@@ -65,9 +71,19 @@ const handleGatewayReturn = (gateway: 'esewa' | 'khalti') =>
         try {
             const result = await PaymentService.handleCallback(gateway, req.query);
             if (result.success) {
-                res.redirect(orderSuccessUrl(result.orderId));
+                res.redirect(orderSuccessUrl(result.orderId, result.status === 'duplicate' ? 'duplicate' : undefined));
+            } else if (result.status === 'pending' && result.orderId) {
+                // Not confirmed yet: never tell the shopper it failed (they'd pay again)
+                res.redirect(orderSuccessUrl(result.orderId, 'pending'));
             } else {
-                res.redirect(orderFailedUrl(result.orderId, result.message || 'Payment was not completed', gateway));
+                res.redirect(
+                    orderFailedUrl(
+                        result.orderId,
+                        result.message || 'Payment was not completed',
+                        gateway,
+                        result.status === 'refund_required' ? 'refund_required' : undefined,
+                    ),
+                );
             }
         } catch (error) {
             console.error(`${gateway} callback error:`, error);
@@ -122,6 +138,20 @@ const verifyPayment = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * @desc    Ask the gateway whether the order's payment went through
+ * @route   POST /api/v1/payments/check-status
+ * @access  Private
+ */
+const checkPaymentStatus = asyncHandler(async (req: Request, res: Response) => {
+    const result = await PaymentService.checkOrderPayment(req.body.orderId, (req.user as any)._id.toString());
+
+    res.status(200).json({
+        status: 'success',
+        data: result,
+    });
+});
+
+/**
  * @desc    Mark COD as collected (Admin)
  * @route   POST /api/v1/admin/payments/cod-collected
  * @access  Private/Admin
@@ -140,6 +170,7 @@ const markCODCollected = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export {
+    checkPaymentStatus,
     getPaymentMethods,
     initiatePayment,
     esewaSuccess,

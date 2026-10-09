@@ -63,6 +63,14 @@ export default interface IPaymentGateway {
     verify(transactionId: string, callbackData: any): Promise<PaymentVerifyResult>;
 
     /**
+     * Ask the gateway what happened to a payment attempt, without any callback data
+     * (the shopper may never have come back from the gateway). `referenceId` is the
+     * id saved at initiation (eSewa transaction_uuid / Khalti pidx). Returns status
+     * 'pending' when the gateway can't say yet or can't be reached.
+     */
+    checkStatus(referenceId: string, amount: number): Promise<PaymentVerifyResult>;
+
+    /**
      * Handle callback from payment gateway
      */
     handleCallback(data: any): Promise<PaymentCallbackResult>;

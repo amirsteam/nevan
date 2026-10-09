@@ -372,12 +372,24 @@ const createOrderValidator: (ValidationChain | RequestHandler)[] = [
     .withMessage("District is required"),
   body("shippingAddress.province")
     .isInt({ min: 1, max: 7 })
-    .withMessage("Province must be between 1 and 7"),
+    .withMessage("Province must be between 1 and 7")
+    // Shipping cost compares the province as a number ("3" would miss the valley rate)
+    .toInt(),
   body("paymentMethod")
     .notEmpty()
     .withMessage("Payment method is required")
     .isIn(["cod", "esewa", "khalti"])
     .withMessage("Invalid payment method"),
+  body("customerNotes")
+    .optional({ values: "null" })
+    .isString()
+    .isLength({ max: 500 })
+    .withMessage("Order notes can be at most 500 characters"),
+  handleValidationErrors,
+];
+
+const orderIdBodyValidator: (ValidationChain | RequestHandler)[] = [
+  body("orderId").isMongoId().withMessage("Invalid order ID"),
   handleValidationErrors,
 ];
 
@@ -580,5 +592,6 @@ export {
   createAddressValidator,
   updateAddressValidator,
   mongoIdValidator,
+  orderIdBodyValidator,
   paginationValidator,
 };

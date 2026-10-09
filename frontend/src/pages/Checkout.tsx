@@ -214,8 +214,7 @@ const Checkout = () => {
       }
 
       if (selectedPayment === "cod") {
-        // COD: the API emptied the cart when it created the order
-        await paymentsAPI.initiatePayment(orderId, "cod");
+        // COD: the API emptied the cart and recorded the payment when it created the order
         orderPlacedRef.current = true;
         dispatch(resetCart());
         navigate(`/order-success?orderId=${orderId}`);

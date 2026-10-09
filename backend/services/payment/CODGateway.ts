@@ -46,6 +46,19 @@ class CODGateway implements IPaymentGateway {
     }
 
     /**
+     * COD has no gateway to ask: cash is collected on delivery
+     */
+    async checkStatus(referenceId: string): Promise<PaymentVerifyResult> {
+        return {
+            verified: false,
+            status: 'pending',
+            referenceId,
+            message: 'Cash is collected on delivery',
+            rawResponse: null,
+        };
+    }
+
+    /**
      * Handle callback
      * COD doesn't have external callbacks
      */

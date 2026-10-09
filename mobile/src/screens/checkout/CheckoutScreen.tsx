@@ -119,11 +119,8 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
       const order = orderRes?.data?.order;
       if (!order?._id) throw new Error("Failed to create order");
 
-      const paymentRes = await paymentsAPI.initiatePayment(order._id, paymentMethod);
-      const paymentData = (paymentRes as unknown as Record<string, unknown>).data || paymentRes;
-
       if (paymentMethod === "cod") {
-        // The API already emptied the cart for COD orders; sync the app with it
+        // The API emptied the cart and recorded the COD payment with the order; sync the app with it
         dispatch(fetchCart());
         dispatch(baseApi.util.invalidateTags(["Cart", "Orders", "Order"]));
         Alert.alert(
@@ -134,6 +131,22 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
           [{ text: "View order", onPress: () => openOrder(order._id) }],
         );
       } else {
+        // The order exists from here on: if eSewa can't be opened, send the
+        // shopper to it (they can pay from there) rather than to a new checkout
+        let paymentData: unknown;
+        try {
+          const paymentRes = await paymentsAPI.initiatePayment(order._id, paymentMethod);
+          paymentData = (paymentRes as unknown as Record<string, unknown>).data || paymentRes;
+        } catch (paymentError: unknown) {
+          const err = paymentError as { response?: { data?: { message?: string } } };
+          dispatch(baseApi.util.invalidateTags(["Orders", "Order"]));
+          Alert.alert(
+            "Couldn't open eSewa",
+            `${err.response?.data?.message || "The payment page didn't open."} Your order #${order.orderNumber} is saved — you can pay for it from your orders.`,
+            [{ text: "View order", onPress: () => openOrder(order._id) }],
+          );
+          return;
+        }
         navigation.navigate("Payment", {
           orderId: order._id,
           gateway: paymentMethod,

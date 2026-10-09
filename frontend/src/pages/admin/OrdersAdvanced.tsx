@@ -71,10 +71,9 @@ const PAYMENT_STATUSES = Object.keys(paymentStatusConfig) as PaymentStatus[];
 const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "cod", label: "Cash on delivery" },
   { value: "esewa", label: "eSewa" },
-  { value: "khalti", label: "Khalti" },
 ];
 
-// Mirrors validTransitions in backend/models/Order.ts; cancelling stays a
+// Mirrors ORDER_TRANSITIONS in backend/models/Order.ts; cancelling stays a
 // per-order action (it returns stock and may need a refund)
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   pending: "confirmed",

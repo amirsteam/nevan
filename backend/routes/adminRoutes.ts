@@ -73,7 +73,7 @@ router.get(
           .limit(8)
           .select("name slug stock images variants.size variants.color variants.stock"),
         Product.countDocuments({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } }),
-        Order.countDocuments({ status: "cancelled", "payment.status": "paid" }),
+        Order.countDocuments(orderService.REFUND_REQUIRED_FILTER),
         Order.aggregate([
           { $match: { createdAt: { $gte: since30Days }, status: { $in: REVENUE_STATUSES } } },
           { $unwind: "$items" },
@@ -156,7 +156,7 @@ router.get(
   asyncHandler(async (_req: Request, res: Response) => {
     const [pendingOrders, refundRequired, unreadMessages] = await Promise.all([
       Order.countDocuments({ status: "pending" }),
-      Order.countDocuments({ status: "cancelled", "payment.status": "paid" }),
+      Order.countDocuments(orderService.REFUND_REQUIRED_FILTER),
       ContactMessage.countDocuments({ isRead: false }),
     ]);
     res.status(200).json({

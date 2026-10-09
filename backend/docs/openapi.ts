@@ -436,12 +436,29 @@ const openApiSpec = {
     },
     "/payments/methods": { get: op("Payments", "Enabled payment methods", {}, "none") },
     "/payments/initiate": {
-      post: op("Payments", "Start (or retry) payment for my pending, unpaid order; gateway must match the order's payment method", {
-        requestBody: json({
-          type: "object",
-          required: ["orderId", "gateway"],
-          properties: { orderId: { type: "string" }, gateway: { type: "string", enum: ["cod", "esewa", "khalti"] } },
-        }),
+      post: op(
+        "Payments",
+        "Start (or retry) payment for my pending, unpaid order; gateway must match the order's payment method. " +
+          "A retry first asks the gateway about earlier attempts: { alreadyPaid: true } if one went through, " +
+          "409 while the gateway is still confirming one. COD returns the record made when the order was placed.",
+        {
+          requestBody: json({
+            type: "object",
+            required: ["orderId", "gateway"],
+            properties: { orderId: { type: "string" }, gateway: { type: "string", enum: ["cod", "esewa", "khalti"] } },
+          }),
+        },
+      ),
+    },
+    "/payments/check-status": {
+      post: op("Payments", "Ask the gateway whether my order's payment went through (marks it paid if so)", {
+        requestBody: json({ type: "object", required: ["orderId"], properties: { orderId: { type: "string" } } }),
+        responses: {
+          200: {
+            description:
+              "{ orderId, orderNumber, status, paymentStatus, processing } — processing: the gateway is still confirming a payment",
+          },
+        },
       }),
     },
     "/payments/verify": {
@@ -463,7 +480,13 @@ const openApiSpec = {
     "/payments/esewa/success": {
       get: op("Payments", "eSewa success redirect target (redirects to the storefront)", {
         parameters: [{ name: "data", in: "query", required: true, schema: { type: "string" } }],
-        responses: { 302: { description: "Redirect to /order-success or /order-failed" } },
+        responses: {
+          302: {
+            description:
+              "Redirect to /order-success (&payment=pending while eSewa is still confirming, &payment=duplicate when paid twice) " +
+              "or /order-failed (&status=refund_required when the money arrived for a cancelled order)",
+          },
+        },
       }, "none"),
     },
     "/payments/esewa/failure": {

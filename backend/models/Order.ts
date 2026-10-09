@@ -43,8 +43,17 @@ export interface IOrderMethods {
     userId: string | Types.ObjectId,
     note?: string,
   ): Promise<IOrder>;
-  markPaymentComplete(transactionId: string): Promise<IOrder>;
 }
+
+/** Status changes an order may make (marking it paid is orderService.claimPayment) */
+export const ORDER_TRANSITIONS: Record<string, string[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["processing", "cancelled"],
+  processing: ["shipped", "cancelled"],
+  shipped: ["delivered"],
+  delivered: [],
+  cancelled: [],
+};
 
 export interface IOrder extends Document, IOrderMethods {
   orderNumber: string;
@@ -56,6 +65,8 @@ export interface IOrder extends Document, IOrderMethods {
     status: "pending" | "paid" | "failed" | "refunded";
     transactionId?: string;
     paidAt?: Date;
+    // Money to give back on an order that stays open (e.g. the customer paid twice)
+    refundRequired?: boolean;
   };
   pricing: {
     subtotal: number;
@@ -224,6 +235,7 @@ const orderSchema = new Schema<IOrder, IOrderModel>(
       },
       transactionId: String,
       paidAt: Date,
+      refundRequired: Boolean,
     },
     pricing: {
       subtotal: {
@@ -313,17 +325,9 @@ orderSchema.methods.updateOrderStatus = async function (
   userId: string | Types.ObjectId,
   note: string = "",
 ) {
-  const validTransitions: Record<string, string[]> = {
-    pending: ["confirmed", "cancelled"],
-    confirmed: ["processing", "cancelled"],
-    processing: ["shipped", "cancelled"],
-    shipped: ["delivered"],
-    delivered: [],
-    cancelled: [],
-  };
-
-  if (!validTransitions[this.status].includes(newStatus)) {
-    throw new AppError(`Cannot change order status from ${this.status} to ${newStatus}`, 400);
+  const previousStatus = this.status;
+  if (!ORDER_TRANSITIONS[previousStatus].includes(newStatus)) {
+    throw new AppError(`Cannot change order status from ${previousStatus} to ${newStatus}`, 400);
   }
 
   this.status = newStatus as any;
@@ -347,28 +351,18 @@ orderSchema.methods.updateOrderStatus = async function (
     this.cancellationReason = note;
   }
 
-  await this.save();
-  return this;
-};
-
-orderSchema.methods.markPaymentComplete = async function (
-  this: IOrder,
-  transactionId: string,
-) {
-  this.payment.status = "paid";
-  this.payment.paidAt = new Date();
-  this.payment.transactionId = transactionId;
-
-  if (this.status === "pending") {
-    this.status = "confirmed";
-    this.statusHistory.push({
-      status: "confirmed",
-      note: "Auto-confirmed after payment",
-      changedAt: new Date(),
-    });
+  // Only save if nobody else changed the status meanwhile (a payment, the expiry
+  // job, another admin), so a stale copy can't overwrite their change
+  this.$where = { status: previousStatus };
+  try {
+    await this.save();
+  } catch (error) {
+    // VersionError when the status history was also changed meanwhile
+    if (["DocumentNotFoundError", "VersionError"].includes((error as Error).name)) {
+      throw new AppError("This order was just updated by someone else. Please refresh and try again.", 409);
+    }
+    throw error;
   }
-
-  await this.save();
   return this;
 };
 

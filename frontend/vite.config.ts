@@ -25,6 +25,10 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     port: 5173,
+    // The backend sends shoppers back here after eSewa (FRONTEND_URL). Moving to
+    // another port when 5173 is busy would land them on whatever else runs there,
+    // so fail loudly instead.
+    strictPort: true,
     proxy: {
       "/api": {
         target: apiTarget,

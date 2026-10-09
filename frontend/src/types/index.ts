@@ -298,6 +298,8 @@ export interface IOrder {
     status: PaymentStatus;
     transactionId?: string;
     paidAt?: string;
+    // Paid twice: the extra payment is to be refunded
+    refundRequired?: boolean;
   };
   pricing?: {
     subtotal: number;
@@ -360,6 +362,18 @@ export interface IPaymentInitiateResponse {
   paymentId?: string;
   orderId?: string;
   orderNumber?: string;
+  // Retry for an order an earlier attempt already paid: nothing to pay
+  alreadyPaid?: boolean;
+}
+
+/** POST /payments/check-status: where an order's payment stands after asking the gateway */
+export interface IPaymentStatusCheck {
+  orderId: string;
+  orderNumber: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  // The gateway is still confirming a payment: don't offer to pay again
+  processing: boolean;
 }
 
 export interface IPaymentVerifyData {

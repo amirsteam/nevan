@@ -82,10 +82,29 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
     dispatch(fetchCart());
     dispatch(baseApi.util.invalidateTags(["Cart", "Orders", "Order"]));
 
-    if (match[1] === "success") {
-      Alert.alert("Payment successful", "Your order has been placed.", [
-        { text: "View order", onPress: () => openOrder(resultOrderId) },
-      ]);
+    const payment = getQueryParam(url, "payment");
+    if (match[1] === "success" && payment === "pending") {
+      // eSewa hasn't confirmed yet; the server keeps checking and updates the order
+      Alert.alert(
+        "Confirming your payment",
+        "eSewa hasn't confirmed your payment yet. We'll update your order as soon as it does — please don't pay again.",
+        [{ text: "View order", onPress: () => openOrder(resultOrderId) }],
+      );
+    } else if (match[1] === "success") {
+      Alert.alert(
+        "Payment successful",
+        payment === "duplicate"
+          ? "Your order has been placed. We received more than one payment for it and will refund the extra one."
+          : "Your order has been placed.",
+        [{ text: "View order", onPress: () => openOrder(resultOrderId) }],
+      );
+    } else if (getQueryParam(url, "status") === "refund_required") {
+      // The money arrived for an order that had been cancelled meanwhile
+      Alert.alert(
+        "Payment received — order couldn't be completed",
+        getQueryParam(url, "message") || "We received your payment but the items are no longer available. We will refund you.",
+        [{ text: "View order", onPress: () => openOrder(resultOrderId) }],
+      );
     } else {
       Alert.alert(
         "Payment not completed",

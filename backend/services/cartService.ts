@@ -47,6 +47,22 @@ const addToCart = async (
   let price: number;
   let variant: any = null;
 
+  // Get or create cart
+  let cart = await Cart.findOne({ user: userId });
+  if (!cart) {
+    cart = new Cart({ user: userId, items: [] });
+  }
+
+  // Adding to a line already in the cart: the combined quantity must be in stock
+  const inCart =
+    (cart as any).items.find(
+      (item: any) =>
+        String(item.product) === String(productId) &&
+        String(item.variantId ?? "") === String(variantId ?? ""),
+    )?.quantity ?? 0;
+  const wanted = inCart + quantity;
+  const alreadyNote = inCart > 0 ? ` (you already have ${inCart} in your cart)` : "";
+
   // If product has variants, variantId is required
   if ((product as any).variants && (product as any).variants.length > 0) {
     if (!variantId) {
@@ -59,9 +75,9 @@ const addToCart = async (
     }
 
     // Check variant stock
-    if (variant.stock < quantity) {
+    if (variant.stock < wanted) {
       throw new AppError(
-        `Only ${variant.stock} items available for ${variant.size} - ${variant.color}`,
+        `Only ${variant.stock} items available for ${variant.size} - ${variant.color}${alreadyNote}`,
         400,
       );
     }
@@ -69,16 +85,13 @@ const addToCart = async (
     price = variant.price;
   } else {
     // No variants - use base price and stock
-    if ((product as any).stock < quantity) {
-      throw new AppError("Insufficient stock", 400);
+    if ((product as any).stock < wanted) {
+      throw new AppError(
+        inCart > 0 ? `Only ${(product as any).stock} items available${alreadyNote}` : "Insufficient stock",
+        400,
+      );
     }
     price = (product as any).price;
-  }
-
-  // Get or create cart
-  let cart = await Cart.findOne({ user: userId });
-  if (!cart) {
-    cart = new Cart({ user: userId, items: [] });
   }
 
   // Remember the price shown when adding (the sale price during a campaign), so

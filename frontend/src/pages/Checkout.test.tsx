@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router-dom";
 import { configureStore } from "@reduxjs/toolkit";
 import cartReducer from "../store/cartSlice";
 import chatReducer from "../store/chatSlice";
 import Checkout from "./Checkout";
+import { ordersAPI, paymentsAPI } from "../api/orders";
 import type { ICartItem } from "../types";
 
 const navigate = vi.fn();
@@ -23,6 +24,9 @@ vi.mock("react-hot-toast", () => ({
 const auth = vi.hoisted(() => ({ user: { name: "Asha", phone: "9841234567" } }));
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => auth,
+}));
+vi.mock("../api/auth", () => ({
+  authAPI: { getAddresses: vi.fn().mockResolvedValue({ data: { addresses: [] } }), addAddress: vi.fn().mockResolvedValue({}) },
 }));
 vi.mock("../api/orders", () => ({
   ordersAPI: { createOrder: vi.fn() },
@@ -81,5 +85,29 @@ describe("Checkout after returning from eSewa (full page load)", () => {
 
     expect(toastError).toHaveBeenCalledWith("Your cart is empty");
     expect(navigate).toHaveBeenCalledWith("/cart");
+  });
+});
+
+describe("Placing a cash-on-delivery order", () => {
+  beforeEach(() => {
+    navigate.mockReset();
+    toastError.mockReset();
+  });
+
+  it("is a single request: the API records the COD payment with the order", async () => {
+    vi.mocked(ordersAPI.createOrder).mockResolvedValue({ data: { order: { _id: "order1" } } } as never);
+    renderCheckout({ items: [item], hasLoaded: true });
+    await act(async () => {});
+
+    fireEvent.change(screen.getByLabelText(/District/), { target: { value: "Kathmandu" } });
+    fireEvent.change(screen.getByLabelText(/City \/ municipality/), { target: { value: "Kathmandu" } });
+    fireEvent.change(screen.getByLabelText(/Street, tole or ward/), { target: { value: "Ward 5" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Place order/ }));
+    });
+
+    expect(ordersAPI.createOrder).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: "cod" }));
+    expect(paymentsAPI.initiatePayment).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/order-success?orderId=order1");
   });
 });

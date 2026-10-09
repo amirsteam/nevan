@@ -6,11 +6,11 @@
 import mongoose from 'mongoose';
 import PaymentFactory from './PaymentFactory';
 import Payment, { IPayment } from '../../models/Payment';
-import Order from '../../models/Order';
+import Order, { IOrder } from '../../models/Order';
 import Cart from '../../models/Cart';
 import AppError from '../../utils/AppError';
-import { reserveOrderStock } from '../orderService';
-import { UserData } from './IPaymentGateway';
+import { claimPayment, expireUnpaidOrders, flagDuplicatePayment } from '../orderService';
+import { PaymentVerifyResult, UserData } from './IPaymentGateway';
 
 interface PaymentMethod {
     id: string;
@@ -19,6 +19,33 @@ interface PaymentMethod {
     icon: string;
     enabled: boolean;
 }
+
+const ONLINE_GATEWAYS = ['esewa', 'khalti'];
+const GATEWAY_NAMES: Record<string, string> = { esewa: 'eSewa', khalti: 'Khalti' };
+
+// Attempts younger than this are left to the shopper's own redirect
+const RECONCILE_MIN_AGE_MS = 2 * 60 * 1000;
+// A "not paid" answer is final only once the shopper can't still be paying
+const ATTEMPT_SETTLE_MS = 60 * 60 * 1000;
+// Stop asking the gateway about an attempt after this long
+const ATTEMPT_MAX_OPEN_MS = 24 * 60 * 60 * 1000;
+
+/** Where an order's payment stands after asking the gateway */
+type ReconcileState = 'paid' | 'processing' | 'unpaid';
+
+// Gateways use their live endpoints only in production (sandbox otherwise)
+const usesLiveGateways = (): boolean => process.env.NODE_ENV === 'production';
+
+/**
+ * Open gateway attempts: sent to eSewa/Khalti and not settled yet — and made by
+ * this environment: a development server sharing the database must not ask the
+ * eSewa sandbox about real payments (it would report them as not found).
+ */
+const openAttempts = () => ({
+    status: { $in: ['initiated', 'pending'] },
+    'gatewayResponse.referenceId': { $nin: [null, ''] },
+    'metadata.live': { $ne: !usesLiveGateways() },
+});
 
 class PaymentService {
     /**
@@ -51,7 +78,7 @@ class PaymentService {
     }
 
     /**
-     * Initiate payment for an order
+     * Initiate (or retry) payment for an order
      */
     async initiatePayment(orderId: string, gatewayName: string, userData: UserData, userId?: string): Promise<any> {
         // Get order
@@ -66,7 +93,7 @@ class PaymentService {
 
         // Check if order can be paid
         if (order.payment.status === 'paid') {
-            throw new AppError('Order is already paid', 400);
+            return this.alreadyPaid(order);
         }
         if (order.status !== 'pending') {
             throw new AppError(
@@ -80,6 +107,38 @@ class PaymentService {
             throw new AppError(`This order was placed with ${order.payment.method.toUpperCase()}`, 400);
         }
 
+        // COD orders get their payment record when they are placed; older app
+        // versions still call this right after placing one
+        if (order.payment.method === 'cod') {
+            const existing = await Payment.findOne({ order: order._id, gateway: 'cod' });
+            if (existing) {
+                return {
+                    success: true,
+                    transactionId: existing.gatewayResponse?.referenceId,
+                    status: 'pending',
+                    requiresRedirect: false,
+                    message: 'Pay cash on delivery',
+                    paymentId: existing._id,
+                    orderId: order._id,
+                    orderNumber: order.orderNumber,
+                };
+            }
+        } else {
+            // Retry: an earlier attempt may have gone through without the shopper
+            // coming back to the site. Never let them pay twice.
+            const state = await this.reconcileOrder(order);
+            if (state === 'paid') {
+                return this.alreadyPaid(order);
+            }
+            if (state === 'processing') {
+                throw new AppError(
+                    `Your last payment is still being confirmed by ${GATEWAY_NAMES[order.payment.method]}. ` +
+                        "Please wait a few minutes and check your order before paying again.",
+                    409,
+                );
+            }
+        }
+
         // Get gateway
         const gateway = PaymentFactory.getGateway(gatewayName);
 
@@ -90,6 +149,8 @@ class PaymentService {
             gateway: gatewayName,
             amount: order.pricing.total,
             status: 'initiated',
+            // Which gateway endpoints (live or sandbox) know about this attempt
+            metadata: { live: usesLiveGateways() },
         });
 
         // Initiate payment with gateway
@@ -116,9 +177,18 @@ class PaymentService {
         };
     }
 
-    /**
-     * Verify payment after gateway callback
-     */
+    private alreadyPaid(order: IOrder) {
+        return {
+            success: false,
+            alreadyPaid: true,
+            requiresRedirect: false,
+            status: 'completed',
+            message: 'This order is already paid',
+            orderId: order._id,
+            orderNumber: order.orderNumber,
+        };
+    }
+
     /**
      * Verify payment after gateway callback.
      *
@@ -148,16 +218,11 @@ class PaymentService {
             throw new AppError('Order not found', 404);
         }
 
-        // Idempotent: a paid order stays paid; never re-process a callback for it
-        if (order.payment.status === 'paid') {
-            return {
-                success: true,
-                orderId: order._id,
-                orderNumber: order.orderNumber,
-                status: 'completed',
-                message: 'Order is already paid',
-            };
-        }
+        const respond = (outcome: { success: boolean; status: string; message?: string }) => ({
+            ...outcome,
+            orderId: order._id,
+            orderNumber: order.orderNumber,
+        });
 
         // Ask the gateway whether the payment in the callback data really completed
         const gateway = PaymentFactory.getGateway(gatewayName);
@@ -182,101 +247,207 @@ class PaymentService {
                     `⚠️ Rejected ${gatewayName} payment ${reference} that does not belong to order ${order.orderNumber}`,
                 );
             }
-            return {
+            // A paid order stays paid whatever arrives for it
+            if (order.payment.status === 'paid') {
+                return respond({ success: true, status: 'completed', message: 'Order is already paid' });
+            }
+            return respond({
                 success: false,
-                orderId: order._id,
-                orderNumber: order.orderNumber,
                 status: 'failed',
                 message: result.verified
                     ? 'Payment does not match this order'
                     : result.message || 'Payment verification failed',
-            };
+            });
         }
 
-        if (result.verified && !this.amountsMatch(result.amount, order.pricing.total)) {
-            const message = `Paid amount (${result.amount}) does not match order total (${order.pricing.total})`;
-            console.warn(`⚠️ ${message} for order ${order.orderNumber}`);
-            await payment.markFailed(message, result.rawResponse);
-            return {
+        // Idempotent: this payment was already applied (e.g. the success page reloaded)
+        if (payment.status === 'completed' && order.payment.status === 'paid') {
+            return respond({ success: true, status: 'completed', message: 'Order is already paid' });
+        }
+
+        if (!result.verified) {
+            // Not a payment (yet). The attempt stays open: reconciliation asks the
+            // gateway again later, in case it was only slow to confirm.
+            return respond({
                 success: false,
-                orderId: order._id,
-                orderNumber: order.orderNumber,
-                status: 'failed',
-                message,
-            };
+                status: result.status === 'pending' ? 'pending' : 'failed',
+                message: result.message || 'Payment verification failed',
+            });
         }
 
-        // Update payment and order based on result
-        if (result.verified) {
-            // payment was found by reference, so reference is set here
-            const transactionId = result.transactionId || (reference as string);
-            await payment.markComplete(transactionId, result.rawResponse);
-
-            // Paid after the order was cancelled (payment window expired or the
-            // order was replaced): reopen it if the stock is still available,
-            // otherwise keep the money on record and flag the order for a refund.
-            if (order.status === 'cancelled') {
-                const reopened = await this.reopenCancelledOrder(order, transactionId);
-                if (!reopened) {
-                    return {
-                        success: false,
-                        orderId: order._id,
-                        orderNumber: order.orderNumber,
-                        status: 'refund_required',
-                        message:
-                            'We received your payment, but this order had already been cancelled and the items are no longer available. We will refund you.',
-                    };
-                }
-            } else {
-                await (order as any).markPaymentComplete(transactionId);
-            }
-
-            // Remove the purchased lines from the cart; anything added since stays
-            await this.removeOrderedItemsFromCart(order);
-        } else if (result.status !== 'pending') {
-            await payment.markFailed(result.message || 'Payment verification failed', result.rawResponse);
-        }
-
-        return {
-            success: result.verified,
-            orderId: order._id,
-            orderNumber: order.orderNumber,
-            status: result.status,
-            message: result.message,
-        };
+        return respond(await this.applyVerifiedPayment(order, payment, result));
     }
 
     /**
-     * Reopen an order cancelled before its payment arrived. Returns false when the
-     * stock is gone; the order is then marked paid-but-cancelled for a manual refund.
+     * Record a payment the gateway confirmed: check the amount, mark the attempt
+     * complete and the order paid (exactly once, see orderService.claimPayment),
+     * and take the purchased lines out of the cart. Used by the gateway redirect,
+     * the verify route and reconciliation alike.
      */
-    private async reopenCancelledOrder(order: any, transactionId: string): Promise<boolean> {
-        try {
-            await reserveOrderStock(order);
-        } catch {
-            order.payment.status = 'paid';
-            order.payment.paidAt = new Date();
-            order.payment.transactionId = transactionId;
-            order.statusHistory.push({
-                status: 'cancelled',
-                note: 'Payment received after cancellation and items are out of stock - refund required',
-                changedAt: new Date(),
-            });
-            await order.save();
-            console.warn(`⚠️ Order ${order.orderNumber} paid after cancellation; refund required`);
-            return false;
+    private async applyVerifiedPayment(
+        order: IOrder,
+        payment: IPayment,
+        result: PaymentVerifyResult,
+    ): Promise<{ success: boolean; status: string; message?: string }> {
+        if (!this.amountsMatch(result.amount, order.pricing.total)) {
+            const message = `Paid amount (${result.amount}) does not match order total (${order.pricing.total})`;
+            console.warn(`⚠️ ${message} for order ${order.orderNumber}`);
+            await payment.markFailed(message, result.rawResponse);
+            return { success: false, status: 'failed', message };
         }
 
-        order.status = 'pending';
-        order.cancelledAt = undefined;
-        order.cancellationReason = undefined;
-        order.statusHistory.push({
-            status: 'pending',
-            note: 'Reopened: payment arrived after the order was cancelled',
-            changedAt: new Date(),
+        // payment was found by reference, so a reference is always set here
+        const transactionId = result.transactionId || (payment.gatewayResponse.referenceId as string);
+        await payment.markComplete(transactionId, result.rawResponse);
+
+        const { outcome, order: updated } = await claimPayment(order._id as any, transactionId);
+
+        if (outcome === 'already_paid') {
+            if (updated && updated.payment.transactionId !== transactionId) {
+                payment.metadata = { ...(payment.metadata || {}), duplicate: true };
+                await payment.save();
+                await flagDuplicatePayment(updated, transactionId);
+                return {
+                    success: true,
+                    status: 'duplicate',
+                    message: 'This order had already been paid. We received a second payment and will refund it.',
+                };
+            }
+            return { success: true, status: 'completed', message: 'Order is already paid' };
+        }
+
+        if (outcome === 'refund_required') {
+            return {
+                success: false,
+                status: 'refund_required',
+                message:
+                    'We received your payment, but this order had already been cancelled and the items are no longer available. We will refund you.',
+            };
+        }
+
+        // Remove the purchased lines from the cart; anything added since stays
+        await this.removeOrderedItemsFromCart(order);
+        return { success: true, status: 'completed' };
+    }
+
+    /**
+     * Ask the gateway about one open attempt and act on the answer.
+     * 'paid': money arrived (applied to the order); 'processing': the gateway is
+     * still working on it or can't be reached; 'unpaid': no payment.
+     */
+    private async reconcilePayment(payment: IPayment): Promise<ReconcileState> {
+        const reference = payment.gatewayResponse?.referenceId;
+        if (!reference) return 'unpaid';
+
+        const result = await PaymentFactory.getGateway(payment.gateway).checkStatus(reference, payment.amount);
+        const age = Date.now() - new Date(payment.initiatedAt).getTime();
+
+        if (result.verified) {
+            const order = await Order.findById(payment.order);
+            if (!order) return 'unpaid';
+            const outcome = await this.applyVerifiedPayment(order, payment, result);
+            if (outcome.status !== 'failed') {
+                console.log(`💳 Confirmed ${payment.gateway} payment for order ${order.orderNumber} with the gateway`);
+                return 'paid';
+            }
+            return 'unpaid';
+        }
+
+        if (result.status === 'pending') {
+            if (age < ATTEMPT_MAX_OPEN_MS) return 'processing';
+            await payment.markFailed('No confirmation from the gateway within 24 hours', result.rawResponse);
+            return 'unpaid';
+        }
+
+        // Not paid. Settle it only once the shopper can't still be on the gateway's page.
+        if (age >= ATTEMPT_SETTLE_MS) {
+            await payment.markFailed(result.message || 'Payment was not completed', result.rawResponse);
+        }
+        return 'unpaid';
+    }
+
+    /**
+     * Check an order's open gateway attempts (the shopper may have paid without
+     * coming back). `checked` collects the attempts asked about.
+     */
+    async reconcileOrder(order: IOrder, checked?: Set<string>): Promise<ReconcileState> {
+        if (order.payment.status === 'paid') return 'paid';
+        if (!ONLINE_GATEWAYS.includes(order.payment.method)) return 'unpaid';
+
+        const attempts = await Payment.find({ order: order._id, gateway: order.payment.method, ...openAttempts() })
+            .sort({ initiatedAt: -1 });
+
+        let processing = false;
+        for (const attempt of attempts) {
+            checked?.add(String(attempt._id));
+            const state = await this.reconcilePayment(attempt);
+            if (state === 'paid') return 'paid';
+            if (state === 'processing') processing = true;
+        }
+        return processing ? 'processing' : 'unpaid';
+    }
+
+    /**
+     * Payment upkeep, run every few minutes from server.ts:
+     *  1. cancel online orders left unpaid past the payment window — after asking
+     *     the gateway, so an order paid without the redirect is kept (and marked
+     *     paid), and one the gateway is still processing waits (up to 24 hours);
+     *  2. ask the gateways about every other open attempt, including those of
+     *     cancelled orders, so late money reopens the order or flags a refund.
+     */
+    async settleOnlinePayments(windowMinutes: number): Promise<{ expired: number; paid: number }> {
+        const checked = new Set<string>();
+
+        const expired = await expireUnpaidOrders(windowMinutes, async (order) => {
+            // Paid through the other kind of server (live vs sandbox): only it can ask the gateway
+            if (await Payment.exists({ order: order._id, 'metadata.live': !usesLiveGateways() })) return true;
+            const state = await this.reconcileOrder(order, checked);
+            if (state === 'paid') return true;
+            return state === 'processing' && Date.now() - order.createdAt.getTime() < ATTEMPT_MAX_OPEN_MS;
         });
-        await order.markPaymentComplete(transactionId);
-        return true;
+
+        const open = await Payment.find({
+            gateway: { $in: ONLINE_GATEWAYS },
+            ...openAttempts(),
+            initiatedAt: { $lt: new Date(Date.now() - RECONCILE_MIN_AGE_MS) },
+        })
+            .sort({ initiatedAt: 1 })
+            .limit(100);
+
+        let paid = 0;
+        for (const payment of open) {
+            if (checked.has(String(payment._id))) continue;
+            try {
+                if ((await this.reconcilePayment(payment)) === 'paid') paid++;
+            } catch (error) {
+                console.error(`Could not reconcile payment ${payment._id}:`, error);
+            }
+        }
+
+        return { expired, paid };
+    }
+
+    /**
+     * The shopper's "did my payment go through?" — asks the gateway about the
+     * order's open attempts, then reports where the order stands.
+     */
+    async checkOrderPayment(orderId: string, userId: string): Promise<any> {
+        const order = await Order.findOne({ _id: orderId, user: userId });
+        if (!order) {
+            throw new AppError('Order not found', 404);
+        }
+
+        const state = await this.reconcileOrder(order);
+        const current = (await Order.findById(order._id)) || order;
+
+        return {
+            orderId: current._id,
+            orderNumber: current.orderNumber,
+            status: current.status,
+            paymentStatus: current.payment.status,
+            // The gateway is still confirming a payment: the shopper shouldn't pay again
+            processing: state === 'processing',
+        };
     }
 
     /**
@@ -306,7 +477,7 @@ class PaymentService {
         const gateway = PaymentFactory.getGateway(gatewayName);
         const result = await gateway.handleCallback(callbackData);
 
-        if (result.success && result.orderId) {
+        if (result.orderId && (result.success || result.status === 'pending')) {
             // Verify and update order
             return this.verifyPayment(result.orderId, gatewayName, callbackData);
         }
@@ -331,23 +502,28 @@ class PaymentService {
      * Mark COD payment as collected
      */
     async markCODCollected(orderId: string, userId: string): Promise<any> {
-        const order = await Order.findById(orderId);
+        // Conditional, so a cancelled order can't be marked paid
+        const order = await Order.findOneAndUpdate(
+            { _id: orderId, 'payment.method': 'cod', status: { $ne: 'cancelled' } },
+            { $set: { 'payment.status': 'paid', 'payment.paidAt': new Date() } },
+            { new: true },
+        );
         if (!order) {
-            throw new AppError('Order not found', 404);
+            const existing = await Order.findById(orderId).select('payment status');
+            if (!existing) {
+                throw new AppError('Order not found', 404);
+            }
+            throw new AppError(
+                existing.payment.method !== 'cod'
+                    ? 'Order is not Cash on Delivery'
+                    : 'A cancelled order cannot be marked as paid',
+                400,
+            );
         }
-
-        if (order.payment.method !== 'cod') {
-            throw new AppError('Order is not Cash on Delivery', 400);
-        }
-
-        // Update order payment status
-        order.payment.status = 'paid';
-        order.payment.paidAt = new Date();
-        await order.save();
 
         // Update payment record if exists
         const payment = await Payment.findOne({ order: orderId, gateway: 'cod' });
-        if (payment) {
+        if (payment && payment.status !== 'completed') {
             await (payment as any).markComplete(`COD-${order.orderNumber}`, { collectedBy: userId });
         }
 

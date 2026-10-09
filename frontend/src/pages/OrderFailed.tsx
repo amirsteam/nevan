@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { XCircle, ShoppingCart, Package, Loader2 } from "lucide-react";
+import { XCircle, ShoppingCart, Package, Loader2, AlertCircle } from "lucide-react";
 import { ordersAPI } from "../api/orders";
 import { useAuth } from "../context/AuthContext";
 import PayNowButton from "../components/PayNowButton";
@@ -39,6 +39,41 @@ const OrderFailed = () => {
 
   const retryable = canPayOnline(order);
   const orderCancelled = (order?.orderStatus ?? order?.status) === "cancelled";
+
+  // The money arrived, but for an order that had been cancelled and whose items
+  // are gone: not a failed payment, a refund the shop owes
+  if (searchParams.get("status") === "refund_required") {
+    return (
+      <div className="container-app py-12">
+        <div className="max-w-lg mx-auto text-center">
+          <div className="mb-6">
+            <AlertCircle className="w-20 h-20 mx-auto text-[var(--color-warning)]" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">Payment received — order couldn't be completed</h1>
+          <p className="text-[var(--color-text-muted)] mb-8">{message}</p>
+          <div className="card p-6 text-left mb-8 bg-[var(--color-warning)]/10 border-[var(--color-warning)]/30">
+            <h3 className="font-semibold mb-2">What happens now?</h3>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Your payment reached us after the order had been cancelled, and the items have sold out since. We'll
+              refund the full amount{gateway ? ` to your ${gateway === "khalti" ? "Khalti" : "eSewa"} account` : ""}.
+              You don't need to do anything, but you're welcome to contact us with your order number.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {order && (
+              <Link to={`/orders/${order._id}`} className="btn btn-primary flex items-center justify-center gap-2">
+                <Package className="w-4 h-4" />
+                View Order
+              </Link>
+            )}
+            <Link to="/contact" className="btn btn-outline flex items-center justify-center gap-2">
+              Contact us
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container-app py-12">

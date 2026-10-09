@@ -6,6 +6,8 @@ import IPaymentGateway, { PaymentInitiateResult, PaymentVerifyResult, PaymentCal
 import { IOrder } from '../../models/Order';
 import axios from 'axios';
 
+const GATEWAY_TIMEOUT_MS = 15000;
+
 class KhaltiGateway implements IPaymentGateway {
     name: string = 'khalti';
     private isProduction: boolean;
@@ -71,6 +73,7 @@ class KhaltiGateway implements IPaymentGateway {
 
             const response = await axios.post(this.initiateUrl, payload, {
                 headers: this.getAuthHeader(),
+                timeout: GATEWAY_TIMEOUT_MS,
             });
 
             if (response.data && response.data.payment_url) {
@@ -110,93 +113,109 @@ class KhaltiGateway implements IPaymentGateway {
      * Verify Khalti payment using lookup API
      */
     async verify(transactionId: string, callbackData: any): Promise<PaymentVerifyResult> {
+        const pidx = callbackData?.pidx;
+
+        if (!pidx || typeof pidx !== 'string') {
+            return {
+                verified: false,
+                status: 'failed',
+                message: 'No pidx provided for verification',
+                rawResponse: null,
+            };
+        }
+
+        return this.lookup(pidx);
+    }
+
+    async checkStatus(referenceId: string): Promise<PaymentVerifyResult> {
+        return this.lookup(referenceId);
+    }
+
+    /**
+     * Khalti's lookup API. Only "Completed" is a payment; Khalti still processing
+     * (Pending/Initiated), an unknown status or Khalti being unreachable is
+     * 'pending' — never 'failed' — so a real payment isn't written off.
+     */
+    private async lookup(pidx: string): Promise<PaymentVerifyResult> {
+        let data: any;
         try {
-            const { pidx } = callbackData;
-
-            if (!pidx) {
-                return {
-                    verified: false,
-                    status: 'failed',
-                    message: 'No pidx provided for verification',
-                    rawResponse: null,
-                };
-            }
-
             const response = await axios.post(
                 this.lookupUrl,
                 { pidx },
-                { headers: this.getAuthHeader() }
+                { headers: this.getAuthHeader(), timeout: GATEWAY_TIMEOUT_MS }
             );
+            data = response.data;
+        } catch (error: any) {
+            console.error('Khalti lookup error:', error.response?.data || error.message);
+            // Khalti answers 404 for a pidx it doesn't know: that attempt never happened
+            const unknownPidx = error.response?.status === 404;
+            return {
+                verified: false,
+                status: unknownPidx ? 'failed' : 'pending',
+                referenceId: pidx,
+                message: unknownPidx ? 'Payment not found' : 'We could not reach Khalti to confirm the payment yet',
+                error: error.message,
+                rawResponse: error.response?.data ?? null,
+            };
+        }
 
-            const { status, total_amount, transaction_id, fee, refunded } = response.data;
+        const { status, total_amount, transaction_id, fee, refunded } = data || {};
 
-            if (status === 'Completed') {
-                return {
-                    verified: true,
-                    status: 'completed',
-                    transactionId: transaction_id,
-                    referenceId: pidx,
-                    amount: total_amount / 100, // Convert from paisa to rupees
-                    fee: fee / 100,
-                    rawResponse: response.data,
-                };
-            }
+        if (status === 'Completed') {
+            return {
+                verified: true,
+                status: 'completed',
+                transactionId: transaction_id,
+                referenceId: pidx,
+                amount: total_amount / 100, // Convert from paisa to rupees
+                fee: fee / 100,
+                rawResponse: data,
+            };
+        }
 
-            if (status === 'Pending') {
-                return {
-                    verified: false,
-                    status: 'pending',
-                    referenceId: pidx,
-                    message: 'Payment is still pending',
-                    rawResponse: response.data,
-                };
-            }
+        if (status === 'Refunded' || status === 'Partially Refunded' || refunded) {
+            return {
+                verified: false,
+                status: 'refunded',
+                referenceId: pidx,
+                message: 'Payment was refunded',
+                rawResponse: data,
+            };
+        }
 
-            if (status === 'Refunded' || refunded) {
-                return {
-                    verified: false,
-                    status: 'refunded',
-                    referenceId: pidx,
-                    message: 'Payment was refunded',
-                    rawResponse: response.data,
-                };
-            }
-
+        if (status === 'Expired' || status === 'User canceled') {
             return {
                 verified: false,
                 status: 'failed',
                 referenceId: pidx,
                 message: `Payment status: ${status}`,
-                rawResponse: response.data,
-            };
-        } catch (error: any) {
-            console.error('Khalti verify error:', error.response?.data || error.message);
-            return {
-                verified: false,
-                status: 'failed',
-                message: 'Verification failed',
-                error: error.message,
-                rawResponse: error.response?.data,
+                rawResponse: data,
             };
         }
+
+        return {
+            verified: false,
+            status: 'pending',
+            referenceId: pidx,
+            message: 'Khalti is still confirming this payment',
+            rawResponse: data,
+        };
     }
 
     /**
-     * Handle Khalti callback
+     * Handle Khalti callback: find the order. Verification (the lookup API) happens
+     * once, in verify().
      */
     async handleCallback(data: any): Promise<PaymentCallbackResult> {
         try {
             const { pidx, status, purchase_order_id, transaction_id, amount } = data;
 
-            if (status === 'Completed') {
-                // Verify the payment
-                const verification = await this.verify(transaction_id, { pidx });
-
+            if (status === 'Completed' || status === 'Pending' || status === 'Initiated') {
                 return {
-                    success: verification.verified,
+                    success: status === 'Completed',
                     orderId: purchase_order_id,
                     transactionId: transaction_id || pidx,
-                    status: verification.status,
+                    status: status === 'Completed' ? 'completed' : 'pending',
                     amount: amount / 100,
                     rawResponse: data,
                 };

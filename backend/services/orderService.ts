@@ -2,7 +2,8 @@
  * Order Service
  * Handles order business logic
  */
-import Order, { IOrder } from "../models/Order";
+import { Types } from "mongoose";
+import Order, { IOrder, ORDER_TRANSITIONS } from "../models/Order";
 import Payment from "../models/Payment";
 import Cart from "../models/Cart";
 import Product from "../models/Product";
@@ -50,11 +51,19 @@ const ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delive
 const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
 const PAYMENT_METHODS = ["cod", "esewa", "khalti"];
 
+/**
+ * Orders holding money the shop has to give back by hand: paid but cancelled
+ * (payment arrived too late, or cancelled by the shop), or paid twice.
+ */
+const REFUND_REQUIRED_FILTER = {
+  $or: [{ status: "cancelled", "payment.status": "paid" }, { "payment.refundRequired": true }],
+};
 
 /** Mongo filter for the admin order list; unknown values are ignored */
 const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<string, unknown>> => {
   const { status, paymentStatus, paymentMethod, search, refundRequired } = options;
   const filter: Record<string, unknown> = {};
+  const and: Record<string, unknown>[] = [];
 
   if (typeof status === "string" && ORDER_STATUSES.includes(status)) filter.status = status;
   if (typeof paymentStatus === "string" && PAYMENT_STATUSES.includes(paymentStatus)) {
@@ -64,8 +73,7 @@ const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<
     filter["payment.method"] = paymentMethod;
   }
   if (refundRequired === true || refundRequired === "true") {
-    filter.status = "cancelled";
-    filter["payment.status"] = "paid";
+    and.push(REFUND_REQUIRED_FILTER);
   }
 
   if (typeof search === "string" && search.trim()) {
@@ -73,14 +81,17 @@ const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<
     const users = await User.find({ $or: [{ email: pattern }, { name: pattern }] })
       .limit(200)
       .distinct("_id");
-    filter.$or = [
-      { orderNumber: pattern },
-      { "shippingAddress.name": pattern },
-      { "shippingAddress.phone": pattern },
-      ...(users.length ? [{ user: { $in: users } }] : []),
-    ];
+    and.push({
+      $or: [
+        { orderNumber: pattern },
+        { "shippingAddress.name": pattern },
+        { "shippingAddress.phone": pattern },
+        ...(users.length ? [{ user: { $in: users } }] : []),
+      ],
+    });
   }
 
+  if (and.length) filter.$and = and;
   return filter;
 };
 
@@ -231,6 +242,16 @@ const createOrder = async (
   // Clear cart only for COD (immediate checkout)
   // For online payments, cart is cleared after successful payment callback
   if (paymentMethod === "cod") {
+    // Cash is collected on delivery; record the payment here so placing a COD
+    // order is a single request (the order stands even if this record fails)
+    await Payment.create({
+      order: order._id,
+      user: userId,
+      gateway: "cod",
+      amount: total,
+      status: "pending",
+      gatewayResponse: { referenceId: `COD-${order.orderNumber}` },
+    }).catch((error) => console.error(`Failed to record COD payment for ${order.orderNumber}:`, error));
     await (cart as any).clear();
   }
 
@@ -329,41 +350,70 @@ const reserveOrderStock = async (order: IOrder): Promise<void> => {
 
 const ONLINE_METHODS = ["esewa", "khalti"];
 
+// An eSewa/Khalti order whose money hasn't arrived (yet)
+const UNPAID_ONLINE = { "payment.method": { $in: ONLINE_METHODS }, "payment.status": { $ne: "paid" } };
+
+interface CancelOptions {
+  // Statuses the order may be cancelled from
+  from: string[];
+  // Further conditions the order must still meet at the moment of cancelling
+  filter?: Record<string, unknown>;
+  by?: string | Types.ObjectId;
+  reason: string;
+}
+
 /**
- * Cancel pending, unpaid eSewa/Khalti orders matching `filter` and release their stock.
- * Each order is cancelled with a conditional update, so an order that gets paid
- * (or cancelled elsewhere) at the same moment is left alone and stock is never
- * released twice. Returns the number of orders cancelled.
+ * Cancel an order exactly once and return its stock. The cancellation is a single
+ * conditional update, so concurrent cancellations (customer, admin, payment
+ * expiry) can't release the stock twice, and a payment landing at the same moment
+ * isn't overwritten. Returns the cancelled order, or null when it no longer
+ * matched (already cancelled, shipped, paid meanwhile...).
+ *
+ * eSewa/Khalti attempts that reached the gateway stay open: PaymentService keeps
+ * checking them, so money that still arrives reopens the order or flags a refund.
+ */
+const cancelOrderOnce = async (
+  orderId: string | Types.ObjectId,
+  { from, filter = {}, by, reason }: CancelOptions,
+): Promise<IOrder | null> => {
+  const now = new Date();
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, status: { $in: from }, ...filter },
+    {
+      $set: { status: "cancelled", cancelledAt: now, cancellationReason: reason },
+      $push: {
+        statusHistory: { status: "cancelled", note: reason, changedAt: now, ...(by ? { changedBy: by } : {}) },
+      },
+    },
+    { new: true },
+  );
+  if (!order) return null;
+
+  await releaseOrderStock(order);
+  await Payment.updateMany(
+    {
+      order: order._id,
+      status: { $in: ["initiated", "pending"] },
+      $or: [{ gateway: "cod" }, { "gatewayResponse.referenceId": { $in: [null, ""] } }],
+    },
+    { $set: { status: "cancelled", failureReason: reason } },
+  );
+  return order;
+};
+
+/**
+ * Cancel pending, unpaid eSewa/Khalti orders matching `filter` and release their
+ * stock (each exactly once, see cancelOrderOnce). Returns how many were cancelled.
  */
 const cancelUnpaidOnlineOrders = async (
   filter: Record<string, unknown>,
   reason: string,
 ): Promise<number> => {
-  const candidates = await Order.find({
-    ...filter,
-    status: "pending",
-    "payment.method": { $in: ONLINE_METHODS },
-    "payment.status": { $ne: "paid" },
-  });
+  const candidates = await Order.find({ ...filter, status: "pending", ...UNPAID_ONLINE }).select("_id");
 
   let cancelled = 0;
-  for (const order of candidates) {
-    const now = new Date();
-    const result = await Order.updateOne(
-      { _id: order._id, status: "pending", "payment.status": { $ne: "paid" } },
-      {
-        $set: { status: "cancelled", cancelledAt: now, cancellationReason: reason },
-        $push: { statusHistory: { status: "cancelled", note: reason, changedAt: now } },
-      },
-    );
-    if (result.modifiedCount !== 1) continue;
-
-    await releaseOrderStock(order);
-    await Payment.updateMany(
-      { order: order._id, status: { $in: ["initiated", "pending"] } },
-      { $set: { status: "cancelled", failureReason: reason } },
-    );
-    cancelled++;
+  for (const { _id } of candidates) {
+    if (await cancelOrderOnce(_id, { from: ["pending"], filter: UNPAID_ONLINE, reason })) cancelled++;
   }
   return cancelled;
 };
@@ -371,12 +421,141 @@ const cancelUnpaidOnlineOrders = async (
 /**
  * Cancel online-payment orders that stayed unpaid longer than the payment window
  * (abandoned or failed eSewa/Khalti checkouts), returning their stock to the shop.
+ * The window counts from the latest payment attempt, so a retry isn't cut off
+ * while the shopper is on the gateway's page. `keep` may spare an order:
+ * PaymentService first asks the gateway whether it was paid after all.
  */
-const expireUnpaidOrders = (maxAgeMinutes: number): Promise<number> =>
-  cancelUnpaidOnlineOrders(
-    { createdAt: { $lt: new Date(Date.now() - maxAgeMinutes * 60 * 1000) } },
-    "Payment was not completed in time",
+const expireUnpaidOrders = async (
+  maxAgeMinutes: number,
+  keep?: (order: IOrder) => Promise<boolean>,
+): Promise<number> => {
+  const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+  const candidates = await Order.find({ createdAt: { $lt: cutoff }, status: "pending", ...UNPAID_ONLINE });
+
+  let cancelled = 0;
+  for (const order of candidates) {
+    if (await Payment.exists({ order: order._id, initiatedAt: { $gte: cutoff } })) continue;
+    if (keep) {
+      try {
+        if (await keep(order)) continue;
+      } catch (error) {
+        // Not sure whether it was paid: leave it for the next run
+        console.error(`Could not check payment for order ${order.orderNumber}:`, error);
+        continue;
+      }
+    }
+    const done = await cancelOrderOnce(order._id, {
+      from: ["pending"],
+      filter: UNPAID_ONLINE,
+      reason: "Payment was not completed in time",
+    });
+    if (done) cancelled++;
+  }
+  return cancelled;
+};
+
+/** What claimPayment did with a verified payment */
+type PaymentClaim =
+  | "paid" // pending (or already confirmed by the shop) → paid
+  | "reopened" // had been cancelled, stock taken again → paid and confirmed
+  | "refund_required" // had been cancelled and the stock is gone → stays cancelled, paid
+  | "already_paid"; // another payment got there first
+
+/**
+ * Record a verified online payment on its order — exactly once. The payment is
+ * claimed with one conditional update, so concurrent confirmations (gateway
+ * redirect, the shopper's verify call, reconciliation) and the expiry job can't
+ * act on stale copies: whichever update lands first wins and the other sees it.
+ */
+const claimPayment = async (
+  orderId: string | Types.ObjectId,
+  transactionId: string,
+): Promise<{ outcome: PaymentClaim; order: IOrder | null }> => {
+  const now = new Date();
+  const before = await Order.findOneAndUpdate(
+    { _id: orderId, "payment.status": { $ne: "paid" } },
+    { $set: { "payment.status": "paid", "payment.paidAt": now, "payment.transactionId": transactionId } },
+    { new: false },
   );
+  if (!before) return { outcome: "already_paid", order: await Order.findById(orderId) };
+
+  if (before.status === "cancelled") {
+    // Paid after the order was cancelled (payment window expired or the order was
+    // replaced): reopen it if the stock is still there, else keep the money on
+    // record and flag the order for a refund
+    try {
+      await reserveOrderStock(before);
+    } catch {
+      const order = await Order.findByIdAndUpdate(
+        orderId,
+        {
+          $push: {
+            statusHistory: {
+              status: "cancelled",
+              note: "Payment received after cancellation and items are out of stock - refund required",
+              changedAt: now,
+            },
+          },
+        },
+        { new: true },
+      );
+      console.warn(`⚠️ Order ${before.orderNumber} paid after cancellation; refund required`);
+      return { outcome: "refund_required", order };
+    }
+
+    // Cancelled is final for everyone else, so this always matches
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, status: "cancelled" },
+      {
+        $set: { status: "confirmed" },
+        $unset: { cancelledAt: 1, cancellationReason: 1 },
+        $push: {
+          statusHistory: {
+            $each: [
+              { status: "pending", note: "Reopened: payment arrived after the order was cancelled", changedAt: now },
+              { status: "confirmed", note: "Auto-confirmed after payment", changedAt: now },
+            ],
+          },
+        },
+      },
+      { new: true },
+    );
+    return { outcome: "reopened", order };
+  }
+
+  if (before.status === "pending") {
+    // Conditional: the shop may have confirmed it meanwhile
+    await Order.updateOne(
+      { _id: orderId, status: "pending" },
+      {
+        $set: { status: "confirmed" },
+        $push: { statusHistory: { status: "confirmed", note: "Auto-confirmed after payment", changedAt: now } },
+      },
+    );
+  }
+  return { outcome: "paid", order: await Order.findById(orderId) };
+};
+
+/**
+ * A second payment arrived for an order that was already paid (two tabs, or a
+ * retry after an unconfirmed payment): keep the order, flag the money for a refund.
+ */
+const flagDuplicatePayment = async (order: IOrder, transactionId: string): Promise<void> => {
+  await Order.updateOne(
+    { _id: order._id },
+    {
+      $set: { "payment.refundRequired": true },
+      $push: {
+        statusHistory: {
+          status: order.status,
+          note: `Second payment ${transactionId} received for an already paid order - refund required`,
+          changedAt: new Date(),
+        },
+      },
+    },
+  );
+  console.warn(`⚠️ Order ${order.orderNumber} was paid twice (${transactionId}); refund required`);
+};
 
 /**
  * Calculate shipping cost based on location
@@ -477,21 +656,29 @@ const cancelOrder = async (
 
   // Refunds for eSewa/Khalti are handled manually, so paid online orders are
   // cancelled by the shop, not by the customer
+  const paidOnlineMessage = "This order is already paid. Please contact us to cancel it and arrange a refund.";
   if (order.payment.status === "paid" && order.payment.method !== "cod") {
+    throw new AppError(paidOnlineMessage, 400);
+  }
+
+  const cancelled = await cancelOrderOnce(order._id, {
+    from: ["pending", "confirmed"],
+    // A payment landing meanwhile turns it into a paid online order
+    filter: { $or: [{ "payment.method": "cod" }, { "payment.status": { $ne: "paid" } }] },
+    by: userId,
+    reason,
+  });
+  if (!cancelled) {
+    const current = await Order.findById(order._id).select("payment status");
     throw new AppError(
-      "This order is already paid. Please contact us to cancel it and arrange a refund.",
+      current?.payment.status === "paid" && current.payment.method !== "cod"
+        ? paidOnlineMessage
+        : "Order cannot be cancelled at this stage",
       400,
     );
   }
 
-  await (order as any).updateOrderStatus("cancelled", userId, reason);
-  await releaseOrderStock(order);
-  await Payment.updateMany(
-    { order: order._id, status: { $in: ["initiated", "pending"] } },
-    { $set: { status: "cancelled", failureReason: reason } },
-  );
-
-  return order;
+  return cancelled;
 };
 
 
@@ -526,15 +713,22 @@ const updateOrderStatus = async (
   adminId: string,
   note: string,
 ): Promise<IOrder> => {
-  const order = await Order.findById(orderId);
+  let order: IOrder | null = await Order.findById(orderId);
   if (!order) {
     throw new AppError("Order not found", 404);
   }
 
-  await (order as any).updateOrderStatus(status, adminId, note);
-
   if (status === "cancelled") {
-    await releaseOrderStock(order);
+    const from = Object.keys(ORDER_TRANSITIONS).filter((s) => ORDER_TRANSITIONS[s].includes("cancelled"));
+    if (!from.includes(order.status)) {
+      throw new AppError(`Cannot change order status from ${order.status} to cancelled`, 400);
+    }
+    order = await cancelOrderOnce(order._id, { from, by: adminId, reason: note });
+    if (!order) {
+      throw new AppError("This order was just updated by someone else. Please refresh and try again.", 409);
+    }
+  } else {
+    await (order as any).updateOrderStatus(status, adminId, note);
   }
 
   // Send push notification to user about status change
@@ -589,12 +783,15 @@ const bulkUpdateOrderStatus = async (
 };
 
 export {
+  REFUND_REQUIRED_FILTER,
   bulkUpdateOrderStatus,
   createOrder,
   getUserOrders,
   getOrderById,
   cancelOrder,
+  claimPayment,
   expireUnpaidOrders,
+  flagDuplicatePayment,
   releaseOrderStock,
   reserveOrderStock,
   getAllOrders,

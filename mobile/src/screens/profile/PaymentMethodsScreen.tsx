@@ -8,7 +8,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CreditCard,
   Smartphone,
-  Wallet,
   Truck,
   Shield,
   CheckCircle,
@@ -48,18 +47,6 @@ const paymentOptions: PaymentOption[] = [
       "Cashback offers available",
     ],
     color: "#60BB46",
-  },
-  {
-    id: "khalti",
-    name: "Khalti",
-    description: "Fast and secure digital payments",
-    icon: <Wallet size={28} color="#5D2E8C" />,
-    features: [
-      "Quick checkout process",
-      "Bank transfer support",
-      "Loyalty rewards",
-    ],
-    color: "#5D2E8C",
   },
 ];
 

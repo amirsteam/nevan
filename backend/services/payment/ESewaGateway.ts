@@ -7,6 +7,8 @@ import { IOrder } from '../../models/Order';
 import crypto from 'crypto';
 import axios from 'axios';
 
+const GATEWAY_TIMEOUT_MS = 15000;
+
 class ESewaGateway implements IPaymentGateway {
     name: string = 'esewa';
     private isProduction: boolean;
@@ -45,6 +47,82 @@ class ESewaGateway implements IPaymentGateway {
      */
     private parseAmount(value: unknown): number {
         return Number(String(value ?? '').replace(/,/g, ''));
+    }
+
+    private signatureMatches(signature: unknown, expected: string): boolean {
+        if (typeof signature !== 'string') return false;
+        const a = Buffer.from(signature);
+        const b = Buffer.from(expected);
+        return a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+
+    /**
+     * Ask eSewa's status API about a transaction. Only COMPLETE is a payment; eSewa
+     * still processing (PENDING, AMBIGUOUS), an unknown status or eSewa being
+     * unreachable is 'pending' — never 'failed', so a payment that did go through
+     * isn't written off while it can't be confirmed.
+     */
+    private async lookup(transactionUuid: string, totalAmount: unknown, transactionCode?: string): Promise<PaymentVerifyResult> {
+        let data: any;
+        try {
+            const response = await axios.get(this.verifyUrl, {
+                params: {
+                    product_code: this.merchantCode,
+                    total_amount: totalAmount,
+                    transaction_uuid: transactionUuid,
+                },
+                timeout: GATEWAY_TIMEOUT_MS,
+            });
+            data = response.data;
+        } catch (error: any) {
+            console.error('eSewa status API error:', error.message);
+            return {
+                verified: false,
+                status: 'pending',
+                referenceId: transactionUuid,
+                message: 'We could not reach eSewa to confirm the payment yet',
+                error: error.message,
+                rawResponse: null,
+            };
+        }
+
+        const status = String(data?.status || '').toUpperCase();
+        if (status === 'COMPLETE') {
+            return {
+                verified: true,
+                status: 'completed',
+                transactionId: transactionCode || data.ref_id || transactionUuid,
+                referenceId: transactionUuid,
+                // Prefer the amount eSewa's status API reports; eSewa may format amounts as "1,000.0"
+                amount: this.parseAmount(data.total_amount ?? totalAmount),
+                rawResponse: data,
+            };
+        }
+        if (status === 'NOT_FOUND' || status === 'CANCELED') {
+            return {
+                verified: false,
+                status: 'failed',
+                referenceId: transactionUuid,
+                message: status === 'CANCELED' ? 'Payment was cancelled' : 'Payment was not completed',
+                rawResponse: data,
+            };
+        }
+        if (status === 'FULL_REFUND' || status === 'PARTIAL_REFUND') {
+            return {
+                verified: false,
+                status: 'refunded',
+                referenceId: transactionUuid,
+                message: 'Payment was refunded',
+                rawResponse: data,
+            };
+        }
+        return {
+            verified: false,
+            status: 'pending',
+            referenceId: transactionUuid,
+            message: 'eSewa is still confirming this payment',
+            rawResponse: data,
+        };
     }
 
     /**
@@ -112,88 +190,64 @@ class ESewaGateway implements IPaymentGateway {
      * Verify eSewa payment using transaction lookup API
      */
     async verify(transactionId: string, callbackData: any): Promise<PaymentVerifyResult> {
-        try {
-            // eSewa returns encoded data in the callback
-            const { data } = callbackData;
+        // eSewa returns encoded data in the callback
+        const data = callbackData?.data;
 
-            if (!data) {
-                return {
-                    verified: false,
-                    status: 'failed',
-                    message: 'No callback data received',
-                    rawResponse: null,
-                };
-            }
-
-            // Decode base64 data from eSewa
-            const decodedData = JSON.parse(Buffer.from(data, 'base64').toString('utf-8'));
-
-            const {
-                transaction_code,
-                status,
-                total_amount,
-                transaction_uuid,
-                product_code,
-                signed_field_names,
-                signature,
-            } = decodedData;
-
-            // Verify signature
-            const signatureMessage = `transaction_code=${transaction_code},status=${status},total_amount=${total_amount},transaction_uuid=${transaction_uuid},product_code=${product_code},signed_field_names=${signed_field_names}`;
-            const expectedSignature = this.generateSignature(signatureMessage);
-
-            if (signature !== expectedSignature) {
-                console.error('eSewa signature mismatch');
-                return {
-                    verified: false,
-                    status: 'failed',
-                    message: 'Invalid signature',
-                    rawResponse: decodedData,
-                };
-            }
-
-            // Additional verification with eSewa API
-            const verifyResponse = await axios.get(this.verifyUrl, {
-                params: {
-                    product_code: this.merchantCode,
-                    total_amount: total_amount,
-                    transaction_uuid: transaction_uuid,
-                },
-            });
-
-            if (verifyResponse.data.status === 'COMPLETE') {
-                return {
-                    verified: true,
-                    status: 'completed',
-                    transactionId: transaction_code,
-                    referenceId: transaction_uuid,
-                    // Prefer the amount eSewa's status API reports; eSewa may format amounts as "1,000.0"
-                    amount: this.parseAmount(verifyResponse.data.total_amount ?? total_amount),
-                    rawResponse: verifyResponse.data,
-                };
-            }
-
+        if (!data || typeof data !== 'string') {
             return {
                 verified: false,
                 status: 'failed',
-                referenceId: transaction_uuid,
-                message: `Payment status: ${verifyResponse.data.status}`,
-                rawResponse: verifyResponse.data,
-            };
-        } catch (error: any) {
-            console.error('eSewa verify error:', error);
-            return {
-                verified: false,
-                status: 'failed',
-                message: 'Verification failed',
-                error: error.message,
+                message: 'No callback data received',
                 rawResponse: null,
             };
         }
+
+        let decodedData: any;
+        try {
+            decodedData = JSON.parse(Buffer.from(data, 'base64').toString('utf-8'));
+        } catch {
+            return {
+                verified: false,
+                status: 'failed',
+                message: 'Invalid callback data',
+                rawResponse: null,
+            };
+        }
+
+        const {
+            transaction_code,
+            status,
+            total_amount,
+            transaction_uuid,
+            product_code,
+            signed_field_names,
+            signature,
+        } = decodedData || {};
+
+        // Verify signature
+        const signatureMessage = `transaction_code=${transaction_code},status=${status},total_amount=${total_amount},transaction_uuid=${transaction_uuid},product_code=${product_code},signed_field_names=${signed_field_names}`;
+        const expectedSignature = this.generateSignature(signatureMessage);
+
+        if (!this.signatureMatches(signature, expectedSignature)) {
+            console.error('eSewa signature mismatch');
+            return {
+                verified: false,
+                status: 'failed',
+                message: 'Invalid signature',
+                rawResponse: decodedData,
+            };
+        }
+
+        // The signed callback isn't enough on its own: confirm with eSewa's status API
+        return this.lookup(String(transaction_uuid), total_amount, transaction_code);
+    }
+
+    async checkStatus(referenceId: string, amount: number): Promise<PaymentVerifyResult> {
+        return this.lookup(referenceId, amount);
     }
 
     /**
-     * Handle eSewa callback
+     * Handle eSewa callback: find the order. Verification happens in verify().
      */
     async handleCallback(data: any): Promise<PaymentCallbackResult> {
         try {
@@ -201,13 +255,14 @@ class ESewaGateway implements IPaymentGateway {
             const decodedData = JSON.parse(Buffer.from(data.data, 'base64').toString('utf-8'));
 
             const orderId = decodedData.transaction_uuid.split('_')[0]; // Extract order number
+            const status = String(decodedData.status || '').toUpperCase();
 
-            if (decodedData.status === 'COMPLETE') {
+            if (status === 'COMPLETE' || status === 'PENDING' || status === 'AMBIGUOUS') {
                 return {
-                    success: true,
+                    success: status === 'COMPLETE',
                     orderId,
                     transactionId: decodedData.transaction_code,
-                    status: 'completed',
+                    status: status === 'COMPLETE' ? 'completed' : 'pending',
                     amount: this.parseAmount(decodedData.total_amount),
                     rawResponse: decodedData
                 };

@@ -13,7 +13,7 @@ import os from 'os';
 import app from './app';
 import connectDB from './config/db';
 import { initializeSocket } from './config/socket';
-import { expireUnpaidOrders } from './services/orderService';
+import { PaymentService } from './services/payment';
 import { launchDueCampaigns } from './services/campaignService';
 import { isEmailConfigured, verifyEmailConnection } from './utils/email';
 
@@ -55,20 +55,22 @@ ${lanUrls.map((url) => `   Network:     ${url}`).join("\n")}
 `);
 });
 
-// Cancel eSewa/Khalti orders left unpaid past the payment window so their stock
+// eSewa/Khalti upkeep: confirm payments whose shopper never came back from the
+// gateway, and cancel orders left unpaid past the payment window so their stock
 // returns to the shop (abandoned or failed online checkouts)
 const PAYMENT_WINDOW_MINUTES = parseInt(process.env.ORDER_PAYMENT_TIMEOUT_MINUTES || '30', 10);
-const expireAbandonedOrders = () =>
-    expireUnpaidOrders(PAYMENT_WINDOW_MINUTES)
-        .then((count) => {
-            if (count > 0) console.log(`🧹 Cancelled ${count} unpaid online order(s)`);
+const settlePayments = () =>
+    PaymentService.settleOnlinePayments(PAYMENT_WINDOW_MINUTES)
+        .then(({ expired, paid }) => {
+            if (paid > 0) console.log(`💳 Confirmed ${paid} payment(s) with the gateway`);
+            if (expired > 0) console.log(`🧹 Cancelled ${expired} unpaid online order(s)`);
         })
         .catch((err) => {
-            console.error('Failed to expire unpaid orders:', err);
+            console.error('Failed to settle online payments:', err);
             captureError(err);
         });
-setInterval(expireAbandonedOrders, 5 * 60 * 1000).unref();
-setTimeout(expireAbandonedOrders, 30 * 1000).unref();
+setInterval(settlePayments, 5 * 60 * 1000).unref();
+setTimeout(settlePayments, 30 * 1000).unref();
 
 // Email (password reset codes, contact form copies): say clearly at startup
 // whether it works, instead of failing silently when someone resets a password

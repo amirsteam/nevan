@@ -5,6 +5,7 @@
 import express from 'express';
 import * as paymentController from '../controllers/paymentController';
 import { protect } from '../middleware/auth';
+import { orderIdBodyValidator } from '../middleware/validate';
 
 const router = express.Router();
 
@@ -18,5 +19,6 @@ router.get('/khalti/callback', paymentController.khaltiCallback);
 // Protected routes
 router.post('/initiate', protect, paymentController.initiatePayment);
 router.post('/verify', protect, paymentController.verifyPayment);
+router.post('/check-status', protect, orderIdBodyValidator, paymentController.checkPaymentStatus);
 
 export default router;

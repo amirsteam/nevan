@@ -57,7 +57,7 @@ const faqs = [
     items: [
       {
         q: "What payment methods do you accept?",
-        a: "We accept Cash on Delivery (COD) and eSewa digital wallet. We're working on adding more payment options including Khalti and card payments.",
+        a: "We accept Cash on Delivery (COD) and the eSewa digital wallet.",
       },
       {
         q: "Can I return or exchange an item?",

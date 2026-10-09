@@ -10,6 +10,7 @@ import type {
   ICreateOrderData,
   IPaymentMethod,
   IPaymentInitiateResponse,
+  IPaymentStatusCheck,
   PaymentMethod,
 } from "../types";
 
@@ -71,24 +72,9 @@ export const paymentsAPI = {
     return response.data;
   },
 
-  verifyPayment: async (
-    orderId: string,
-    gateway: PaymentMethod,
-    callbackData: Record<string, unknown>,
-  ): Promise<
-    IApiResponse<{
-      success: boolean;
-      orderId: string;
-      orderNumber: string;
-      status: string;
-      message?: string;
-    }>
-  > => {
-    const response = await api.post("/payments/verify", {
-      orderId,
-      gateway,
-      callbackData,
-    });
+  // Asks eSewa/Khalti whether the order's payment went through (the API then marks it paid)
+  checkStatus: async (orderId: string): Promise<IApiResponse<IPaymentStatusCheck>> => {
+    const response = await api.post("/payments/check-status", { orderId });
     return response.data;
   },
 };

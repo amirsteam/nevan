@@ -3,6 +3,7 @@
  * cancelled, failed or abandoned payment). Renders nothing for other orders.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Loader2, CreditCard } from "lucide-react";
 import toast from "react-hot-toast";
 import { startOnlinePayment, canPayOnline } from "../utils/payment";
@@ -12,10 +13,13 @@ import type { IOrder } from "../types";
 interface PayNowButtonProps {
   order: IOrder;
   className?: string;
+  // An earlier attempt turned out to be paid; defaults to opening the success page
+  onAlreadyPaid?: () => void;
 }
 
-const PayNowButton = ({ order, className = "" }: PayNowButtonProps) => {
+const PayNowButton = ({ order, className = "", onAlreadyPaid }: PayNowButtonProps) => {
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   if (!canPayOnline(order)) return null;
   const method = (order.payment?.method ?? order.paymentMethod) as "esewa" | "khalti";
@@ -23,8 +27,14 @@ const PayNowButton = ({ order, className = "" }: PayNowButtonProps) => {
   const handlePay = async () => {
     setLoading(true);
     try {
-      await startOnlinePayment(order._id, method);
-      // The browser is leaving for the payment page
+      if ((await startOnlinePayment(order._id, method)) === "already_paid") {
+        // The server checked with the gateway: an earlier payment went through
+        toast.success("Good news: this order is already paid");
+        setLoading(false);
+        if (onAlreadyPaid) onAlreadyPaid();
+        else navigate(`/order-success?orderId=${order._id}`);
+      }
+      // Otherwise the browser is leaving for the payment page
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not open the payment page"));
       setLoading(false);

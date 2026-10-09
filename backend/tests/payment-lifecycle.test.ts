@@ -21,9 +21,12 @@ const initiate = (token: string, orderId: unknown, gateway = "esewa") =>
     .set("Authorization", `Bearer ${token}`)
     .send({ orderId: String(orderId), gateway });
 
-// Mongoose treats createdAt as immutable, so age orders through the raw collection
-const backdate = (orderId: unknown, createdAt: Date) =>
-  Order.collection.updateOne({ _id: orderId as any }, { $set: { createdAt } });
+// Mongoose treats createdAt as immutable, so age orders (and their payment attempts:
+// the payment window counts from the latest one) through the raw collections
+const backdate = async (orderId: unknown, createdAt: Date) => {
+  await Order.collection.updateOne({ _id: orderId as any }, { $set: { createdAt } });
+  await Payment.collection.updateMany({ order: orderId as any }, { $set: { initiatedAt: createdAt } });
+};
 
 const stockOf = async (productId: unknown) => (await Product.findById(productId))!.stock;
 

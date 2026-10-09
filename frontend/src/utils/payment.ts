@@ -25,20 +25,25 @@ const submitPaymentForm = (url: string, fields: Record<string, string | number>)
 export const isOnlinePayment = (method?: string): method is "esewa" | "khalti" =>
   method === "esewa" || method === "khalti";
 
+/**
+ * "redirecting": the browser is leaving for the gateway. "already_paid": a retry
+ * found that an earlier attempt went through — send the shopper to the order.
+ */
 export const startOnlinePayment = async (
   orderId: string,
   gateway: PaymentMethod,
-): Promise<void> => {
+): Promise<"redirecting" | "already_paid"> => {
   const response = await paymentsAPI.initiatePayment(orderId, gateway);
   const payment = response.data;
 
+  if (payment?.alreadyPaid) return "already_paid";
   if (gateway === "esewa" && payment?.formData && payment.redirectUrl) {
     submitPaymentForm(payment.redirectUrl, payment.formData);
-    return;
+    return "redirecting";
   }
   if (gateway === "khalti" && payment?.redirectUrl) {
     window.location.href = payment.redirectUrl;
-    return;
+    return "redirecting";
   }
   throw new Error(`Could not start ${gateway} payment`);
 };
