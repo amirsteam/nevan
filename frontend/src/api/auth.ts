@@ -30,6 +30,12 @@ export const authAPI = {
     return response.data;
   },
 
+  // Signs in, or creates the account, from a Google Identity Services ID token
+  google: async (idToken: string): Promise<IApiResponse<IAuthResponse>> => {
+    const response = await api.post("/auth/google", { idToken });
+    return response.data;
+  },
+
   // The API ends the session identified by the httpOnly refresh cookie
   logout: async (): Promise<IApiResponse<null>> => {
     const response = await api.post("/auth/logout");
@@ -41,10 +47,11 @@ export const authAPI = {
     return response.data;
   },
 
+  // Other sessions end; this browser gets a new access token (and refresh cookie)
   changePassword: async (
     currentPassword: string,
     newPassword: string,
-  ): Promise<IApiResponse<null>> => {
+  ): Promise<IApiResponse<{ accessToken: string }>> => {
     const response = await api.put("/auth/change-password", {
       currentPassword,
       newPassword,

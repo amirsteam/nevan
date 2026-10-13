@@ -212,9 +212,23 @@ const openApiSpec = {
           properties: {
             name: { type: "string" },
             email: { type: "string", format: "email" },
-            password: { type: "string", minLength: 6 },
+            password: { type: "string", minLength: 6, maxLength: 128, description: "At least one letter and one number" },
             phone: { type: "string" },
           },
+        }),
+      }, "none"),
+    },
+    "/auth/google": {
+      post: op("Auth", "Sign in or sign up with a Google ID token (201 when the account is new)", {
+        description:
+          "Verifies a Google ID token from Google Identity Services (web) or native Google Sign-In (mobile) " +
+          "and returns the same tokens as login, plus `isNewUser`. Finds the account by Google id, then by " +
+          "email: verified accounts are linked; unverified ones are linked and lose their password and sessions " +
+          "(`passwordRemoved: true`); admin accounts are never linked (409). 503 when GOOGLE_CLIENT_IDS is unset.",
+        requestBody: json({
+          type: "object",
+          required: ["idToken"],
+          properties: { idToken: { type: "string", maxLength: 4096 } },
         }),
       }, "none"),
     },

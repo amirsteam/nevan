@@ -34,6 +34,13 @@ export const loginLimiter = createLimiter({
   message: message("Too many failed login attempts, please try again in 15 minutes"),
 });
 
+// Google sign-in: tokens are verified by Google's signature, so this only curbs abuse
+export const googleLimiter = createLimiter({
+  windowMs: 15 * MINUTE,
+  limit: 30,
+  message: message("Too many sign-in attempts, please try again in 15 minutes"),
+});
+
 export const registerLimiter = createLimiter({
   windowMs: 60 * MINUTE,
   limit: 20,

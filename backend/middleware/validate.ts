@@ -50,13 +50,25 @@ const handleValidationErrors: RequestHandler = (
 
 // =============== AUTH VALIDATORS ===============
 
+// One rule for every new password (register, reset, change); the web and mobile forms match it
+const passwordRule = (field: string) =>
+  body(field)
+    .isString()
+    .withMessage("Password is required")
+    .isLength({ min: 6, max: 128 })
+    .withMessage("Password must be 6 to 128 characters")
+    .matches(/[a-zA-Z]/)
+    .withMessage("Password must contain at least one letter")
+    .matches(/[0-9]/)
+    .withMessage("Password must contain at least one number");
+
 const registerValidator: (ValidationChain | RequestHandler)[] = [
   body("name")
     .trim()
     .notEmpty()
     .withMessage("Name is required")
-    .isLength({ max: 50 })
-    .withMessage("Name cannot exceed 50 characters"),
+    .isLength({ max: 100 })
+    .withMessage("Name cannot exceed 100 characters"),
   body("email")
     .trim()
     .notEmpty()
@@ -64,11 +76,7 @@ const registerValidator: (ValidationChain | RequestHandler)[] = [
     .isEmail()
     .withMessage("Please provide a valid email")
     .normalizeEmail(),
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters"),
+  passwordRule("password"),
   body("phone")
     .optional({ checkFalsy: true } as any)
     .matches(/^(\+?977)?[0-9]{10}$/)
@@ -84,7 +92,16 @@ const loginValidator: (ValidationChain | RequestHandler)[] = [
     .isEmail()
     .withMessage("Please provide a valid email")
     .normalizeEmail(),
-  body("password").notEmpty().withMessage("Password is required"),
+  body("password").isString().notEmpty().withMessage("Password is required"),
+  handleValidationErrors,
+];
+
+const googleAuthValidator: (ValidationChain | RequestHandler)[] = [
+  body("idToken")
+    .isString()
+    .withMessage("Google sign-in token is required")
+    .isLength({ min: 1, max: 4096 })
+    .withMessage("Google sign-in token is required"),
   handleValidationErrors,
 ];
 
@@ -105,11 +122,7 @@ const resetOtpRule = () =>
     .matches(/^\d{6}$/)
     .withMessage("Reset code must be 6 digits");
 
-const newPasswordRule = () =>
-  body("newPassword")
-    .isString()
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters");
+const newPasswordRule = () => passwordRule("newPassword");
 
 const forgotPasswordValidator: (ValidationChain | RequestHandler)[] = [
   resetEmailRule(),
@@ -575,6 +588,7 @@ export {
   handleValidationErrors,
   registerValidator,
   loginValidator,
+  googleAuthValidator,
   forgotPasswordValidator,
   verifyResetOtpValidator,
   resetPasswordValidator,

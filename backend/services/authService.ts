@@ -4,6 +4,8 @@
  * Separates auth logic from HTTP handling
  */
 import crypto from "crypto";
+import bcrypt from "bcrypt";
+import validator from "validator";
 import User, { IUser, IRefreshSession } from "../models/User";
 import {
   generateTokenPair,
@@ -13,6 +15,7 @@ import {
 } from "../utils/tokenUtils";
 import AppError from "../utils/AppError";
 import { sendPasswordResetEmail } from "../utils/email";
+import { verifyGoogleIdToken } from "../utils/googleAuth";
 import { disconnectUserSockets } from "../config/socketRegistry";
 
 // Max concurrent logged-in devices per user; the oldest session is dropped first
@@ -21,6 +24,9 @@ const MAX_SESSIONS = 5;
 const ROTATION_GRACE_MS = 60 * 1000;
 // Wrong reset codes allowed before the code is invalidated
 const MAX_RESET_ATTEMPTS = 5;
+// Compared against when no password exists, so response time doesn't reveal registered emails
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 10);
+const MAX_NAME_LENGTH = 100;
 
 interface UserRegistrationData {
   name: string;
@@ -37,6 +43,12 @@ interface TokenPair {
 interface AuthResult {
   user: IUser;
   tokens: TokenPair;
+}
+
+interface GoogleAuthResult extends AuthResult {
+  isNewUser: boolean;
+  // The account's unverified password was removed when Google was linked
+  passwordRemoved: boolean;
 }
 
 /**
@@ -82,13 +94,9 @@ const registerUser = async (
     phone,
   });
 
-  // Generate tokens and record the session
+  // Generate tokens and record the session (secrets are left out of the JSON by the model)
   const tokens = startSession(user);
   await user.save({ validateBeforeSave: false });
-
-  // Remove sensitive fields
-  user.password = undefined;
-  (user as any).refreshSessions = undefined;
 
   return { user, tokens };
 };
@@ -109,7 +117,12 @@ const loginUser = async (
     "+password +refreshSessions",
   );
 
-  if (!user || !(await user.comparePassword(password))) {
+  // Unknown emails and Google-only accounts still pay for a bcrypt comparison
+  const passwordMatches = user?.password
+    ? await user.comparePassword(password)
+    : (await bcrypt.compare(password, DUMMY_PASSWORD_HASH), false);
+
+  if (!user || !passwordMatches) {
     throw new AppError("Invalid email or password", 401);
   }
 
@@ -122,11 +135,96 @@ const loginUser = async (
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
-  // Remove sensitive fields
-  user.password = undefined;
-  (user as any).refreshSessions = undefined;
-
   return { user, tokens };
+};
+
+/**
+ * Find the account for a Google identity, linking or creating it as needed.
+ *
+ * Registration doesn't verify emails, so someone may have registered this
+ * address before its owner signs in with Google. Linking such an unverified
+ * account removes its password and ends its sessions, so whoever set that
+ * password loses access. Admin accounts are never linked automatically.
+ */
+const findOrCreateGoogleUser = async (profile: {
+  sub: string;
+  email: string;
+  name?: string;
+}): Promise<{
+  user: IUser;
+  isNewUser: boolean;
+  passwordRemoved: boolean;
+  sessionsRevoked: boolean;
+}> => {
+  // Same normalization express-validator applies on register/login
+  const email = validator.normalizeEmail(profile.email) || profile.email.toLowerCase();
+
+  const byGoogleId = await User.findOne({ googleId: profile.sub }).select("+refreshSessions");
+  if (byGoogleId) {
+    return { user: byGoogleId, isNewUser: false, passwordRemoved: false, sessionsRevoked: false };
+  }
+
+  const byEmail = await User.findOne({ email }).select(
+    "+password +refreshSessions +resetPasswordToken +resetPasswordExpires",
+  );
+
+  if (byEmail) {
+    if (byEmail.role === "admin") {
+      throw new AppError("Admin accounts sign in with email and password", 409);
+    }
+    if (byEmail.googleId) {
+      // Linked to a different Google account with the same address
+      throw new AppError("This email is linked to another Google account", 409);
+    }
+
+    byEmail.googleId = profile.sub;
+    if (byEmail.emailVerified) {
+      return { user: byEmail, isNewUser: false, passwordRemoved: false, sessionsRevoked: false };
+    }
+
+    const passwordRemoved = !!byEmail.password;
+    byEmail.password = undefined;
+    byEmail.resetPasswordToken = undefined;
+    byEmail.resetPasswordExpires = undefined;
+    byEmail.refreshSessions = [];
+    byEmail.emailVerified = true;
+    return { user: byEmail, isNewUser: false, passwordRemoved, sessionsRevoked: true };
+  }
+
+  const name = (profile.name?.trim() || email.split("@")[0]).slice(0, MAX_NAME_LENGTH);
+  const user = new User({ name, email, googleId: profile.sub, emailVerified: true });
+  return { user, isNewUser: true, passwordRemoved: false, sessionsRevoked: false };
+};
+
+/**
+ * Sign in (or sign up) with a Google ID token from the web or mobile app
+ */
+const googleSignIn = async (idToken: string): Promise<GoogleAuthResult> => {
+  const profile = await verifyGoogleIdToken(idToken);
+
+  const attempt = async (): Promise<GoogleAuthResult> => {
+    const { user, isNewUser, passwordRemoved, sessionsRevoked } =
+      await findOrCreateGoogleUser(profile);
+
+    if (!user.isActive) {
+      throw new AppError("Your account has been deactivated", 401);
+    }
+
+    const tokens = startSession(user);
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: isNewUser });
+    if (sessionsRevoked) disconnectUserSockets(String(user._id));
+
+    return { user, tokens, isNewUser, passwordRemoved };
+  };
+
+  try {
+    return await attempt();
+  } catch (error: any) {
+    // Two first-time sign-ins raced on the unique email/googleId index: the account exists now
+    if (error?.code === 11000) return attempt();
+    throw error;
+  }
 };
 
 /**
@@ -209,29 +307,39 @@ const refreshAccessToken = async (refreshToken: string): Promise<TokenPair> => {
 };
 
 /**
- * Change user password
+ * Change user password. Every other session ends; the device that made the
+ * change gets a fresh session (its old access token stops working).
  */
 const changePassword = async (
   userId: string,
   currentPassword: string,
   newPassword: string,
-): Promise<{ message: string }> => {
+): Promise<{ message: string; tokens: TokenPair }> => {
   const user = await User.findById(userId).select("+password +refreshSessions");
 
   if (!user) {
     throw new AppError("User not found", 404);
   }
 
+  if (!user.password) {
+    throw new AppError(
+      "Your account doesn't have a password yet. Use Forgot password to set one.",
+      400,
+    );
+  }
+
+  // 400, not 401: a 401 would make clients treat it as an expired session and refresh
   if (!(await user.comparePassword(currentPassword))) {
-    throw new AppError("Current password is incorrect", 401);
+    throw new AppError("Current password is incorrect", 400);
   }
 
   user.password = newPassword;
   user.refreshSessions = []; // Invalidate all sessions
+  const tokens = startSession(user);
   await user.save();
   disconnectUserSockets(String(user._id));
 
-  return { message: "Password changed successfully" };
+  return { message: "Password changed successfully", tokens };
 };
 
 /**
@@ -434,8 +542,9 @@ const resetPassword = async (
 ): Promise<{ message: string }> => {
   const user = await checkResetCode(email, otp, "+password +refreshSessions");
 
-  // Update password
+  // Update password; the emailed code proves the user owns the address
   user.password = newPassword;
+  user.emailVerified = true;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpires = undefined;
   user.resetPasswordAttempts = 0;
@@ -452,6 +561,7 @@ const resetPassword = async (
 export {
   registerUser,
   loginUser,
+  googleSignIn,
   logoutUser,
   revokeRefreshToken,
   refreshAccessToken,

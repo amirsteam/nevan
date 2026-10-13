@@ -33,6 +33,7 @@ const renderHeader = (authValue = {}) => {
     isAdmin: false,
     logout: vi.fn(),
     login: vi.fn(),
+    loginWithGoogle: vi.fn(),
     register: vi.fn(),
     updateUser: vi.fn(),
     ...authValue
@@ -50,10 +51,10 @@ const renderHeader = (authValue = {}) => {
 };
 
 describe('Header Component', () => {
-  it('renders "Login" and "Sign Up" links when unauthenticated', () => {
+  it('renders "Sign in" and "Sign up" links when unauthenticated', () => {
     renderHeader({ isAuthenticated: false });
-    expect(screen.getByText(/Login/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sign Up/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+    expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/register');
   });
 
   it('renders user initial when authenticated', () => {
@@ -62,6 +63,6 @@ describe('Header Component', () => {
       user: { name: 'John Doe', email: 'john@example.com' } 
     });
     expect(screen.getByText('J')).toBeInTheDocument();
-    expect(screen.queryByText(/Login/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 });

@@ -17,18 +17,23 @@ import toast from "react-hot-toast";
 import type { IUser, IRegisterData } from "../types";
 
 // Types
+// `status` is the HTTP status of a failed request (undefined when offline)
+export type AuthResult = { success: boolean; user?: IUser; error?: string; status?: number };
+
+export type GoogleAuthResult = AuthResult & {
+  isNewUser?: boolean;
+  // An unverified password on this email was removed when Google was linked
+  passwordRemoved?: boolean;
+};
+
 interface AuthContextType {
   user: IUser | null;
   loading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  register: (
-    data: IRegisterData,
-  ) => Promise<{ success: boolean; user?: IUser; error?: string }>;
-  login: (
-    email: string,
-    password: string,
-  ) => Promise<{ success: boolean; user?: IUser; error?: string }>;
+  register: (data: IRegisterData) => Promise<AuthResult>;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  loginWithGoogle: (idToken: string) => Promise<GoogleAuthResult>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<IUser>) => void;
 }
@@ -39,6 +44,7 @@ interface AuthProviderProps {
 
 interface ApiError {
   response?: {
+    status?: number;
     data?: {
       message?: string;
     };
@@ -92,11 +98,11 @@ export const AuthProvider = ({
     initAuth();
   }, []);
 
+  // Failures are returned (not toasted): every form shows them inline
+
   // Register
   const register = useCallback(
-    async (
-      data: IRegisterData,
-    ): Promise<{ success: boolean; user?: IUser; error?: string }> => {
+    async (data: IRegisterData): Promise<AuthResult> => {
       try {
         const response = await authAPI.register(data);
         const { user, accessToken } = response.data;
@@ -111,8 +117,7 @@ export const AuthProvider = ({
       } catch (error: unknown) {
         const err = error as ApiError;
         const message = err.response?.data?.message || "Registration failed";
-        toast.error(message);
-        return { success: false, error: message };
+        return { success: false, error: message, status: err.response?.status };
       }
     },
     [],
@@ -120,10 +125,7 @@ export const AuthProvider = ({
 
   // Login
   const login = useCallback(
-    async (
-      email: string,
-      password: string,
-    ): Promise<{ success: boolean; user?: IUser; error?: string }> => {
+    async (email: string, password: string): Promise<AuthResult> => {
       try {
         const response = await authAPI.login(email, password);
         const { user, accessToken } = response.data;
@@ -138,8 +140,30 @@ export const AuthProvider = ({
       } catch (error: unknown) {
         const err = error as ApiError;
         const message = err.response?.data?.message || "Invalid credentials";
-        toast.error(message);
-        return { success: false, error: message };
+        return { success: false, error: message, status: err.response?.status };
+      }
+    },
+    [],
+  );
+
+  // Sign in or sign up with a Google ID token
+  const loginWithGoogle = useCallback(
+    async (idToken: string): Promise<GoogleAuthResult> => {
+      try {
+        const response = await authAPI.google(idToken);
+        const { user, accessToken, isNewUser, passwordRemoved } = response.data;
+
+        setAccessToken(accessToken);
+
+        setUser(user);
+        setIsAuthenticated(true);
+        toast.success(isNewUser ? "Welcome to Nevan!" : "Login successful!");
+
+        return { success: true, user, isNewUser, passwordRemoved };
+      } catch (error: unknown) {
+        const err = error as ApiError;
+        const message = err.response?.data?.message || "Google sign-in failed";
+        return { success: false, error: message, status: err.response?.status };
       }
     },
     [],
@@ -176,6 +200,7 @@ export const AuthProvider = ({
       isAdmin,
       register,
       login,
+      loginWithGoogle,
       logout,
       updateUser,
     }),
@@ -186,6 +211,7 @@ export const AuthProvider = ({
       isAdmin,
       register,
       login,
+      loginWithGoogle,
       logout,
       updateUser,
     ],

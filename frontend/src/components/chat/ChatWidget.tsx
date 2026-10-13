@@ -4,6 +4,7 @@
  * Available to every visitor: signed-out visitors can chat as guests.
  * Also owns the chat connection, so the badge updates while the window is closed.
  */
+import { useEffect, useState } from "react";
 import { MessageCircle } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
@@ -11,11 +12,33 @@ import { toggleChat } from "../../store/chatSlice";
 import { useChatConnection } from "../../hooks/useChatConnection";
 import ChatWindow from "./ChatWindow";
 
+// Fields that bring up the on-screen keyboard
+const TEXT_FIELD =
+    'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="range"]), textarea, select';
+
+/** True while a text field has focus (the bubble would sit over it on phones) */
+const useTextFieldFocused = (): boolean => {
+    const [focused, setFocused] = useState(false);
+    useEffect(() => {
+        const onFocusIn = (e: FocusEvent) =>
+            setFocused(e.target instanceof Element && e.target.matches(TEXT_FIELD));
+        const onFocusOut = () => setFocused(false);
+        document.addEventListener("focusin", onFocusIn);
+        document.addEventListener("focusout", onFocusOut);
+        return () => {
+            document.removeEventListener("focusin", onFocusIn);
+            document.removeEventListener("focusout", onFocusOut);
+        };
+    }, []);
+    return focused;
+};
+
 const ChatWidget = () => {
     const dispatch = useAppDispatch();
     const { isOpen, unreadCount } = useAppSelector((state) => state.chat);
 
     useChatConnection();
+    const typing = useTextFieldFocused();
 
     // The admin Live chat page shows the same inbox full size
     const { pathname } = useLocation();
@@ -31,7 +54,7 @@ const ChatWidget = () => {
                 className={`fixed right-4 z-50 p-4 rounded-full shadow-[var(--shadow-lg)] transition-all duration-300 ${isOpen
                     ? "hidden sm:block bg-[var(--color-text)] text-[var(--color-surface)] scale-90"
                     : "bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-dark)]"
-                    }`}
+                    } ${typing && !isOpen ? "max-sm:hidden" : ""}`}
                 aria-label={
                     isOpen
                         ? "Close chat"

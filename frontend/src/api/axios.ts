@@ -84,9 +84,10 @@ api.interceptors.response.use(
         }
 
         // If 401 and we haven't tried refreshing yet
-        // Don't retry for auth endpoints (login, register, refresh-token, logout)
+        // Don't retry for auth endpoints (login, register, Google, refresh-token, logout)
         const isAuthRequest = originalRequest.url.includes('/auth/login') ||
                              originalRequest.url.includes('/auth/register') ||
+                             originalRequest.url.includes('/auth/google') ||
                              originalRequest.url.includes('/auth/refresh-token') ||
                              originalRequest.url.includes('/auth/logout');
 

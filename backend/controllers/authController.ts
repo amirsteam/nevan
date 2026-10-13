@@ -86,6 +86,27 @@ const login = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * @desc    Sign in or sign up with a Google ID token (web and mobile)
+ * @route   POST /api/v1/auth/google
+ * @access  Public
+ */
+const googleAuth = asyncHandler(async (req: Request, res: Response) => {
+  const { user, tokens, isNewUser, passwordRemoved } =
+    await authService.googleSignIn(req.body.idToken);
+
+  res.status(isNewUser ? 201 : 200).json({
+    status: "success",
+    message: isNewUser ? "Registration successful" : "Login successful",
+    data: {
+      user,
+      ...sendAuthTokens(req, res, tokens),
+      isNewUser,
+      ...(passwordRemoved && { passwordRemoved: true }),
+    },
+  });
+});
+
+/**
  * @desc    Logout user (ends this device's session; { allDevices: true } ends all)
  * @route   POST /api/v1/auth/logout
  * @access  Public (uses the refresh token; access token optional)
@@ -142,7 +163,7 @@ const getMe = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * @desc    Change password
+ * @desc    Change password (ends other sessions; returns a fresh session for this device)
  * @route   PUT /api/v1/auth/change-password
  * @access  Private
  */
@@ -158,6 +179,7 @@ const changePassword = asyncHandler(async (req: Request, res: Response) => {
     res.status(200).json({
       status: "success",
       message: result.message,
+      data: sendAuthTokens(req, res, result.tokens),
     });
   }
 });
@@ -295,6 +317,7 @@ const resetPassword = asyncHandler(async (req: Request, res: Response) => {
 export {
   register,
   login,
+  googleAuth,
   logout,
   refreshToken,
   getMe,

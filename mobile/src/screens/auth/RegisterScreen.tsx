@@ -15,6 +15,7 @@ import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { register, clearError } from "../../store/authSlice";
 import type { RegisterScreenProps } from "../../navigation/types";
 import { colors } from "../../theme";
+import GoogleSignInButton from "../../components/GoogleSignInButton";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NEPAL_PHONE_REGEX = /^(\+?977)?[0-9]{10}$/;
@@ -129,6 +130,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
       errors.password = "Password is required";
     } else if (password.length < 6) {
       errors.password = "Minimum 6 characters";
+    } else if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      errors.password = "Use at least one letter and one number";
     }
 
     if (!confirmPassword) {
@@ -257,6 +260,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
               <Text style={styles.errorBannerText}>{error}</Text>
             </View>
           ) : null}
+
+          <GoogleSignInButton />
 
           <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
             {/* Name row */}

@@ -57,6 +57,10 @@ export interface IUser {
   role: UserRole;
   isActive: boolean;
   avatar?: IImage;
+  // false for accounts created with Google until a password is set via Forgot password
+  hasPassword?: boolean;
+  emailVerified?: boolean;
+  googleLinked?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,6 +69,9 @@ export interface IUser {
 export interface IAuthResponse {
   user: IUser;
   accessToken: string;
+  // Google sign-in only
+  isNewUser?: boolean;
+  passwordRemoved?: boolean;
 }
 
 export interface ILoginCredentials {

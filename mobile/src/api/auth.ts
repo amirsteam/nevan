@@ -23,6 +23,12 @@ export const authAPI = {
     return response.data;
   },
 
+  // Signs in, or creates the account, from a native Google Sign-In ID token
+  google: async (idToken: string): Promise<IApiResponse<IAuthResponse>> => {
+    const response = await api.post("/auth/google", { idToken });
+    return response.data;
+  },
+
   // Ends this device's session on the server (native apps send the refresh token in the body)
   logout: async (): Promise<IApiResponse<null>> => {
     const refreshToken = await getItem("refreshToken");

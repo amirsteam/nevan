@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import { Lock, Loader2, Package, Heart, ChevronRight, MapPin, Plus, Pencil, Trash2, Star } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { authAPI } from "../api/auth";
+import { setAccessToken } from "../api/axios";
 import { getErrorMessage } from "../utils/helpers";
 import { NEPALI_MOBILE, normalizePhone, PROVINCE_NAMES } from "../utils/nepal";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -19,6 +20,7 @@ import Breadcrumb from "../components/ui/Breadcrumb";
 import { Skeleton } from "../components/ui/Skeleton";
 import AddressForm from "../components/AddressForm";
 import PasswordStrength from "../components/PasswordStrength";
+import { passwordProblem } from "../utils/password";
 import ThemeToggle from "../components/layout/ThemeToggle";
 import type { ISavedAddress, ISavedAddressInput } from "../types";
 
@@ -258,6 +260,7 @@ const AddressesPanel = () => {
 
 /* ---------- Security ---------- */
 const SecurityPanel = () => {
+  const { user } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -267,12 +270,15 @@ const SecurityPanel = () => {
   const handleChangePassword = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
-    if (newPassword.length < 6) return setError("New password must be at least 6 characters");
+    const problem = passwordProblem(newPassword);
+    if (problem) return setError(problem);
     if (newPassword !== confirmPassword) return setError("The new passwords don't match");
 
     setLoading(true);
     try {
-      await authAPI.changePassword(currentPassword, newPassword);
+      const response = await authAPI.changePassword(currentPassword, newPassword);
+      // Earlier tokens stop working; keep this browser signed in with the new one
+      setAccessToken(response.data.accessToken);
       toast.success("Password changed. Other devices have been signed out.");
       setCurrentPassword("");
       setNewPassword("");
@@ -284,11 +290,32 @@ const SecurityPanel = () => {
     }
   };
 
+  // Accounts created with Google have no password until one is set by email code
+  if (user?.hasPassword === false) {
+    return (
+      <div className="card p-5 md:p-6 space-y-3 max-w-xl">
+        <h2 className="text-lg font-semibold font-sans">Password</h2>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          You sign in with Google, so your account doesn't have a password. To also sign in with
+          your email and a password, set one with a code sent to {user.email}.
+        </p>
+        <Link to="/forgot-password" className="btn btn-outline">
+          Set a password
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleChangePassword} className="card p-5 md:p-6 space-y-4 max-w-xl" noValidate>
       <div>
         <h2 className="text-lg font-semibold font-sans">Change password</h2>
         <p className="text-sm text-[var(--color-text-muted)]">Changing it signs you out on all other devices.</p>
+        {user?.googleLinked && (
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            You can also sign in with Google.
+          </p>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-sm text-[var(--color-error)]">

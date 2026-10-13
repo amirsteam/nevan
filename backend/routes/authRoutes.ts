@@ -9,6 +9,7 @@ import { protect, optionalAuth } from "../middleware/auth";
 import {
   registerValidator,
   loginValidator,
+  googleAuthValidator,
   forgotPasswordValidator,
   verifyResetOtpValidator,
   resetPasswordValidator,
@@ -20,6 +21,7 @@ import {
 } from "../middleware/validate";
 import {
   loginLimiter,
+  googleLimiter,
   registerLimiter,
   forgotPasswordLimiter,
   resetCodeLimiter,
@@ -30,6 +32,7 @@ const router = express.Router();
 // Public routes
 router.post("/register", registerLimiter, registerValidator, authController.register);
 router.post("/login", loginLimiter, loginValidator, authController.login);
+router.post("/google", googleLimiter, googleAuthValidator, authController.googleAuth);
 router.post("/refresh-token", authController.refreshToken);
 router.post("/logout", optionalAuth, authController.logout);
 

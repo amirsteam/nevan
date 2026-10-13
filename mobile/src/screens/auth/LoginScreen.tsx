@@ -15,6 +15,7 @@ import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import { login, clearError } from "../../store/authSlice";
 import type { LoginScreenProps } from "../../navigation/types";
 import { colors } from "../../theme";
+import GoogleSignInButton from "../../components/GoogleSignInButton";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -115,6 +116,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
               <Text style={styles.errorBannerText}>{error}</Text>
             </View>
           ) : null}
+
+          <GoogleSignInButton />
 
           <Animated.View style={[styles.form, { transform: [{ translateX: shakeAnim }] }]}>
             {/* Email */}

@@ -3,13 +3,15 @@
  * 3-step flow: Enter Email → Enter OTP → Set New Password
  */
 import { useState, FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authAPI } from "../api/auth";
 import toast from "react-hot-toast";
 import { Mail, KeyRound, Lock, Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 
 import { getErrorMessage } from "../utils/helpers";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { passwordProblem } from "../utils/password";
+import PasswordStrength from "../components/PasswordStrength";
 const STEPS = {
   EMAIL: 0,
   OTP: 1,
@@ -19,8 +21,12 @@ const STEPS = {
 
 const ForgotPassword = () => {
   usePageTitle("Reset your password");
+  const location = useLocation();
   const [step, setStep] = useState(STEPS.EMAIL);
-  const [email, setEmail] = useState("");
+  // Sign-in and sign-up pass on the email that was already typed
+  const [email, setEmail] = useState(
+    () => (location.state as { email?: string } | null)?.email ?? "",
+  );
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -78,8 +84,9 @@ const ForgotPassword = () => {
     e.preventDefault();
     setError("");
 
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters");
+    const problem = passwordProblem(newPassword);
+    if (problem) {
+      setError(problem);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -258,11 +265,13 @@ const ForgotPassword = () => {
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    aria-describedby="reset-password-rules"
                     className="input"
                     autoFocus
                   />
                 </div>
+                <PasswordStrength password={newPassword} id="reset-password-rules" />
               </div>
               <div>
                 <label htmlFor="reset-field-4" className="block text-sm font-medium mb-2">Confirm Password</label>
@@ -273,7 +282,6 @@ const ForgotPassword = () => {
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
                     className="input"
                   />
                 </div>

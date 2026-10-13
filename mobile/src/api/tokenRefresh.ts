@@ -24,9 +24,15 @@ export const refreshTokens = (): Promise<string | null> => {
         await setItem("accessToken", accessToken);
         await setItem("refreshToken", newRefreshToken);
         return accessToken as string;
-      } catch {
-        await deleteItem("accessToken");
-        await deleteItem("refreshToken");
+      } catch (error) {
+        // Only the server saying no ends the session. Offline or a server error
+        // keeps the tokens so the next attempt (or next app start) can retry.
+        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+        const rejected = !axios.isAxiosError(error) || status === 401 || status === 403;
+        if (rejected) {
+          await deleteItem("accessToken");
+          await deleteItem("refreshToken");
+        }
         return null;
       }
     })().finally(() => {

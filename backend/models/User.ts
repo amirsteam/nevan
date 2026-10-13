@@ -38,6 +38,12 @@ export interface IUser extends Document {
   email: string;
   phone?: string;
   password?: string;
+  // Accounts created with Google have no password until one is set via Forgot password
+  hasPassword: boolean;
+  googleId?: string;
+  // Proven by Google sign-in or by a completed password reset (registration doesn't verify)
+  emailVerified: boolean;
+  passwordChangedAt?: Date;
   role: "customer" | "admin";
   isActive: boolean;
   refreshSessions: IRefreshSession[];
@@ -50,6 +56,7 @@ export interface IUser extends Document {
   resetPasswordAttempts?: number;
   comparePassword(candidatePassword: string): Promise<boolean>;
   createPasswordResetToken(): string;
+  changedPasswordAfter(tokenIssuedAt: number): boolean;
 }
 
 const pushTokenSchema = new Schema<IPushToken>(
@@ -82,7 +89,18 @@ const userSchema = new Schema<IUser>(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     phone: { type: String },
-    password: { type: String, required: true, select: false },
+    password: {
+      type: String,
+      required: function (this: any) {
+        return !this.googleId;
+      },
+      select: false,
+    },
+    // Defaults to true so accounts saved before Google sign-in read correctly
+    hasPassword: { type: Boolean, default: true },
+    googleId: { type: String, unique: true, sparse: true },
+    emailVerified: { type: Boolean, default: false },
+    passwordChangedAt: { type: Date, select: false },
     role: { type: String, enum: ["customer", "admin"], default: "customer" },
     isActive: { type: Boolean, default: true },
     pushTokens: { type: [pushTokenSchema], default: [] },
@@ -107,14 +125,41 @@ const userSchema = new Schema<IUser>(
     resetPasswordExpires: { type: Date, select: false },
     resetPasswordAttempts: { type: Number, default: 0, select: false },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      // Responses never carry secrets, even from documents fresh from create()
+      transform: (_doc, ret: any) => {
+        if (ret.googleId) ret.googleLinked = true;
+        delete ret.googleId;
+        delete ret.password;
+        delete ret.refreshSessions;
+        delete ret.resetPasswordToken;
+        delete ret.resetPasswordExpires;
+        delete ret.resetPasswordAttempts;
+        delete ret.passwordChangedAt;
+        return ret;
+      },
+    },
+  },
 );
 
 userSchema.pre("save", async function (this: any) {
+  if (this.isNew) this.hasPassword = !!this.password;
   if (!this.isModified("password")) return;
+
+  // Access tokens issued before a password change or removal stop working
+  if (!this.isNew) this.passwordChangedAt = new Date();
+
+  if (!this.password) {
+    this.hasPassword = false;
+    return;
+  }
+
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
+    this.hasPassword = true;
   } catch (err: any) {
     throw new Error(err);
   }
@@ -124,7 +169,19 @@ userSchema.methods.comparePassword = async function (
   this: any,
   candidatePassword: string,
 ): Promise<boolean> {
+  // Google-only accounts have no password to match
+  if (!this.password || typeof candidatePassword !== "string") return false;
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+// JWT `iat` has one-second precision, so tokens issued in the same second as the
+// change stay valid (the session that made the change keeps working)
+userSchema.methods.changedPasswordAfter = function (
+  this: any,
+  tokenIssuedAt: number,
+): boolean {
+  if (!this.passwordChangedAt) return false;
+  return tokenIssuedAt < Math.floor(this.passwordChangedAt.getTime() / 1000);
 };
 
 // Generate password reset token (6-digit OTP for mobile)

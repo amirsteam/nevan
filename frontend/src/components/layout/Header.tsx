@@ -258,10 +258,10 @@ const Header = (): React.ReactElement => {
             ) : (
               <div className="flex items-center gap-2 ml-1">
                 <Link to="/login" className="btn btn-secondary text-sm px-3 py-2">
-                  Login
+                  Sign in
                 </Link>
                 <Link to="/register" className="btn btn-primary text-sm px-3 py-2 hidden sm:inline-flex">
-                  Sign Up
+                  Sign up
                 </Link>
               </div>
             )}
