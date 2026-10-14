@@ -4,7 +4,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { adminAPI } from '../../api';
-import { formatDate, getErrorMessage } from '../../utils/helpers';
+import { formatDate, formatPrice, getErrorMessage } from '../../utils/helpers';
+import { Link, useNavigate } from 'react-router-dom';
 import {
     DataTable,
     Pagination,
@@ -12,14 +13,18 @@ import {
     StatusBadge,
     ConfirmDialog,
 } from '../../components/admin';
-import { Shield, ShieldCheck, ToggleLeft, ToggleRight, Mail } from 'lucide-react';
+import { Shield, ShieldCheck, ToggleLeft, ToggleRight, Mail, ShoppingCart } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAuth } from '../../context/AuthContext';
 import type { DataTableColumn, DataTableAction } from '../../components/admin/DataTable';
 import type { IUser, UserRole } from '../../types';
 
 const Users = () => {
     usePageTitle('Users');
+    const { user: currentUser } = useAuth();
+    const navigate = useNavigate();
+    const ordersLink = (user: IUser) => `/admin/orders?search=${encodeURIComponent(user.email)}`;
 
     // State
     const [users, setUsers] = useState<IUser[]>([]);
@@ -196,6 +201,22 @@ const Users = () => {
             ),
         },
         {
+            key: 'orderStats',
+            label: 'Orders',
+            render: (stats: IUser['orderStats'], user: IUser) =>
+                stats?.orders ? (
+                    <Link to={ordersLink(user)} className="text-sm hover:text-[var(--color-primary)]">
+                        <span className="font-medium">{stats.orders}</span>
+                        <span className="block text-xs text-[var(--color-text-muted)]">
+                            {formatPrice(stats.spent)} spent
+                            {stats.lastOrderAt ? ` · last ${formatDate(stats.lastOrderAt)}` : ''}
+                        </span>
+                    </Link>
+                ) : (
+                    <span className="text-sm text-[var(--color-text-muted)]">None</span>
+                ),
+        },
+        {
             key: 'createdAt',
             label: 'Joined',
             sortable: true,
@@ -216,8 +237,17 @@ const Users = () => {
         },
     ];
 
-    // Row actions
+    // Row actions; no status/role change on your own account (the API refuses it, and it could lock you out)
     const getRowActions = (user: IUser): DataTableAction<IUser>[] => [
+        {
+            label: 'View orders',
+            icon: ShoppingCart,
+            onClick: () => navigate(ordersLink(user)),
+        },
+        ...(user._id === currentUser?._id ? [] : accountActions(user)),
+    ];
+
+    const accountActions = (user: IUser): DataTableAction<IUser>[] => [
         {
             label: user.isActive ? 'Deactivate' : 'Activate',
             icon: user.isActive ? ToggleRight : ToggleLeft,

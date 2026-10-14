@@ -5,7 +5,7 @@
 import express from 'express';
 import * as orderController from '../controllers/orderController';
 import { protect } from '../middleware/auth';
-import { createOrderValidator, paginationValidator, mongoIdValidator } from '../middleware/validate';
+import { createOrderValidator, shippingQuoteValidator, paginationValidator, mongoIdValidator } from '../middleware/validate';
 
 const router = express.Router();
 
@@ -13,6 +13,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/', createOrderValidator, orderController.createOrder);
+router.post('/shipping-quote', shippingQuoteValidator, orderController.getShippingQuote);
 router.get('/', paginationValidator, orderController.getMyOrders);
 router.get('/:id', mongoIdValidator('id'), orderController.getOrder);
 router.post('/:id/cancel', mongoIdValidator('id'), orderController.cancelOrder);

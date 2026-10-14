@@ -37,13 +37,13 @@ import { imageUrl, onImageError } from "../utils/image";
 import {
   CONTACT,
   DELIVERY_ESTIMATE,
-  FREE_SHIPPING_THRESHOLD,
   RETURN_WINDOW_DAYS,
   LOW_STOCK_DISPLAY,
   GENDER_LABELS,
   formatAgeGroup,
 } from "../config/store";
 import { useAddToCart } from "../hooks/useAddToCart";
+import { useShippingSettings } from "../hooks/useShippingSettings";
 import { useWishlist } from "../hooks/useWishlist";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useChatOffset } from "../hooks/useChatOffset";
@@ -110,6 +110,7 @@ const Stars = ({ value, size = "w-4 h-4" }: { value: number; size?: string }) =>
 const ProductDetail = () => {
   const { slug = "" } = useParams();
   const { campaign: liveCampaign } = useCampaign();
+  const { freeShippingThreshold } = useShippingSettings();
   const { isAuthenticated } = useAuth();
   const { add, addingId } = useAddToCart();
   const { isWishlisted, toggle: toggleWishlist } = useWishlist();
@@ -648,7 +649,7 @@ const ProductDetail = () => {
               <div>
                 <p className="font-medium">Delivery across Nepal</p>
                 <p className="text-[var(--color-text-muted)]">
-                  {DELIVERY_ESTIMATE}. Free shipping on orders over {formatPrice(FREE_SHIPPING_THRESHOLD)}.{" "}
+                  {DELIVERY_ESTIMATE}. Free shipping on orders of {formatPrice(freeShippingThreshold)} or more.{" "}
                   <Link to="/shipping" className="text-[var(--color-primary)] underline underline-offset-4">
                     Rates
                   </Link>

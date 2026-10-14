@@ -3,6 +3,8 @@
  * Handles category business logic
  */
 import Category, { ICategory } from "../models/Category";
+import Product from "../models/Product";
+import Campaign from "../models/Campaign";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
@@ -100,11 +102,18 @@ const updateCategory = async (
     throw new AppError("Category cannot be its own parent", 400);
   }
 
-  // If parent is specified, verify it exists
+  // If parent is specified, verify it exists and isn't one of this category's own subcategories
   if (updateData.parent) {
     const parent = await Category.findById(updateData.parent);
     if (!parent) {
       throw new AppError("Parent category not found", 404);
+    }
+    let ancestor: any = parent;
+    for (let depth = 0; ancestor?.parent && depth < 20; depth++) {
+      if (String(ancestor.parent) === categoryId) {
+        throw new AppError("A category can't be moved under one of its own subcategories", 400);
+      }
+      ancestor = await Category.findById(ancestor.parent).select("parent");
     }
   }
 
@@ -123,10 +132,30 @@ const updateCategory = async (
  */
 const deleteCategory = async (
   categoryId: string,
-): Promise<{ message: string }> => {
+): Promise<{ message: string; name: string }> => {
   const category = await Category.findById(categoryId);
   if (!category) {
     throw new AppError("Category not found", 404);
+  }
+
+  // Deleting a category that is still used would leave products, subcategories
+  // and sale campaigns pointing at nothing
+  const [products, subcategories, campaigns] = await Promise.all([
+    Product.countDocuments({ category: categoryId }),
+    Category.countDocuments({ parent: categoryId }),
+    Campaign.countDocuments({ "sale.categories": categoryId }),
+  ]);
+  if (products || subcategories || campaigns) {
+    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const uses = [
+      products && count(products, "product", "products"),
+      subcategories && count(subcategories, "subcategory", "subcategories"),
+      campaigns && count(campaigns, "campaign", "campaigns"),
+    ].filter(Boolean);
+    throw new AppError(
+      `"${(category as any).name}" is still used by ${uses.join(", ")}. Move or remove them first, or hide the category instead.`,
+      409,
+    );
   }
 
   // Delete image from Cloudinary
@@ -140,7 +169,7 @@ const deleteCategory = async (
   cache.delete(CACHE_KEYS.CATEGORY_TREE);
   cache.delete(CACHE_KEYS.CATEGORIES);
 
-  return { message: "Category deleted successfully" };
+  return { message: "Category deleted successfully", name: (category as any).name };
 };
 
 export {

@@ -3,31 +3,9 @@
  * shortcuts for the boy/girl/unisex filter.
  */
 import { Link } from "react-router-dom";
-import { AGE_GROUPS, type AgeGroup } from "../../config/store";
+import { AGE_GROUPS } from "../../config/store";
+import { AGE_LABELS, GENDER_LINKS, ageLink, genderLink, splitAge } from "../../utils/shopLinks";
 import SectionHeader from "./SectionHeader";
-
-const AGE_LABELS: Record<AgeGroup, string> = {
-  "0-3 Months": "Newborn",
-  "3-6 Months": "Infant",
-  "6-12 Months": "Crawler",
-  "1-2 Years": "Toddler",
-  "2-4 Years": "Little kid",
-  "4-6 Years": "Big kid",
-  "6-10 Years": "Junior",
-};
-
-// The shop's gender filter also includes unisex items for boy/girl
-const GENDER_LINKS = [
-  { value: "girl", label: "Girls" },
-  { value: "boy", label: "Boys" },
-  { value: "unisex", label: "Unisex" },
-];
-
-/** "0-3 Months" -> ["0–3", "months"] */
-const splitAge = (age: string): [string, string] => {
-  const [range, unit = ""] = age.split(" ");
-  return [range.replace("-", "–"), unit.toLowerCase()];
-};
 
 const ShopByAge = () => (
   <section id="shop-by-age" aria-labelledby="shop-by-age-title" className="py-12 md:py-16 scroll-mt-20">
@@ -42,7 +20,7 @@ const ShopByAge = () => (
           return (
             <li key={age} className="snap-start shrink-0 w-[38%] sm:w-[28%] md:w-auto">
               <Link
-                to={`/products?age=${encodeURIComponent(age)}`}
+                to={ageLink(age)}
                 className="group flex flex-col items-center text-center h-full px-3 pt-5 pb-4 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-md)]"
               >
                 <span className="font-display text-3xl md:text-4xl font-bold leading-none" style={{ color: tone }}>
@@ -70,7 +48,7 @@ const ShopByAge = () => (
         {GENDER_LINKS.map(({ value, label }) => (
           <Link
             key={value}
-            to={`/products?gender=${value}`}
+            to={genderLink(value)}
             className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
           >
             {label}

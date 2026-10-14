@@ -2,12 +2,13 @@
  * NotificationBell Component
  * Dropdown bell icon for web header — shows unread count + notification list
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, Check, CheckCheck, Trash2, Package, MessageCircle, Tag, Loader2 } from "lucide-react";
 import { notificationsAPI } from "../api/notifications";
 import { useAppDispatch } from "../store/hooks";
 import { openChat } from "../store/chatSlice";
+import CountBadge from "./ui/CountBadge";
 
 // Mirrors the Notification model on the API (models/Notification.ts)
 type NotificationType = "order_update" | "promotion" | "back_in_stock" | "chat_message" | "general";
@@ -35,12 +36,15 @@ const NotificationBell = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
 
-  // Fetch unread count on mount + polling every 30s
+  // Unread count on mount, every 30s while the tab is visible, and on return to the tab
   useEffect(() => {
     const fetchCount = async () => {
+      if (document.hidden) return;
       try {
         const res = await notificationsAPI.getUnreadCount();
         setUnreadCount(res.data?.unreadCount || 0);
@@ -50,7 +54,11 @@ const NotificationBell = () => {
     };
     fetchCount();
     const interval = setInterval(fetchCount, 30000);
-    return () => clearInterval(interval);
+    document.addEventListener("visibilitychange", fetchCount);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchCount);
+    };
   }, []);
 
   // Fetch full list when dropdown opens
@@ -71,16 +79,26 @@ const NotificationBell = () => {
     fetchNotifications();
   }, [open]);
 
-  // Close on outside click
+  // Close on outside click, or on Escape (focus back on the bell)
   useEffect(() => {
+    if (!open) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
 
   const handleMarkAsRead = async (id: string) => {
     try {
@@ -143,109 +161,113 @@ const NotificationBell = () => {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        ref={buttonRef}
+        type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 hover:bg-[var(--color-bg)] rounded-lg transition-colors"
+        className="relative p-2.5 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors"
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+        aria-expanded={open}
+        aria-controls={panelId}
       >
-        <Bell className="w-5 h-5" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--color-error)] text-white text-xs rounded-full flex items-center justify-center font-medium">
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
+        <Bell className="w-5 h-5" aria-hidden="true" />
+        <CountBadge count={unreadCount} tone="alert" />
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-xl z-50 max-h-[480px] flex flex-col">
+        <div
+          id={panelId}
+          role="region"
+          aria-label="Notifications"
+          className="fixed inset-x-2 top-16 sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-[var(--shadow-lg)] z-50 max-h-[min(480px,calc(100vh-5rem))] flex flex-col animate-fadeIn"
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-            <h3 className="font-semibold text-sm">Notifications</h3>
+            <h2 className="font-semibold text-sm">Notifications</h2>
             {unreadCount > 0 && (
               <button
+                type="button"
                 onClick={handleMarkAllRead}
                 className="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-1"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
+                <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 Mark all read
               </button>
             )}
           </div>
 
           {/* List */}
-          <div className="overflow-y-auto flex-1">
+          <div className="overflow-y-auto overscroll-contain flex-1">
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)]" />
+              <div className="flex items-center justify-center py-8" role="status" aria-label="Loading notifications">
+                <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)]" aria-hidden="true" />
               </div>
             ) : notifications.length === 0 ? (
               <div className="text-center py-8 text-[var(--color-text-muted)] text-sm">
-                <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" aria-hidden="true" />
                 <p>No notifications yet</p>
               </div>
             ) : (
-              notifications.map((n) => {
-                const Icon = ICON_MAP[n.type] || Bell;
-                return (
-                  <div
-                    key={n._id}
-                    className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--color-bg)] transition-colors border-b border-[var(--color-border)] last:border-b-0 ${
-                      !n.isRead ? "bg-[var(--color-primary-light)]/5" : ""
-                    }`}
-                    onClick={() => handleNotificationClick(n)}
-                  >
-                    <div
-                      className={`mt-0.5 p-1.5 rounded-full flex-shrink-0 ${
-                        !n.isRead
-                          ? "bg-[var(--color-primary-light)]/20 text-[var(--color-primary)]"
-                          : "bg-[var(--color-bg)] text-[var(--color-text-muted)]"
+              <ul>
+                {notifications.map((n) => {
+                  const Icon = ICON_MAP[n.type] || Bell;
+                  return (
+                    <li
+                      key={n._id}
+                      className={`flex items-start gap-1 pr-2 border-b border-[var(--color-border)] last:border-b-0 ${
+                        !n.isRead ? "bg-[var(--color-primary-soft)]" : ""
                       }`}
                     >
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={`text-sm leading-snug ${
-                          !n.isRead ? "font-medium" : "text-[var(--color-text-muted)]"
-                        }`}
-                      >
-                        {n.title}
-                      </p>
-                      {n.body && (
-                        <p className="text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">
-                          {n.body}
-                        </p>
-                      )}
-                      <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                        {timeAgo(n.createdAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {!n.isRead && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkAsRead(n._id);
-                          }}
-                          className="p-1 hover:bg-[var(--color-border)] rounded"
-                          title="Mark as read"
-                        >
-                          <Check className="w-3.5 h-3.5 text-[var(--color-primary)]" />
-                        </button>
-                      )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(n._id);
-                        }}
-                        className="p-1 hover:bg-[var(--color-border)] rounded"
-                        title="Delete"
+                        type="button"
+                        onClick={() => handleNotificationClick(n)}
+                        className="flex flex-1 min-w-0 items-start gap-3 pl-4 py-3 text-left hover:opacity-80 transition-opacity"
                       >
-                        <Trash2 className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                        <span
+                          className={`mt-0.5 p-1.5 rounded-full shrink-0 ${
+                            !n.isRead
+                              ? "bg-[var(--color-surface)] text-[var(--color-primary)]"
+                              : "bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]"
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" aria-hidden="true" />
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className={`block text-sm leading-snug ${!n.isRead ? "font-medium" : "text-[var(--color-text-muted)]"}`}>
+                            {!n.isRead && <span className="sr-only">Unread: </span>}
+                            {n.title}
+                          </span>
+                          {n.body && (
+                            <span className="block text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">{n.body}</span>
+                          )}
+                          <span className="block text-xs text-[var(--color-text-muted)] mt-1">{timeAgo(n.createdAt)}</span>
+                        </span>
                       </button>
-                    </div>
-                  </div>
-                );
-              })
+                      <span className="flex items-center gap-0.5 shrink-0 pt-2.5">
+                        {!n.isRead && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkAsRead(n._id)}
+                            className="p-1.5 rounded-md hover:bg-[var(--color-surface-muted)]"
+                            aria-label={`Mark "${n.title}" as read`}
+                            title="Mark as read"
+                          >
+                            <Check className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(n._id)}
+                          className="p-1.5 rounded-md hover:bg-[var(--color-surface-muted)]"
+                          aria-label={`Delete "${n.title}"`}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-[var(--color-text-muted)]" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         </div>

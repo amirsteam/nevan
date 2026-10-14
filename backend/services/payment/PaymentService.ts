@@ -9,7 +9,7 @@ import Payment, { IPayment } from '../../models/Payment';
 import Order, { IOrder } from '../../models/Order';
 import Cart from '../../models/Cart';
 import AppError from '../../utils/AppError';
-import { claimPayment, expireUnpaidOrders, flagDuplicatePayment } from '../orderService';
+import { claimPayment, completeCodPaymentRecord, expireUnpaidOrders, flagDuplicatePayment } from '../orderService';
 import { PaymentVerifyResult, UserData } from './IPaymentGateway';
 
 interface PaymentMethod {
@@ -502,31 +502,35 @@ class PaymentService {
      * Mark COD payment as collected
      */
     async markCODCollected(orderId: string, userId: string): Promise<any> {
-        // Conditional, so a cancelled order can't be marked paid
+        const existing = await Order.findById(orderId).select('payment status orderNumber');
+        if (!existing) {
+            throw new AppError('Order not found', 404);
+        }
+        if (existing.payment.method !== 'cod') {
+            throw new AppError('Order is not Cash on Delivery', 400);
+        }
+
+        // Conditional, so a cancelled order can't be marked paid and the
+        // history note is added once
         const order = await Order.findOneAndUpdate(
-            { _id: orderId, 'payment.method': 'cod', status: { $ne: 'cancelled' } },
-            { $set: { 'payment.status': 'paid', 'payment.paidAt': new Date() } },
+            { _id: orderId, 'payment.method': 'cod', status: { $ne: 'cancelled' }, 'payment.status': { $ne: 'paid' } },
+            {
+                $set: { 'payment.status': 'paid', 'payment.paidAt': new Date() },
+                $push: { statusHistory: { status: existing.status, changedBy: userId, changedAt: new Date(), note: 'Cash on delivery collected' } },
+            },
             { new: true },
         );
         if (!order) {
-            const existing = await Order.findById(orderId).select('payment status');
-            if (!existing) {
-                throw new AppError('Order not found', 404);
+            const latest = await Order.findById(orderId).select('payment status orderNumber');
+            if (!latest || latest.status === 'cancelled') {
+                throw new AppError('A cancelled order cannot be marked as paid', 400);
             }
-            throw new AppError(
-                existing.payment.method !== 'cod'
-                    ? 'Order is not Cash on Delivery'
-                    : 'A cancelled order cannot be marked as paid',
-                400,
-            );
+            // Already collected (e.g. marked delivered): make sure the record agrees
+            await completeCodPaymentRecord(latest, userId);
+            return { success: true, message: 'Cash was already marked as collected', orderId: latest._id };
         }
 
-        // Update payment record if exists
-        const payment = await Payment.findOne({ order: orderId, gateway: 'cod' });
-        if (payment && payment.status !== 'completed') {
-            await (payment as any).markComplete(`COD-${order.orderNumber}`, { collectedBy: userId });
-        }
-
+        await completeCodPaymentRecord(order, userId);
         return {
             success: true,
             message: 'COD payment marked as collected',

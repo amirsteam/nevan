@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { generateOrderNumber } from "../utils/helpers";
 import AppError from "../utils/AppError";
+import { nepalDayStart } from "../utils/nepalTime";
 
 export interface IOrderItem {
   product: Types.ObjectId;
@@ -67,6 +68,9 @@ export interface IOrder extends Document, IOrderMethods {
     paidAt?: Date;
     // Money to give back on an order that stays open (e.g. the customer paid twice)
     refundRequired?: boolean;
+    // Recorded by an admin once the money was given back
+    refundedAt?: Date;
+    refundReference?: string;
   };
   pricing: {
     subtotal: number;
@@ -236,6 +240,8 @@ const orderSchema = new Schema<IOrder, IOrderModel>(
       transactionId: String,
       paidAt: Date,
       refundRequired: Boolean,
+      refundedAt: Date,
+      refundReference: { type: String, maxlength: 100 },
     },
     pricing: {
       subtotal: {
@@ -368,8 +374,8 @@ orderSchema.methods.updateOrderStatus = async function (
 
 // Statics
 orderSchema.statics.getDashboardStats = async function () {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Start of today in Nepal, not the server's midnight
+  const today = nepalDayStart(new Date());
 
   const [totalOrders, todayOrders, pendingOrders, revenue] = await Promise.all([
     this.countDocuments(),

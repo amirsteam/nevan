@@ -17,6 +17,7 @@ import { ProductGridSkeleton } from "../components/ui/Skeleton";
 import { AGE_GROUPS, GENDER_LABELS, PRODUCT_GENDERS, formatAgeGroup } from "../config/store";
 import { formatPrice } from "../utils/helpers";
 import { usePageTitle } from "../hooks/usePageTitle";
+import CategoryThumb from "../components/CategoryThumb";
 import type { ICategory, IPagination, IProduct } from "../types";
 
 const SORT_OPTIONS = [
@@ -246,7 +247,8 @@ const Products = () => {
       .catch(() => {});
   }, []);
 
-  const categoryName = categories.find((c) => c.slug === current.category)?.name;
+  const activeCategory = categories.find((c) => c.slug === current.category);
+  const categoryName = activeCategory?.name;
   const heading = current.search
     ? `Results for “${current.search}”`
     : categoryName || (current.age ? `Clothing for ${formatAgeGroup(current.age)}` : "All products");
@@ -294,11 +296,15 @@ const Products = () => {
 
         <div className="flex-1 min-w-0">
           <div className="flex flex-col gap-4 mb-5">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold">{heading}</h1>
-              <p className="text-sm text-[var(--color-text-muted)] mt-1" aria-live="polite">
-                {loading ? "Loading products…" : `${total} ${total === 1 ? "product" : "products"}`}
-              </p>
+            <div className="flex items-center gap-4">
+              {/* A brand category (Nevan Collection / Sprouts) shows its logo */}
+              {activeCategory && !current.search && <CategoryThumb category={activeCategory} size={56} />}
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold">{heading}</h1>
+                <p className="text-sm text-[var(--color-text-muted)] mt-1" aria-live="polite">
+                  {loading ? "Loading products…" : `${total} ${total === 1 ? "product" : "products"}`}
+                </p>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">

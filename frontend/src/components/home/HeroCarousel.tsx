@@ -8,6 +8,8 @@
  *   serves a width chosen for the layout.
  * - Only the visible slide and its neighbours load images; the first image
  *   loads with high priority (it's the largest thing on the page).
+ * - Below lg, where the collage is hidden, the brand slide shows the newest
+ *   featured product's photo faintly behind its text.
  * - Left/right buttons, dots, swipe and arrow keys; autoplay pauses on
  *   hover/focus, in background tabs and for reduced-motion users.
  */
@@ -16,7 +18,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, ChevronLeft, ChevronRight, Truck, Banknote, Sparkles, Heart } from "lucide-react";
 import { formatPrice, calculateDiscount, populated } from "../../utils/helpers";
 import { imageUrl, imageSrcSet, imageWidthSrcSet, onImageError } from "../../utils/image";
-import { FREE_SHIPPING_THRESHOLD } from "../../config/store";
+import { useShippingSettings } from "../../hooks/useShippingSettings";
 import { saleText, salePath } from "../../utils/campaign";
 import { Skeleton } from "../ui/Skeleton";
 import Countdown from "../campaign/Countdown";
@@ -33,6 +35,9 @@ const PHOTO_WIDTHS = [480, 720, 1080];
 const PHOTO_SIZES = "(min-width: 1280px) 50rem, (min-width: 768px) 44rem, 100vw";
 // Collage card photos (desktop); 2x is requested for retina
 const COLLAGE_IMAGE_WIDTH = 420;
+// Desktop gets this 1×1 transparent image instead of the brand slide's phone
+// backdrop, so large screens (which show the collage) never download the photo
+const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 // Soft brand tints, cycled per slide
 const TINTS = [
@@ -179,48 +184,74 @@ const HeroCollage = ({ products, loadImages }: { products: IProduct[]; loadImage
   </div>
 );
 
-const BrandSlide = ({ collage, loadImages }: { collage: IProduct[]; loadImages: boolean }) => (
-  <div
-    className={`relative h-full grid items-center gap-10 px-6 py-10 sm:px-10 md:px-24 overflow-hidden ${
-      collage.length ? "lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" : ""
-    }`}
-  >
-    {/* Decorative soft shapes */}
-    <span aria-hidden="true" className="absolute -right-16 -top-20 w-72 h-72 md:w-[28rem] md:h-[28rem] rounded-full bg-[var(--color-brand)]/15" />
-    <span aria-hidden="true" className="absolute right-24 -bottom-24 w-56 h-56 md:w-80 md:h-80 rounded-full bg-[var(--color-accent)]/20" />
-    <div className="relative max-w-2xl">
-      <span className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-sm mb-4 font-medium">
-        <span aria-hidden="true">🧶</span> Handmade in Nepal
-      </span>
-      <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold mb-4 leading-[1.1]">
-        Soft, safe &amp; handmade clothing for little ones
-      </h1>
-      <p className="text-base md:text-lg text-[var(--color-text-muted)] mb-6 max-w-xl">
-        Gentle fabrics and thoughtful designs from newborn to 10 years.
-      </p>
-      <div className="flex flex-wrap gap-3 mb-6">
-        <Link to="/products" className="btn btn-primary px-6 py-3 text-base">
-          Shop now
-          <ArrowRight className="w-5 h-5" aria-hidden="true" />
-        </Link>
-        <a href="#shop-by-age" className="btn btn-secondary px-6 py-3 text-base bg-[var(--color-surface)]">
-          Shop by age
-        </a>
+interface BrandSlideProps {
+  collage: IProduct[];
+  /** Phones and tablets: shown faintly behind the text instead of the collage */
+  backdrop?: IProduct;
+  loadImages: boolean;
+  priority: boolean;
+}
+
+const BrandSlide = ({ collage, backdrop, loadImages, priority }: BrandSlideProps) => {
+  const { freeShippingThreshold } = useShippingSettings();
+  const backdropUrl = backdrop && primaryImage(backdrop);
+  return (
+    <div
+      className={`relative h-full grid items-center gap-10 px-6 py-10 sm:px-10 md:px-24 overflow-hidden ${
+        collage.length ? "lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]" : ""
+      }`}
+    >
+      {loadImages && backdropUrl && (
+        // Positioned itself (not only the img) so it never takes a grid cell
+        <picture aria-hidden="true" className="lg:hidden absolute inset-0">
+          <source media="(min-width: 1024px)" srcSet={BLANK_IMAGE} />
+          <img
+            src={imageUrl(backdropUrl, PHOTO_WIDTHS[1])}
+            srcSet={imageWidthSrcSet(backdropUrl, PHOTO_WIDTHS)}
+            sizes="100vw"
+            alt=""
+            fetchPriority={priority ? "high" : "auto"}
+            decoding="async"
+            onError={onImageError}
+            className="w-full h-full object-cover opacity-50 dark:opacity-40"
+          />
+        </picture>
+      )}
+      <div className="relative max-w-2xl">
+        <span className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-sm mb-4 font-medium">
+          <span aria-hidden="true">🧶</span> Handmade in Nepal
+        </span>
+        <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold mb-4 leading-[1.1]">
+          Soft, safe &amp; handmade clothing for little ones
+        </h1>
+        {/* Full-strength text below lg, where it sits over the product photo */}
+        <p className="text-base md:text-lg text-[var(--color-text)] lg:text-[var(--color-text-muted)] mb-6 max-w-xl">
+          Gentle fabrics and thoughtful designs from newborn to 10 years.
+        </p>
+        <div className="flex flex-wrap gap-3 mb-6">
+          <Link to="/products" className="btn btn-primary px-6 py-3 text-base">
+            Shop now
+            <ArrowRight className="w-5 h-5" aria-hidden="true" />
+          </Link>
+          <a href="#shop-by-age" className="btn btn-secondary px-6 py-3 text-base bg-[var(--color-surface)]">
+            Shop by age
+          </a>
+        </div>
+        <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium lg:font-normal text-[var(--color-text)] lg:text-[var(--color-text-muted)]">
+          <li className="flex items-center gap-1.5">
+            <Banknote className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
+            Cash on delivery
+          </li>
+          <li className="flex items-center gap-1.5">
+            <Truck className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
+            Free shipping on orders of {formatPrice(freeShippingThreshold)}+
+          </li>
+        </ul>
       </div>
-      <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-[var(--color-text-muted)]">
-        <li className="flex items-center gap-1.5">
-          <Banknote className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
-          Cash on delivery
-        </li>
-        <li className="flex items-center gap-1.5">
-          <Truck className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
-          Free shipping over {formatPrice(FREE_SHIPPING_THRESHOLD)}
-        </li>
-      </ul>
+      {collage.length > 0 && <HeroCollage products={collage} loadImages={loadImages} />}
     </div>
-    {collage.length > 0 && <HeroCollage products={collage} loadImages={loadImages} />}
-  </div>
-);
+  );
+};
 
 const ProductSlide = ({ product, loadImage, priority }: { product: IProduct; loadImage: boolean; priority: boolean }) => {
   const url = primaryImage(product);
@@ -304,6 +335,12 @@ type Slide =
 const HeroCarousel = ({ products, loading = false, campaign = null }: HeroCarouselProps) => {
   const withImages = products.filter((p) => primaryImage(p)).slice(0, MAX_PRODUCT_SLIDES);
   const collage = withImages.slice(0, MAX_COLLAGE);
+  // Newest featured product with a photo: the brand slide's phone backdrop
+  const added = (p: IProduct) => Date.parse(p.createdAt ?? "") || 0;
+  const newestFeatured = withImages.reduce<IProduct | undefined>(
+    (newest, p) => (!newest || added(p) > added(newest) ? p : newest),
+    undefined,
+  );
   const slides: Slide[] = [
     ...(campaign ? [{ kind: "campaign" as const, key: `campaign-${campaign._id}`, campaign }] : []),
     { kind: "brand" as const, key: "brand" },
@@ -428,7 +465,7 @@ const HeroCarousel = ({ products, loading = false, campaign = null }: HeroCarous
                 ) : slide.kind === "campaign" ? (
                   <CampaignSlide campaign={slide.campaign} priority={i === 0} />
                 ) : (
-                  <BrandSlide collage={collage} loadImages={seen.has(i)} />
+                  <BrandSlide collage={collage} backdrop={newestFeatured} loadImages={seen.has(i)} priority={i === 0} />
                 )}
               </div>
             );

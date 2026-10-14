@@ -5,11 +5,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { DELIVERY_ESTIMATE, FREE_SHIPPING_THRESHOLD, SHIPPING_ZONES } from "../config/store";
+import { DELIVERY_ESTIMATE } from "../config/store";
 import { formatPrice } from "../utils/helpers";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useShippingSettings } from "../hooks/useShippingSettings";
+import { freeAreaNames, shippingRange } from "../utils/shippingText";
+import type { IShippingSettings } from "../types";
 
-const faqs = [
+const buildFaqs = (shipping: IShippingSettings) => [
   {
     category: "Orders & Shipping",
     items: [
@@ -19,7 +22,11 @@ const faqs = [
       },
       {
         q: "Do you offer free shipping?",
-        a: `Yes — shipping is free on orders of ${formatPrice(FREE_SHIPPING_THRESHOLD)} or more. Below that it costs ${formatPrice(Math.min(...SHIPPING_ZONES.map((z) => z.cost)))} inside Kathmandu Valley and up to ${formatPrice(Math.max(...SHIPPING_ZONES.map((z) => z.cost)))} for remote provinces. The exact amount is shown at checkout before you pay.`,
+        a: `Yes — shipping is free on orders of ${formatPrice(shipping.freeShippingThreshold)} or more${
+          shipping.freeAreas.length ? `, and always free to ${freeAreaNames(shipping).join(", ")}` : ""
+        }. Below that it's one flat fee per order by location: ${formatPrice(shipping.valleyRate)} inside Kathmandu Valley, up to ${formatPrice(
+          shippingRange(shipping).max,
+        )} for remote provinces. The exact amount is shown at checkout before you pay.`,
       },
       {
         q: "Can I track my order?",
@@ -117,6 +124,7 @@ const AccordionItem = ({ question, answer }: { question: string; answer: string 
 
 const FAQ = () => {
   usePageTitle("FAQ", "Answers about delivery, shipping costs, sizes, payments and returns at Nevan Handicraft.");
+  const faqs = buildFaqs(useShippingSettings());
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}

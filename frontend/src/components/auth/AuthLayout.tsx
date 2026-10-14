@@ -5,7 +5,8 @@
 import type { ReactNode } from "react";
 import { Heart, Package, PartyPopper, Truck } from "lucide-react";
 import logo from "../../assets/logo.png";
-import { FREE_SHIPPING_THRESHOLD, RETURN_WINDOW_DAYS } from "../../config/store";
+import { RETURN_WINDOW_DAYS } from "../../config/store";
+import { useShippingSettings } from "../../hooks/useShippingSettings";
 import { formatPrice } from "../../utils/helpers";
 
 const BENEFITS = [
@@ -15,35 +16,38 @@ const BENEFITS = [
   { icon: PartyPopper, title: "Festival offers", text: "Hear about Dashain, Tihar and other sales." },
 ];
 
-const Benefits = () => (
-  <aside className="hidden lg:flex lg:order-first flex-col gap-10 bg-[var(--color-primary-soft)] p-10 xl:p-12">
-    <div>
-      <img src={logo} alt="" className="h-14 w-auto mb-6" />
-      <h2 className="text-2xl font-bold mb-2">Made for little ones, handmade in Nepal</h2>
-      <p className="text-[var(--color-text-muted)]">One account for your orders, wishlist and addresses.</p>
-    </div>
+const Benefits = () => {
+  const { freeShippingThreshold } = useShippingSettings();
+  return (
+    <aside className="hidden lg:flex lg:order-first flex-col gap-10 bg-[var(--color-primary-soft)] p-10 xl:p-12">
+      <div>
+        <img src={logo} alt="" className="h-14 w-auto mb-6" />
+        <h2 className="text-2xl font-bold mb-2">Made for little ones, handmade in Nepal</h2>
+        <p className="text-[var(--color-text-muted)]">One account for your orders, wishlist and addresses.</p>
+      </div>
 
-    <ul className="space-y-5">
-      {BENEFITS.map(({ icon: Icon, title, text }) => (
-        <li key={title} className="flex gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-primary)]">
-            <Icon className="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="font-medium">{title}</p>
-            <p className="text-sm text-[var(--color-text-muted)]">{text}</p>
-          </div>
-        </li>
-      ))}
-    </ul>
+      <ul className="space-y-5">
+        {BENEFITS.map(({ icon: Icon, title, text }) => (
+          <li key={title} className="flex gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-primary)]">
+              <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-medium">{title}</p>
+              <p className="text-sm text-[var(--color-text-muted)]">{text}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
 
-    <p className="mt-auto text-sm text-[var(--color-text-muted)]">
-      <span className="whitespace-nowrap">Cash on delivery or eSewa</span> ·{" "}
-      <span className="whitespace-nowrap">Free shipping over {formatPrice(FREE_SHIPPING_THRESHOLD)}</span> ·{" "}
-      <span className="whitespace-nowrap">{RETURN_WINDOW_DAYS}-day returns</span>
-    </p>
-  </aside>
-);
+      <p className="mt-auto text-sm text-[var(--color-text-muted)]">
+        <span className="whitespace-nowrap">Cash on delivery or eSewa</span> ·{" "}
+        <span className="whitespace-nowrap">Free shipping on orders of {formatPrice(freeShippingThreshold)}+</span> ·{" "}
+        <span className="whitespace-nowrap">{RETURN_WINDOW_DAYS}-day returns</span>
+      </p>
+    </aside>
+  );
+};
 
 interface AuthLayoutProps {
   title: string;

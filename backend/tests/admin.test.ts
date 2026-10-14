@@ -46,7 +46,7 @@ describe("Admin dashboard", () => {
 });
 
 describe("Admin navigation badges", () => {
-  it("counts pending orders, refunds owed and unread contact messages", async () => {
+  it("counts orders to confirm, refunds owed and unread contact messages", async () => {
     const { user } = await createUser();
     const product = await createProduct({ price: 1500, stock: 10 });
     await fillCart(user._id, [{ product, quantity: 1 }]);
@@ -54,6 +54,10 @@ describe("Admin navigation badges", () => {
     await fillCart(user._id, [{ product, quantity: 1 }]);
     const refund = await orderService.createOrder(String(user._id), { shippingAddress, paymentMethod: "cod" });
     await Order.updateOne({ _id: refund._id }, { status: "cancelled", "payment.status": "paid" });
+    // Waiting for eSewa: pending, but nothing for an admin to confirm
+    const { user: online } = await createUser();
+    await fillCart(online._id, [{ product, quantity: 1 }]);
+    await orderService.createOrder(String(online._id), { shippingAddress, paymentMethod: "esewa" });
     await request(app)
       .post("/api/v1/contact")
       .send({ name: "Asha", email: "asha@example.com", message: "Do you have this in 2-4 years?" });
@@ -63,7 +67,7 @@ describe("Admin navigation badges", () => {
       .set("Authorization", `Bearer ${await asAdmin()}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ pendingOrders: 1, refundRequired: 1, unreadMessages: 1 });
+    expect(res.body.data).toEqual({ toConfirm: 1, pendingOrders: 2, refundRequired: 1, unreadMessages: 1 });
   });
 
   it("is admin-only", async () => {

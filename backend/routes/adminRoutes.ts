@@ -10,6 +10,7 @@ import * as orderController from "../controllers/orderController";
 import * as paymentController from "../controllers/paymentController";
 import * as contactController from "../controllers/contactController";
 import * as campaignController from "../controllers/campaignController";
+import * as shippingController from "../controllers/shippingController";
 import asyncHandler from "../utils/asyncHandler";
 import { protect } from "../middleware/auth";
 import { adminOnly } from "../middleware/role";
@@ -21,20 +22,26 @@ import {
   createCategoryValidator,
   mongoIdValidator,
   paginationValidator,
+  shippingSettingsValidator,
+  recordRefundValidator,
+  codCollectedValidator,
+  userStatusValidator,
+  userRoleValidator,
+  adminNoteValidator,
+  updateCategoryValidator,
 } from "../middleware/validate";
-import Order from "../models/Order";
 import User from "../models/User";
 import Product from "../models/Product";
 import { adoptVariantImages, syncDerivedFields } from "../utils/productVariants";
 import Category from "../models/Category";
 import { paginate, escapeRegex } from "../utils/helpers";
 import { disconnectUserSockets } from "../config/socketRegistry";
-import { LOW_STOCK_THRESHOLD } from "../utils/constants";
+import { LOW_STOCK_FILTER, SOLD_OUT_FILTER } from "../utils/stockFilters";
+import * as dashboardService from "../services/dashboardService";
+import { getAdminLog, logAdminAction } from "../services/adminLogService";
+import Order from "../models/Order";
 import * as orderService from "../services/orderService";
 import AppError from "../utils/AppError";
-import ContactMessage from "../models/ContactMessage";
-
-const REVENUE_STATUSES = ["confirmed", "processing", "shipped", "delivered"];
 
 const router = express.Router();
 
@@ -45,108 +52,8 @@ router.use(adminOnly);
 // ==================== DASHBOARD ====================
 router.get(
   "/dashboard",
-  asyncHandler(async (req: Request, res: Response) => {
-    const since30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [
-      orderStats,
-      userCount,
-      productCount,
-      recentOrders,
-      lowStockProducts,
-      lowStockCount,
-      refundRequired,
-      topProducts,
-      unreadMessages,
-    ] = await Promise.all([
-        (Order as any).getDashboardStats(),
-        User.countDocuments({ isActive: true }),
-        Product.countDocuments({ isActive: true }),
-        Order.find()
-          .sort({ createdAt: -1 })
-          .limit(5)
-          .populate("user", "name email")
-          .select(
-            "orderNumber status payment pricing items shippingAddress createdAt user",
-          ),
-        Product.find({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } })
-          .sort({ stock: 1, name: 1 })
-          .limit(8)
-          .select("name slug stock images variants.size variants.color variants.stock"),
-        Product.countDocuments({ isActive: true, stock: { $lte: LOW_STOCK_THRESHOLD } }),
-        Order.countDocuments(orderService.REFUND_REQUIRED_FILTER),
-        Order.aggregate([
-          { $match: { createdAt: { $gte: since30Days }, status: { $in: REVENUE_STATUSES } } },
-          { $unwind: "$items" },
-          {
-            $group: {
-              _id: "$items.product",
-              name: { $first: "$items.name" },
-              slug: { $first: "$items.slug" },
-              image: { $first: "$items.image" },
-              quantity: { $sum: "$items.quantity" },
-              revenue: { $sum: "$items.subtotal" },
-            },
-          },
-          { $sort: { quantity: -1, revenue: -1 } },
-          { $limit: 5 },
-        ]),
-        ContactMessage.countDocuments({ isRead: false }),
-      ]);
-
-    // Map recentOrders to include flattened fields for frontend compatibility
-    const mappedOrders = recentOrders.map((order: any) => ({
-      _id: order._id,
-      orderNumber: order.orderNumber,
-      user: order.user,
-      items: order.items,
-      shippingAddress: order.shippingAddress,
-      orderStatus: order.status,
-      paymentMethod: order.payment?.method,
-      paymentStatus: order.payment?.status,
-      total: order.pricing?.total,
-      createdAt: order.createdAt,
-    }));
-
-    res.status(200).json({
-      status: "success",
-      data: {
-        ...orderStats,
-        totalUsers: userCount,
-        totalProducts: productCount,
-        recentOrders: mappedOrders,
-        lowStockThreshold: LOW_STOCK_THRESHOLD,
-        lowStockCount,
-        lowStockProducts: lowStockProducts.map((p: any) => ({
-          _id: p._id,
-          name: p.name,
-          slug: p.slug,
-          stock: p.stock,
-          image: p.images?.find((img: any) => img.isPrimary)?.url || p.images?.[0]?.url,
-          // Variants that are low on their own, so admins know what to restock
-          lowVariants: (p.variants || [])
-            .filter((v: any) => v.stock <= LOW_STOCK_THRESHOLD)
-            .map((v: any) => ({ size: v.size, color: v.color, stock: v.stock })),
-        })),
-        // Things an admin should act on, each linked to a filtered list
-        needsAttention: {
-          pendingOrders: orderStats.ordersByStatus?.pending || 0,
-          toShip:
-            (orderStats.ordersByStatus?.confirmed || 0) +
-            (orderStats.ordersByStatus?.processing || 0),
-          refundRequired,
-          lowStock: lowStockCount,
-          unreadMessages,
-        },
-        topProducts: topProducts.map((p: any) => ({
-          _id: p._id,
-          name: p.name,
-          slug: p.slug,
-          image: p.image,
-          quantity: p.quantity,
-          revenue: p.revenue,
-        })),
-      },
-    });
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(200).json({ status: "success", data: await dashboardService.getDashboard() });
   }),
 );
 
@@ -154,15 +61,7 @@ router.get(
 router.get(
   "/badges",
   asyncHandler(async (_req: Request, res: Response) => {
-    const [pendingOrders, refundRequired, unreadMessages] = await Promise.all([
-      Order.countDocuments({ status: "pending" }),
-      Order.countDocuments(orderService.REFUND_REQUIRED_FILTER),
-      ContactMessage.countDocuments({ isRead: false }),
-    ]);
-    res.status(200).json({
-      status: "success",
-      data: { pendingOrders, refundRequired, unreadMessages },
-    });
+    res.status(200).json({ status: "success", data: await dashboardService.getBadges() });
   }),
 );
 
@@ -175,9 +74,10 @@ router.get(
     const { page = 1, limit = 20, search, category, isActive, stock } = req.query;
 
     const filter: Record<string, unknown> = {};
+    const and: Record<string, unknown>[] = [];
     if (typeof search === "string" && search.trim()) {
       const pattern = new RegExp(escapeRegex(search.trim()), "i");
-      filter.$or = [{ name: pattern }, { sku: pattern }];
+      and.push({ $or: [{ name: pattern }, { sku: pattern }] });
     }
     if (typeof category === "string" && mongoose.Types.ObjectId.isValid(category)) {
       filter.category = category;
@@ -185,11 +85,10 @@ router.get(
     if (isActive === "true" || isActive === "false") {
       filter.isActive = isActive === "true";
     }
-    if (stock === "low") {
-      filter.stock = { $gt: 0, $lte: LOW_STOCK_THRESHOLD };
-    } else if (stock === "out") {
-      filter.stock = { $lte: 0 };
-    }
+    // Same filters the dashboard counts with
+    if (stock === "low") and.push(LOW_STOCK_FILTER);
+    else if (stock === "out") and.push(SOLD_OUT_FILTER);
+    if (and.length) filter.$and = and;
 
     const total = await Product.countDocuments(filter);
     const pagination = paginate(Number(page), Number(limit), total);
@@ -281,6 +180,7 @@ router.post(
 router.put(
   "/categories/:id",
   mongoIdValidator("id"),
+  updateCategoryValidator,
   categoryController.updateCategory,
 );
 router.delete(
@@ -293,6 +193,7 @@ router.post(
   mongoIdValidator("id"),
   uploadCategoryImage.single("image"),
   asyncHandler(async (req: any, res: Response) => {
+    if (!req.file) throw new AppError("Please choose an image", 400);
     const category = await Category.findById(req.params.id);
 
     if (!category) {
@@ -316,6 +217,8 @@ router.post(
 
 // ==================== ORDERS ====================
 router.get("/orders", paginationValidator, orderController.getAllOrders);
+// Before "/orders/:id" so "export" isn't treated as an id
+router.get("/orders/export", orderController.exportOrders);
 // Before "/orders/:id" routes
 router.post(
   "/orders/bulk-status",
@@ -353,6 +256,8 @@ router.put(
   mongoIdValidator("id"),
   orderController.updateOrderStatus,
 );
+router.post("/orders/:id/refund", mongoIdValidator("id"), recordRefundValidator, orderController.recordRefund);
+router.put("/orders/:id/note", mongoIdValidator("id"), adminNoteValidator, orderController.updateAdminNote);
 
 // ==================== USERS ====================
 router.get(
@@ -375,21 +280,50 @@ router.get(
       .sort({ createdAt: -1 })
       .skip(pagination.skip)
       .limit(pagination.itemsPerPage)
-      .select("-password -refreshSessions");
+      .select("-password -refreshSessions")
+      .lean();
+
+    // Order history for the users on this page: orders placed, spent (sales only), last order
+    const stats = await Order.aggregate([
+      { $match: { user: { $in: users.map((u: any) => u._id) } } },
+      {
+        $group: {
+          _id: "$user",
+          orders: { $sum: 1 },
+          spent: { $sum: { $cond: [{ $in: ["$status", dashboardService.REVENUE_STATUSES] }, "$pricing.total", 0] } },
+          lastOrderAt: { $max: "$createdAt" },
+        },
+      },
+    ]);
+    const statsByUser = new Map(stats.map((row: any) => [String(row._id), row]));
 
     res.status(200).json({
       status: "success",
       results: users.length,
       pagination,
-      data: { users },
+      data: {
+        users: users.map((u: any) => {
+          const row: any = statsByUser.get(String(u._id));
+          return { ...u, orderStats: { orders: row?.orders || 0, spent: row?.spent || 0, lastOrderAt: row?.lastOrderAt || null } };
+        }),
+      },
     });
   }),
 );
 
+/** Admins can't deactivate or demote themselves (it would lock them out mid-session) */
+const refuseOwnAccount = (req: Request): void => {
+  if (String((req.user as any)._id) === String(req.params.id)) {
+    throw new AppError("You can't change your own status or role. Ask another admin.", 409);
+  }
+};
+
 router.put(
   "/users/:id/status",
   mongoIdValidator("id"),
+  userStatusValidator,
   asyncHandler(async (req: Request, res: Response) => {
+    refuseOwnAccount(req);
     const { isActive } = req.body;
 
     const user = await User.findByIdAndUpdate(
@@ -407,6 +341,11 @@ router.put(
     if (!isActive) {
       disconnectUserSockets(String(user._id));
     }
+    await logAdminAction(req, isActive ? "user.activated" : "user.deactivated", {
+      type: "user",
+      id: user._id,
+      label: `${user.name} (${user.email})`,
+    });
 
     res.status(200).json({
       status: "success",
@@ -419,13 +358,10 @@ router.put(
 router.put(
   "/users/:id/role",
   mongoIdValidator("id"),
+  userRoleValidator,
   asyncHandler(async (req: Request, res: Response) => {
+    refuseOwnAccount(req);
     const { role } = req.body;
-
-    if (!["customer", "admin"].includes(role)) {
-      res.status(400).json({ status: "fail", message: "Invalid role" });
-      return;
-    }
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
@@ -437,6 +373,10 @@ router.put(
       res.status(404).json({ status: "fail", message: "User not found" });
       return;
     }
+
+    // Open chat connections still carry the old role; they reconnect with the new one
+    disconnectUserSockets(String(user._id));
+    await logAdminAction(req, "user.role", { type: "user", id: user._id, label: `${user.name} (${user.email})` }, `Now ${role}`);
 
     res.status(200).json({
       status: "success",
@@ -474,7 +414,22 @@ router.delete("/campaigns/:id/banner", mongoIdValidator("id"), campaignControlle
 router.post("/campaigns/:id/notify", mongoIdValidator("id"), campaignController.notify);
 router.get("/campaigns/:id/stats", mongoIdValidator("id"), campaignController.stats);
 
+// ==================== SHIPPING ====================
+// Rates and free-delivery areas
+router.get("/shipping", shippingController.getAdminSettings);
+router.put("/shipping", shippingSettingsValidator, shippingController.updateSettings);
+
+// ==================== ACTIVITY ====================
+router.get(
+  "/activity",
+  paginationValidator,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { entries, pagination } = await getAdminLog(Number(req.query.page) || 1, Number(req.query.limit) || 30);
+    res.status(200).json({ status: "success", results: entries.length, pagination, data: { entries } });
+  }),
+);
+
 // ==================== PAYMENTS ====================
-router.post("/payments/cod-collected", paymentController.markCODCollected);
+router.post("/payments/cod-collected", codCollectedValidator, paymentController.markCODCollected);
 
 export default router;

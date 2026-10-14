@@ -63,6 +63,8 @@ export interface IUser {
   googleLinked?: boolean;
   createdAt: string;
   updatedAt: string;
+  // GET /admin/users only: orders placed, spent (confirmed to delivered), last order
+  orderStats?: { orders: number; spent: number; lastOrderAt: string | null };
 }
 
 // The refresh token is delivered to browsers as an httpOnly cookie, not in the body
@@ -307,6 +309,9 @@ export interface IOrder {
     paidAt?: string;
     // Paid twice: the extra payment is to be refunded
     refundRequired?: boolean;
+    // Recorded by an admin once the money was given back
+    refundedAt?: string;
+    refundReference?: string;
   };
   pricing?: {
     subtotal: number;
@@ -329,6 +334,26 @@ export interface IOrder {
   }[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** GET /shipping/settings and /admin/shipping (admins edit them) */
+export interface IShippingSettings {
+  freeShippingThreshold: number;
+  /** Kathmandu, Lalitpur and Bhaktapur districts */
+  valleyRate: number;
+  /** Province 1–7 -> NPR (outside the valley) */
+  provinceRates: Record<number, number>;
+  /** Districts (optionally one town in it) that ship free */
+  freeAreas: { district: string; city?: string }[];
+  valleyDistricts?: string[];
+  updatedAt?: string | null;
+}
+
+/** POST /orders/shipping-quote: what placing the order will charge for shipping */
+export interface IShippingQuote {
+  subtotal: number;
+  shippingCost: number;
+  freeShippingThreshold: number;
 }
 
 export interface ICreateOrderData {
@@ -394,6 +419,14 @@ export interface IPaymentVerifyData {
 // ============================================
 
 // GET /admin/dashboard (backend/routes/adminRoutes.ts + Order.getDashboardStats)
+export interface IPeriodTotals {
+  /** Order totals, shipping included */
+  sales: number;
+  products: number;
+  shipping: number;
+  orders: number;
+}
+
 export interface IDashboardStats {
   totalOrders: number;
   todayOrders: number;
@@ -423,12 +456,21 @@ export interface IDashboardStats {
     lowVariants: { size: string; color: string; stock: number }[];
   }[];
   needsAttention: {
-    pendingOrders: number;
+    toConfirm: number;
+    awaitingPayment: number;
     toShip: number;
+    cashToCollect: number;
     refundRequired: number;
     lowStock: number;
+    soldOut: number;
     unreadMessages: number;
+    /** All pending orders (older app versions) */
+    pendingOrders: number;
   };
+  /** Sales by Nepal-time period, each against the same length of time before */
+  revenue: Record<"today" | "month" | "last30", { current: IPeriodTotals; previous: IPeriodTotals }>;
+  /** COD orders on their way whose cash isn't collected yet */
+  cashToCollect: { amount: number; orders: number };
   // Best sellers, last 30 days
   topProducts: {
     _id: string;
@@ -440,8 +482,24 @@ export interface IDashboardStats {
   }[];
 }
 
+/** GET /admin/activity */
+export interface IAdminLogEntry {
+  _id: string;
+  adminName: string;
+  action: string;
+  target: { type: string; id?: string; label?: string };
+  details?: string;
+  createdAt: string;
+}
+
+/** Admin order work queues (?queue= on the order list; dashboard cards) */
+export type OrderQueue = "confirm" | "awaiting" | "ship" | "collect";
+
 // GET /admin/badges
 export interface IAdminBadges {
+  /** COD orders to confirm (online orders confirm themselves once paid) */
+  toConfirm: number;
+  /** All pending orders, incl. online orders awaiting payment */
   pendingOrders: number;
   refundRequired: number;
   unreadMessages: number;

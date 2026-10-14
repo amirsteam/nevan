@@ -13,6 +13,7 @@ import {
 import AppError from "../utils/AppError";
 import { MAX_SIZE_LENGTH, MAX_COLOR_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 import { FESTIVAL_KEYS, PALETTE_KEYS } from "../utils/festivals";
+import { canonicalDistrict, findDistrict, PROVINCE_NAMES } from "../utils/nepal";
 
 interface ValidationError {
   field: string;
@@ -358,6 +359,145 @@ const createCategoryValidator: (ValidationChain | RequestHandler)[] = [
 
 // =============== ORDER VALIDATORS ===============
 
+/**
+ * District of a delivery address: must be in the address's province (which
+ * decides the shipping rate) and is stored in its standard spelling, so
+ * "kathmandu", "KTM" or "Kathmandu District" all become "Kathmandu".
+ */
+const districtInProvince = (path: string, provincePath: string): ValidationChain => {
+  const provinceOf = (req: unknown): number =>
+    Number(provincePath.split(".").reduce<any>((value, key) => value?.[key], (req as Request).body));
+  return body(path)
+    .trim()
+    .notEmpty()
+    .withMessage("District is required")
+    .bail()
+    .isLength({ max: 100 })
+    .custom((value, { req }) => {
+      const province = provinceOf(req);
+      if (canonicalDistrict(province, value)) return true;
+      const name = PROVINCE_NAMES[province];
+      throw new Error(name ? `"${value}" isn't a district in ${name} Province. Choose one of its districts.` : "Choose a province, then a district");
+    })
+    .customSanitizer((value, { req }) => canonicalDistrict(provinceOf(req), value) ?? value);
+};
+
+/** POST /orders/shipping-quote */
+const shippingQuoteValidator: (ValidationChain | RequestHandler)[] = [
+  districtInProvince("district", "province"),
+  body("province").isInt({ min: 1, max: 7 }).withMessage("Province must be between 1 and 7").toInt(),
+  // Free-delivery areas can be a single town
+  body("city").optional({ values: "falsy" }).isString().trim().isLength({ max: 100 }),
+  handleValidationErrors,
+];
+
+// =============== ADMIN ORDER / USER ACTIONS ===============
+
+/** POST /admin/orders/:id/refund */
+const recordRefundValidator: (ValidationChain | RequestHandler)[] = [
+  body("reference").optional({ values: "falsy" }).isString().trim().isLength({ max: 100 }).withMessage("Reference can be at most 100 characters"),
+  body("note").optional({ values: "falsy" }).isString().trim().isLength({ max: 500 }).withMessage("Note can be at most 500 characters"),
+  handleValidationErrors,
+];
+
+/** POST /admin/payments/cod-collected */
+const codCollectedValidator: (ValidationChain | RequestHandler)[] = [
+  body("orderId").isMongoId().withMessage("A valid order id is required"),
+  handleValidationErrors,
+];
+
+/** PUT /admin/orders/:id/note */
+const adminNoteValidator: (ValidationChain | RequestHandler)[] = [
+  body("note").optional({ values: "null" }).isString().trim().isLength({ max: 1000 }).withMessage("Note can be at most 1000 characters"),
+  handleValidationErrors,
+];
+
+/** PUT /admin/categories/:id: only these fields can change */
+const updateCategoryValidator: (ValidationChain | RequestHandler)[] = [
+  body().custom((value) => {
+    const allowed = ["name", "description", "parent", "order", "isActive"];
+    const extra = Object.keys(value || {}).filter((key) => !allowed.includes(key));
+    if (extra.length) throw new Error(`These fields can't be changed here: ${extra.join(", ")}`);
+    return true;
+  }),
+  body("name").optional().isString().trim().notEmpty().withMessage("Name can't be empty").isLength({ max: 100 }),
+  body("description").optional({ values: "null" }).isString().trim().isLength({ max: 500 }),
+  body("parent")
+    .optional({ values: "falsy" })
+    .isMongoId()
+    .withMessage("Parent must be a category"),
+  body("order").optional().isInt({ min: 0, max: 10000 }).withMessage("Order must be a whole number").toInt(),
+  body("isActive").optional().isBoolean().withMessage("isActive must be true or false").toBoolean(),
+  handleValidationErrors,
+];
+
+/** PUT /admin/users/:id/status */
+const userStatusValidator: (ValidationChain | RequestHandler)[] = [
+  body("isActive").isBoolean({ strict: true }).withMessage("isActive must be true or false").toBoolean(true),
+  handleValidationErrors,
+];
+
+/** PUT /admin/users/:id/role */
+const userRoleValidator: (ValidationChain | RequestHandler)[] = [
+  body("role").isIn(["customer", "admin"]).withMessage("Role must be customer or admin"),
+  handleValidationErrors,
+];
+
+const MAX_SHIPPING_AMOUNT = 100000;
+const MAX_FREE_AREAS = 50;
+
+/** PUT /admin/shipping */
+const shippingSettingsValidator: (ValidationChain | RequestHandler)[] = [
+  body("freeShippingThreshold")
+    .isInt({ min: 0, max: 10_000_000 })
+    .withMessage("Free-shipping threshold must be a whole amount of 0 or more")
+    .toInt(),
+  body("valleyRate")
+    .isInt({ min: 0, max: MAX_SHIPPING_AMOUNT })
+    .withMessage("Kathmandu Valley rate must be a whole amount of 0 or more")
+    .toInt(),
+  body("provinceRates")
+    .custom((rates) => {
+      if (!rates || typeof rates !== "object" || Array.isArray(rates)) throw new Error("Give a rate for each province");
+      for (const province of Object.keys(PROVINCE_NAMES)) {
+        const rate = rates[province];
+        if (!Number.isInteger(Number(rate)) || rate === "" || rate === null || Number(rate) < 0 || Number(rate) > MAX_SHIPPING_AMOUNT) {
+          throw new Error(`${PROVINCE_NAMES[Number(province)]} Province needs a whole amount of 0 or more`);
+        }
+      }
+      return true;
+    })
+    .bail()
+    .customSanitizer((rates) =>
+      Object.fromEntries(Object.keys(PROVINCE_NAMES).map((province) => [Number(province), Number(rates[province])])),
+    ),
+  body("freeAreas")
+    .isArray({ max: MAX_FREE_AREAS })
+    .withMessage(`Up to ${MAX_FREE_AREAS} free-delivery areas`)
+    .bail()
+    .custom((areas: unknown[]) => {
+      const seen = new Set<string>();
+      for (const area of areas as { district?: unknown; city?: unknown }[]) {
+        const found = findDistrict(String(area?.district ?? ""));
+        if (!found) throw new Error(`"${area?.district ?? ""}" isn't a district of Nepal`);
+        const city = typeof area.city === "string" ? area.city.trim() : "";
+        if (city.length > 100) throw new Error("Town names can be at most 100 characters");
+        const key = `${found.district}|${city.toLowerCase()}`;
+        if (seen.has(key)) throw new Error(`${found.district}${city ? ` (${city})` : ""} is listed twice`);
+        seen.add(key);
+      }
+      return true;
+    })
+    .bail()
+    .customSanitizer((areas: { district: string; city?: string }[]) =>
+      areas.map((area) => {
+        const city = typeof area.city === "string" ? area.city.trim() : "";
+        return { district: findDistrict(area.district)!.district, ...(city ? { city } : {}) };
+      }),
+    ),
+  handleValidationErrors,
+];
+
 const createOrderValidator: (ValidationChain | RequestHandler)[] = [
   body("shippingAddress")
     .notEmpty()
@@ -379,10 +519,7 @@ const createOrderValidator: (ValidationChain | RequestHandler)[] = [
     .trim()
     .notEmpty()
     .withMessage("City is required"),
-  body("shippingAddress.district")
-    .trim()
-    .notEmpty()
-    .withMessage("District is required"),
+  districtInProvince("shippingAddress.district", "shippingAddress.province"),
   body("shippingAddress.province")
     .isInt({ min: 1, max: 7 })
     .withMessage("Province must be between 1 and 7")
@@ -597,6 +734,14 @@ export {
   updateProductValidator,
   createCategoryValidator,
   createOrderValidator,
+  shippingQuoteValidator,
+  shippingSettingsValidator,
+  recordRefundValidator,
+  codCollectedValidator,
+  userStatusValidator,
+  userRoleValidator,
+  adminNoteValidator,
+  updateCategoryValidator,
   addToCartValidator,
   updateCartItemValidator,
   createReviewValidator,

@@ -297,7 +297,7 @@ const ProductDetailScreen: React.FC<ProductDetailScreenProps> = ({
             </Text>
           )}
           <Text style={styles.shippingNote}>
-            Delivery in 3–10 days across Nepal · free shipping over {formatNPR(FREE_SHIPPING_THRESHOLD)}
+            Delivery in 3–10 days across Nepal · free shipping on orders of {formatNPR(FREE_SHIPPING_THRESHOLD)}+
           </Text>
 
           {/* Flat Variant UI */}

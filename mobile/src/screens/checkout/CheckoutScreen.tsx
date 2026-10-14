@@ -3,7 +3,7 @@
  * shipping cost matches what the API will charge.
  * COD orders finish here; eSewa continues in PaymentScreen (WebView).
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import {
   formatNPR,
   normalizePhone,
 } from "../../theme/store";
+import { DISTRICTS_BY_PROVINCE } from "../../utils/nepal";
 import type { CheckoutScreenProps } from "../../navigation/types";
 
 type PaymentMethod = "cod" | "esewa";
@@ -56,7 +57,7 @@ const validate = (s: ShippingAddress): FieldErrors => {
   if (!s.name.trim()) errors.name = "Enter the receiver's name";
   if (!NEPALI_MOBILE.test(normalizePhone(s.phone))) errors.phone = "Enter a mobile number like 98XXXXXXXX";
   if (!s.city.trim()) errors.city = "Enter the city or town";
-  if (!s.district.trim()) errors.district = "Enter the district";
+  if (!s.district) errors.district = "Choose the district";
   if (!s.street.trim()) errors.street = "Enter the street, tole or a landmark";
   return errors;
 };
@@ -79,12 +80,42 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod");
   const [loading, setLoading] = useState(false);
 
-  const shippingCost = calculateShippingCost(subtotal, shipping.province, shipping.district);
+  // Shipping from the API for this cart and address; the local rule only fills
+  // in until it answers (or offline). The quote remembers what it answers.
+  const quoteKey = shipping.district ? `${shipping.province}|${shipping.district}|${shipping.city.trim()}|${subtotal}` : "";
+  const [quote, setQuote] = useState<{ key: string; shippingCost: number; freeShippingThreshold: number } | null>(null);
+  useEffect(() => {
+    if (!quoteKey) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      ordersAPI
+        .getShippingQuote({ province: shipping.province, district: shipping.district, city: shipping.city.trim() })
+        .then((res) => {
+          if (!cancelled && res?.data) {
+            const { shippingCost: cost, freeShippingThreshold } = res.data;
+            setQuote({ key: quoteKey, shippingCost: cost, freeShippingThreshold });
+          }
+        })
+        .catch(() => {
+          // Keep showing the local estimate
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // quoteKey covers province, district, city and subtotal
+  }, [quoteKey]);
+
+  const shippingCost =
+    quote && quote.key === quoteKey ? quote.shippingCost : calculateShippingCost(subtotal, shipping.province, shipping.district);
   const total = subtotal + shippingCost;
-  const toFreeShipping = FREE_SHIPPING_THRESHOLD - subtotal;
+  // The threshold admins set comes with the quote
+  const toFreeShipping = (quote?.freeShippingThreshold ?? FREE_SHIPPING_THRESHOLD) - subtotal;
 
   const handleChange = <K extends keyof ShippingAddress>(key: K, value: ShippingAddress[K]): void => {
-    setShipping((prev) => ({ ...prev, [key]: value }));
+    // A new province needs a district from its own list
+    setShipping((prev) => ({ ...prev, [key]: value, ...(key === "province" && value !== prev.province ? { district: "" } : {}) }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
@@ -110,7 +141,7 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
           name: shipping.name.trim(),
           street: shipping.street.trim(),
           city: shipping.city.trim(),
-          district: shipping.district.trim(),
+          district: shipping.district,
           province: shipping.province,
           phone: normalizePhone(shipping.phone),
         },
@@ -167,7 +198,7 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
   };
 
   const field = (
-    key: "name" | "phone" | "city" | "district" | "street",
+    key: "name" | "phone" | "city" | "street",
     label: string,
     props: Partial<React.ComponentProps<typeof TextInput>> = {},
   ) => (
@@ -223,10 +254,26 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
               })}
             </View>
 
-            <View style={styles.row}>
-              <View style={styles.half}>{field("district", "District", { placeholder: "e.g. Kathmandu" })}</View>
-              <View style={styles.half}>{field("city", "City / town", { placeholder: "e.g. Baneshwor" })}</View>
+            <Text style={styles.label}>District</Text>
+            <View style={[styles.chips, !!errors.district && { marginBottom: 4 }]} accessibilityRole="radiogroup">
+              {(DISTRICTS_BY_PROVINCE[shipping.province] || []).map((name) => {
+                const selected = shipping.district === name;
+                return (
+                  <TouchableOpacity
+                    key={name}
+                    onPress={() => handleChange("district", name)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+            {!!errors.district && <Text style={[styles.errorText, { marginBottom: 12 }]}>{errors.district}</Text>}
+
+            {field("city", "City / town", { placeholder: "e.g. Baneshwor" })}
             {field("street", "Street, tole or landmark", { placeholder: "e.g. Near Shanti Chowk" })}
           </View>
 
@@ -270,7 +317,7 @@ const CheckoutScreen: React.FC<CheckoutScreenProps> = ({ navigation }) => {
                 {shippingCost === 0 ? "Free" : formatNPR(shippingCost)}
               </Text>
             </View>
-            {toFreeShipping > 0 && (
+            {toFreeShipping > 0 && shippingCost > 0 && (
               <Text style={styles.freeHint}>
                 Add {formatNPR(toFreeShipping)} more for free shipping
               </Text>
@@ -329,8 +376,6 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: colors.error },
   errorText: { color: colors.error, fontSize: 12, marginTop: 4 },
-  row: { flexDirection: "row", gap: 12 },
-  half: { flex: 1 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
   chip: {
     paddingHorizontal: 12,

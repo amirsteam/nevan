@@ -10,6 +10,7 @@ import ScrollToTop from "./ScrollToTop";
 import CartSync from "./CartSync";
 import PendingCartSync from "./PendingCartSync";
 import AnnouncementBar from "../campaign/AnnouncementBar";
+import UtilityBar from "./UtilityBar";
 
 const Layout = (): React.ReactElement => {
   return (
@@ -24,6 +25,7 @@ const Layout = (): React.ReactElement => {
       <CartSync />
       <PendingCartSync />
       <AnnouncementBar />
+      <UtilityBar />
       <Header />
       <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
         <Outlet />

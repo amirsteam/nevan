@@ -53,6 +53,8 @@ const AdminCategories = lazy(() => import("../pages/admin/Categories"));
 const AdminOrders = lazy(() => import("../pages/admin/OrdersAdvanced"));
 const AdminUsers = lazy(() => import("../pages/admin/Users"));
 const AdminMessages = lazy(() => import("../pages/admin/Messages"));
+const AdminShipping = lazy(() => import("../pages/admin/ShippingSettings"));
+const AdminActivity = lazy(() => import("../pages/admin/Activity"));
 const AdminLiveChat = lazy(() => import("../pages/admin/LiveChat"));
 const AdminCampaigns = lazy(() => import("../pages/admin/Campaigns"));
 const AdminCampaignEditor = lazy(() => import("../pages/admin/CampaignEditor"));
@@ -152,6 +154,8 @@ export const appRoutes: RouteObject[] = [
                 element: withSuspense(<AdminCampaignEditor />),
               },
               { path: "users", element: withSuspense(<AdminUsers />) },
+              { path: "shipping", element: withSuspense(<AdminShipping />) },
+              { path: "activity", element: withSuspense(<AdminActivity />) },
             ],
           },
         ],

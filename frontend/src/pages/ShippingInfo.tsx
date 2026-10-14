@@ -4,15 +4,17 @@
  */
 import { Link } from "react-router-dom";
 import { Truck, Clock, MapPin, Package, CheckCircle } from "lucide-react";
-import { FREE_SHIPPING_THRESHOLD, SHIPPING_ZONES } from "../config/store";
 import { formatPrice } from "../utils/helpers";
 import { usePageTitle } from "../hooks/usePageTitle";
-
-const minShipping = Math.min(...SHIPPING_ZONES.map((z) => z.cost));
-const maxShipping = Math.max(...SHIPPING_ZONES.map((z) => z.cost));
+import { useShippingSettings } from "../hooks/useShippingSettings";
+import { freeAreaNames, shippingRange, shippingZoneRows } from "../utils/shippingText";
 
 const ShippingInfo = () => {
-  usePageTitle("Shipping information", `Delivery times and costs across Nepal. Free shipping on orders over NPR ${FREE_SHIPPING_THRESHOLD.toLocaleString()}.`);
+  const shipping = useShippingSettings();
+  const threshold = shipping.freeShippingThreshold;
+  const { min: minShipping, max: maxShipping } = shippingRange(shipping);
+  const freeAreas = freeAreaNames(shipping);
+  usePageTitle("Shipping information", `Delivery times and costs across Nepal. Free shipping on orders of NPR ${threshold.toLocaleString()} or more.`);
   return (
     <div className="container-app py-8">
       {/* Breadcrumb */}
@@ -28,7 +30,7 @@ const ShippingInfo = () => {
             Shipping Information
           </h1>
           <p className="text-[var(--color-text-muted)]">
-            Delivery across Nepal, free on orders over {formatPrice(FREE_SHIPPING_THRESHOLD)}.
+            Delivery across Nepal, free on orders of {formatPrice(threshold)} or more.
           </p>
         </div>
 
@@ -36,7 +38,7 @@ const ShippingInfo = () => {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
           <div className="card p-5 text-center">
             <Truck className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-3" aria-hidden="true" />
-            <h2 className="font-semibold text-sm mb-1 font-sans">Free shipping over {formatPrice(FREE_SHIPPING_THRESHOLD)}</h2>
+            <h2 className="font-semibold text-sm mb-1 font-sans">Free shipping on orders of {formatPrice(threshold)}+</h2>
             <p className="text-xs text-[var(--color-text-muted)]">
               Otherwise {formatPrice(minShipping)}–{formatPrice(maxShipping)} by location
             </p>
@@ -73,20 +75,25 @@ const ShippingInfo = () => {
                 </tr>
               </thead>
               <tbody>
-                {SHIPPING_ZONES.map((zone) => (
+                {shippingZoneRows(shipping).map((zone) => (
                   <tr key={zone.zone} className="border-b border-[var(--color-border)] last:border-0">
                     <td className="py-3 pr-3">{zone.zone}</td>
                     <td className="py-3 pr-3 whitespace-nowrap">{zone.delivery}</td>
-                    <td className="py-3 text-right font-medium whitespace-nowrap">{formatPrice(zone.cost)}</td>
+                    <td className="py-3 text-right font-medium whitespace-nowrap">{zone.cost === 0 ? "Free" : formatPrice(zone.cost)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="mt-4 rounded-lg bg-[var(--color-accent)]/15 px-4 py-3 text-sm">
-            <strong>Free shipping</strong> on every order of {formatPrice(FREE_SHIPPING_THRESHOLD)} or more, anywhere in
+            <strong>Free shipping</strong> on every order of {formatPrice(threshold)} or more, anywhere in
             Nepal. The exact cost is shown at checkout before you pay.
           </p>
+          {freeAreas.length > 0 && (
+            <p className="mt-3 rounded-lg bg-[var(--color-primary-soft)] px-4 py-3 text-sm">
+              <strong>Free local delivery</strong> at any order amount to {freeAreas.join(", ")}.
+            </p>
+          )}
         </div>
 
         {/* How It Works */}

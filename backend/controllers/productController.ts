@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import * as productService from "../services/productService";
 import asyncHandler from "../utils/asyncHandler";
+import { logAdminAction } from "../services/adminLogService";
 import AppError from "../utils/AppError";
 import { decorateProducts } from "../services/campaignService";
 
@@ -132,11 +133,13 @@ const updateProduct = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private/Admin
  */
 const deleteProduct = asyncHandler(async (req: Request, res: Response) => {
-  await productService.deleteProduct(req.params.id as string);
+  const { message, archived, name } = await productService.deleteProduct(req.params.id as string);
+  await logAdminAction(req, archived ? "product.archived" : "product.deleted", { type: "product", id: req.params.id, label: name });
 
   res.status(200).json({
     status: "success",
-    message: "Product deleted successfully",
+    message,
+    data: { archived },
   });
 });
 

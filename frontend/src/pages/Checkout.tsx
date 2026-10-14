@@ -13,11 +13,12 @@ import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { useAuth } from "../context/AuthContext";
 import { ordersAPI, paymentsAPI } from "../api/orders";
 import { authAPI } from "../api/auth";
-import { formatPrice, calculateShippingCost, getErrorMessage } from "../utils/helpers";
+import { formatPrice, calculateShippingCost, getErrorMessage, isFreeShippingArea } from "../utils/helpers";
 import { imageUrl } from "../utils/image";
 import { startOnlinePayment } from "../utils/payment";
 import { DISTRICTS_BY_PROVINCE, PROVINCE_NAMES, NEPALI_MOBILE, normalizePhone } from "../utils/nepal";
-import { deliveryEstimateFor, FREE_SHIPPING_THRESHOLD } from "../config/store";
+import { deliveryEstimateFor } from "../config/store";
+import { useShippingSettings } from "../hooks/useShippingSettings";
 import { usePageTitle } from "../hooks/usePageTitle";
 import FreeShippingProgress from "../components/FreeShippingProgress";
 import type { IPaymentMethod, ISavedAddress, PaymentMethod } from "../types";
@@ -89,6 +90,7 @@ const Checkout = () => {
   const dispatch = useAppDispatch();
   const { user } = useAuth();
   const cart = useAppSelector(selectCart);
+  const shippingSettings = useShippingSettings();
 
   const [loading, setLoading] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<IPaymentMethod[]>([]);
@@ -156,6 +158,30 @@ const Checkout = () => {
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
+
+  // Shipping from the API for this cart and address; the local rule below only
+  // fills in until it answers (or if it can't be reached). The quote remembers
+  // which address and subtotal it answers, so a stale one is never shown.
+  const quoteKey = shipping.district ? `${shipping.province}|${shipping.district}|${shipping.city.trim()}|${cart.subtotal}` : "";
+  const [quote, setQuote] = useState<{ key: string; shippingCost: number } | null>(null);
+  useEffect(() => {
+    if (!quoteKey) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      ordersAPI
+        .getShippingQuote({ province: parseInt(shipping.province, 10), district: shipping.district, city: shipping.city.trim() })
+        .then((res) => !cancelled && setQuote({ key: quoteKey, shippingCost: res.data.shippingCost }))
+        .catch(() => {
+          // Keep showing the local estimate
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // quoteKey covers province, district, city and subtotal
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey]);
 
   const errors = useMemo(() => validate(shipping), [shipping]);
   const addressValid = Object.keys(errors).length === 0;
@@ -252,8 +278,11 @@ const Checkout = () => {
   if (cart.items.length === 0 && !orderPlacedRef.current) return null;
 
   const province = parseInt(shipping.province, 10);
-  // Same rule the API uses when it creates the order
-  const shippingCost = calculateShippingCost(cart.subtotal, province, shipping.district);
+  const shippingCost =
+    quote && quote.key === quoteKey
+      ? quote.shippingCost
+      : calculateShippingCost(cart.subtotal, province, shipping.district, shippingSettings, shipping.city);
+  const freeArea = Boolean(shipping.district) && isFreeShippingArea(shipping.district, shipping.city, shippingSettings);
   const total = cart.subtotal + shippingCost;
   const visibleMethods = paymentMethods.filter((method) => method.id !== "khalti");
   const itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -494,9 +523,11 @@ const Checkout = () => {
                 <Truck className="w-4 h-4 mt-0.5 text-[var(--color-primary)] shrink-0" aria-hidden="true" />
                 <span>
                   Delivery to <strong>{shipping.district}</strong> usually takes <strong>{deliveryEstimateFor(province)}</strong>.{" "}
-                  {shippingCost === 0
-                    ? "Shipping is free on this order."
-                    : `Shipping: ${formatPrice(shippingCost)} (free over ${formatPrice(FREE_SHIPPING_THRESHOLD)}).`}
+                  {shippingCost > 0
+                    ? `Shipping: ${formatPrice(shippingCost)} (free on orders of ${formatPrice(shippingSettings.freeShippingThreshold)}+).`
+                    : freeArea
+                      ? `Delivery to ${shipping.district} is free.`
+                      : "Shipping is free on this order."}
                 </span>
               </p>
             )}
@@ -575,7 +606,8 @@ const Checkout = () => {
           <div className="card p-5 md:p-6 lg:sticky lg:top-24 space-y-4">
             <h2 className="text-lg font-semibold font-sans">Review</h2>
             <div className="hidden lg:block">{summaryItems}</div>
-            <FreeShippingProgress subtotal={cart.subtotal} />
+            {/* Pointless where delivery is free anyway */}
+            {!(freeArea && shippingCost === 0) && <FreeShippingProgress subtotal={cart.subtotal} />}
             {totals}
 
             <button

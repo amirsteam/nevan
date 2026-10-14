@@ -3,14 +3,12 @@
  * Full-width search for screens without the inline header search: product
  * suggestions as you type (debounced) and recent searches.
  */
-import { useEffect, useState, FormEvent } from "react";
+import { useState, FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, X, Clock, Loader2 } from "lucide-react";
 import Modal from "../ui/Modal";
-import { productsAPI } from "../../api";
-import { formatPrice } from "../../utils/helpers";
-import { imageUrl } from "../../utils/image";
-import type { IProduct } from "../../types";
+import ProductSuggestion from "./ProductSuggestion";
+import { useProductSuggestions } from "../../hooks/useProductSuggestions";
 import { readRecentSearches, rememberSearch } from "../../utils/recentSearches";
 
 interface SearchOverlayProps {
@@ -21,10 +19,8 @@ interface SearchOverlayProps {
 const SearchOverlay = ({ isOpen, onClose }: SearchOverlayProps) => {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  // Results remember which query they answer, so "loading" is simply
-  // "the current query has no answer yet" (no state reset needed)
-  const [found, setFound] = useState<{ query: string; products: IProduct[] }>({ query: "", products: [] });
   const [recent, setRecent] = useState<string[]>([]);
+  const { trimmedQuery, searching, results, loading } = useProductSuggestions(query);
 
   // Fresh state each time the overlay opens (adjusting state during render)
   const [wasOpen, setWasOpen] = useState(isOpen);
@@ -35,26 +31,6 @@ const SearchOverlay = ({ isOpen, onClose }: SearchOverlayProps) => {
       setQuery("");
     }
   }
-
-  const trimmedQuery = query.trim();
-  const searching = trimmedQuery.length >= 2;
-  const results = searching && found.query === trimmedQuery ? found.products : [];
-  const loading = searching && found.query !== trimmedQuery;
-
-  useEffect(() => {
-    if (trimmedQuery.length < 2) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      productsAPI
-        .getProducts({ search: trimmedQuery, limit: 5 })
-        .then((res) => !cancelled && setFound({ query: trimmedQuery, products: res.data.products || [] }))
-        .catch(() => !cancelled && setFound({ query: trimmedQuery, products: [] }));
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [trimmedQuery]);
 
   const go = (q: string) => {
     const trimmed = q.trim();
@@ -93,7 +69,7 @@ const SearchOverlay = ({ isOpen, onClose }: SearchOverlayProps) => {
       </form>
 
       <div className="max-h-[60vh] overflow-y-auto">
-        {query.trim().length >= 2 ? (
+        {searching ? (
           <>
             {results.length > 0 ? (
               <ul aria-label="Suggestions" className="py-2">
@@ -102,33 +78,25 @@ const SearchOverlay = ({ isOpen, onClose }: SearchOverlayProps) => {
                     <Link
                       to={`/products/${product.slug}`}
                       onClick={() => {
-                        rememberSearch(query.trim());
+                        rememberSearch(trimmedQuery);
                         onClose();
                       }}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-surface-muted)]"
                     >
-                      <img
-                        src={imageUrl(product.images?.[0]?.url, 96)}
-                        alt=""
-                        className="w-12 h-12 rounded-lg object-cover bg-[var(--color-surface-muted)] shrink-0"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium truncate">{product.name}</span>
-                        <span className="block text-sm text-[var(--color-primary)] font-semibold">{formatPrice(product.price)}</span>
-                      </span>
+                      <ProductSuggestion product={product} />
                     </Link>
                   </li>
                 ))}
               </ul>
             ) : (
-              !loading && <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No products match “{query.trim()}”.</p>
+              !loading && <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No products match “{trimmedQuery}”.</p>
             )}
             <button
               type="button"
               onClick={() => go(query)}
               className="w-full text-left px-4 py-3 border-t border-[var(--color-border)] text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-muted)]"
             >
-              See all results for “{query.trim()}”
+              See all results for “{trimmedQuery}”
             </button>
           </>
         ) : recent.length > 0 ? (

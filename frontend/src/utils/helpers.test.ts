@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateShippingCost, getErrorMessage, populated, getAvailableStock } from "./helpers";
+import { calculateShippingCost, DEFAULT_SHIPPING_SETTINGS, getErrorMessage, populated, getAvailableStock } from "./helpers";
 
 describe("calculateShippingCost", () => {
   // Same cases as backend/tests/admin.test.ts ("Shipping cost") so the checkout
@@ -9,6 +9,20 @@ describe("calculateShippingCost", () => {
     expect(calculateShippingCost(1000, 3, "Chitwan")).toBe(150);
     expect(calculateShippingCost(1000, 6, "Jumla")).toBe(300);
     expect(calculateShippingCost(5000, 6, "Jumla")).toBe(0);
+  });
+
+  // Same cases as backend/tests/shipping.test.ts
+  it("ships free to free-delivery areas (all of Kavre by default)", () => {
+    expect(calculateShippingCost(1000, 3, "Kavrepalanchok", DEFAULT_SHIPPING_SETTINGS, "Panauti")).toBe(0);
+    expect(calculateShippingCost(1000, 3, "Kavrepalanchok", DEFAULT_SHIPPING_SETTINGS, "Banepa")).toBe(0);
+    expect(calculateShippingCost(1000, 3, "Sindhupalchok", DEFAULT_SHIPPING_SETTINGS, "Panauti")).toBe(150);
+  });
+
+  it("uses the settings admins saved, including town-level free areas", () => {
+    const settings = { ...DEFAULT_SHIPPING_SETTINGS, valleyRate: 80, freeAreas: [{ district: "Kaski", city: "Pokhara" }] };
+    expect(calculateShippingCost(1000, 3, "Kathmandu", settings)).toBe(80);
+    expect(calculateShippingCost(1000, 4, "Kaski", settings, "Pokhara-8, Lakeside")).toBe(0);
+    expect(calculateShippingCost(1000, 4, "Kaski", settings, "Lekhnath")).toBe(200);
   });
 });
 

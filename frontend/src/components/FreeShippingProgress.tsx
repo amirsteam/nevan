@@ -3,11 +3,12 @@
  */
 import { Truck } from "lucide-react";
 import { formatPrice } from "../utils/helpers";
-import { FREE_SHIPPING_THRESHOLD } from "../config/store";
+import { useShippingSettings } from "../hooks/useShippingSettings";
 
 const FreeShippingProgress = ({ subtotal, className = "" }: { subtotal: number; className?: string }) => {
-  const remaining = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
-  const percent = Math.min(100, Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100));
+  const { freeShippingThreshold } = useShippingSettings();
+  const remaining = Math.max(0, freeShippingThreshold - subtotal);
+  const percent = freeShippingThreshold > 0 ? Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100)) : 100;
 
   return (
     <div className={`rounded-lg bg-[var(--color-primary-soft)] p-3 ${className}`}>

@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import * as orderService from "../services/orderService";
 import asyncHandler from "../utils/asyncHandler";
+import { logAdminAction } from "../services/adminLogService";
 import Order from "../models/Order";
 
 /**
@@ -57,6 +58,20 @@ const createOrder = asyncHandler(async (req: Request, res: Response) => {
       data: { order: mapOrderForResponse(order) },
     });
   }
+});
+
+/**
+ * @desc    Shipping cost of the current cart to an address (checkout preview)
+ * @route   POST /api/v1/orders/shipping-quote
+ * @access  Private
+ */
+const getShippingQuote = asyncHandler(async (req: Request, res: Response) => {
+  const quote = await orderService.getShippingQuote(String((req.user as any)._id), {
+    province: req.body.province,
+    district: req.body.district,
+    city: req.body.city,
+  });
+  res.status(200).json({ status: "success", data: quote });
 });
 
 /**
@@ -189,8 +204,57 @@ const updateOrderStatus = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @desc    Record that the money owed on an order was refunded
+ * @route   POST /api/v1/admin/orders/:id/refund
+ * @access  Admin
+ */
+const recordRefund = asyncHandler(async (req: Request, res: Response) => {
+  const order = await orderService.recordRefund(
+    req.params.id as string,
+    String((req.user as any)._id),
+    req.body.reference || "",
+    req.body.note || "",
+  );
+  await logAdminAction(
+    req,
+    "order.refund",
+    { type: "order", id: order._id, label: `#${(order as any).orderNumber}` },
+    [req.body.reference && `Ref ${req.body.reference}`, req.body.note].filter(Boolean).join(" — "),
+  );
+  res.status(200).json({
+    status: "success",
+    message: "Refund recorded",
+    data: { order: mapOrderForResponse(order) },
+  });
+});
+
+/**
+ * @desc    Every order matching the list filters (for CSV export)
+ * @route   GET /api/v1/admin/orders/export
+ * @access  Admin
+ */
+const exportOrders = asyncHandler(async (req: Request, res: Response) => {
+  const orders = await orderService.exportOrders(req.query);
+  res.status(200).json({ status: "success", results: orders.length, data: { orders: orders.map(mapOrderForResponse) } });
+});
+
+/**
+ * @desc    Internal admin note on an order
+ * @route   PUT /api/v1/admin/orders/:id/note
+ * @access  Admin
+ */
+const updateAdminNote = asyncHandler(async (req: Request, res: Response) => {
+  const order = await orderService.updateAdminNote(req.params.id as string, req.body.note || "");
+  res.status(200).json({ status: "success", message: "Note saved", data: { order: mapOrderForResponse(order) } });
+});
+
 export {
   createOrder,
+  recordRefund,
+  exportOrders,
+  updateAdminNote,
+  getShippingQuote,
   getMyOrders,
   getOrder,
   cancelOrder,

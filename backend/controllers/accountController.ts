@@ -6,6 +6,7 @@ import { Request, Response } from "express";
 import asyncHandler from "../utils/asyncHandler";
 import AppError from "../utils/AppError";
 import User, { MAX_ADDRESSES } from "../models/User";
+import { canonicalDistrict, PROVINCE_NAMES } from "../utils/nepal";
 
 const ADDRESS_FIELDS = ["label", "name", "phone", "street", "city", "district", "province", "landmark"] as const;
 
@@ -15,6 +16,24 @@ const pickAddress = (body: Record<string, unknown>) => {
     if (body[field] !== undefined) address[field] = body[field];
   }
   return address;
+};
+
+/**
+ * The district must be in the province (it decides the shipping rate); store
+ * its standard spelling. Checked after merging, so editing only one of the two
+ * is checked against the other.
+ */
+const checkDistrict = (address: { province?: unknown; district?: unknown }) => {
+  const province = Number(address.province);
+  const district = canonicalDistrict(province, String(address.district ?? ""));
+  if (!district) {
+    const name = PROVINCE_NAMES[province];
+    throw new AppError(
+      name ? `"${address.district}" isn't a district in ${name} Province. Choose one of its districts.` : "Choose a province, then a district",
+      400,
+    );
+  }
+  address.district = district;
 };
 
 const loadUser = async (req: Request) => {
@@ -78,7 +97,9 @@ export const addAddress = asyncHandler(async (req: Request, res: Response) => {
 
   const makeDefault = req.body.isDefault === true || user.addresses.length === 0;
   if (makeDefault) user.addresses.forEach((a: any) => (a.isDefault = false));
-  user.addresses.push({ ...pickAddress(req.body), isDefault: makeDefault } as any);
+  const address = pickAddress(req.body);
+  checkDistrict(address);
+  user.addresses.push({ ...address, isDefault: makeDefault } as any);
   await user.save();
 
   const created = user.addresses[user.addresses.length - 1];
@@ -99,7 +120,13 @@ export const updateAddress = asyncHandler(async (req: Request, res: Response) =>
   const address = user.addresses.id(req.params.addressId as string);
   if (!address) throw new AppError("Address not found", 404);
 
-  Object.assign(address, pickAddress(req.body));
+  const changes = pickAddress(req.body);
+  if (changes.district !== undefined || changes.province !== undefined) {
+    const merged = { province: changes.province ?? address.province, district: changes.district ?? address.district };
+    checkDistrict(merged);
+    Object.assign(changes, merged);
+  }
+  Object.assign(address, changes);
   if (req.body.isDefault === true) {
     user.addresses.forEach((a: any) => (a.isDefault = String(a._id) === String(address._id)));
   }

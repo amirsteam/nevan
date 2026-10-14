@@ -6,6 +6,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import type { ICategory } from "../../types";
 import { imageUrl, imageSrcSet, onImageError } from "../../utils/image";
+import { brandLogoFor, type BrandLogo } from "../../utils/brandLogos";
+import BrandLogoImage from "../BrandLogoImage";
 import { LoadingRegion, Skeleton } from "../ui/Skeleton";
 import SectionHeader from "./SectionHeader";
 
@@ -35,9 +37,44 @@ interface CategoryShowcaseProps {
   loading?: boolean;
 }
 
+/**
+ * Brand categories without a photo: the logo on its own paper colour, name in
+ * a band below. The logo area has its own shape (a caption inside a small
+ * photo-shaped tile would crowd the logo out on phones).
+ */
+const LogoTile = ({ category, logo }: { category: ICategory; logo: BrandLogo }) => (
+  <Link
+    to={`/products?category=${category.slug}`}
+    className="group flex flex-col h-full w-full overflow-hidden rounded-2xl border border-[var(--color-border)] transition-shadow hover:shadow-[var(--shadow-md)]"
+    style={{ backgroundColor: logo.background }}
+  >
+    <span className="flex-1 aspect-square md:aspect-[16/10] flex items-center justify-center p-3 md:p-6">
+      <BrandLogoImage
+        logo={logo}
+        sizes="(min-width: 768px) 18rem, 40vw"
+        className="h-full w-auto max-w-full aspect-square transition-transform duration-500 group-hover:scale-105"
+      />
+    </span>
+    <span className="flex items-center justify-between gap-3 bg-[var(--color-surface)] border-t border-[var(--color-border)] px-3 py-2.5 md:px-4 md:py-3">
+      <span className="min-w-0">
+        <span className="block font-display font-semibold leading-tight md:text-lg">{category.name}</span>
+        {!!category.productCount && (
+          <span className="block text-xs md:text-sm text-[var(--color-text-muted)]">
+            {category.productCount} {category.productCount === 1 ? "product" : "products"}
+          </span>
+        )}
+      </span>
+      <ArrowRight className="w-4 h-4 shrink-0 text-[var(--color-primary)] transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+    </span>
+  </Link>
+);
+
 const CategoryTile = ({ category, feature, className }: { category: ICategory; feature: boolean; className: string }) => {
   const url = category.image?.url;
   const width = feature ? FEATURE_IMAGE_WIDTH : TILE_IMAGE_WIDTH;
+  // An uploaded photo always wins; brand categories fall back to their logo
+  const logo = url ? null : brandLogoFor(category);
+  if (logo) return <LogoTile category={category} logo={logo} />;
   return (
     <Link
       to={`/products?category=${category.slug}`}

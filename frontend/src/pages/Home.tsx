@@ -20,21 +20,23 @@ import HelpBand from "../components/home/HelpBand";
 import NewsletterSection from "../components/home/NewsletterSection";
 import { ProductGridSkeleton } from "../components/ui/Skeleton";
 import { formatPrice } from "../utils/helpers";
-import { FREE_SHIPPING_THRESHOLD, RETURN_WINDOW_DAYS } from "../config/store";
+import { RETURN_WINDOW_DAYS } from "../config/store";
+import { useShippingSettings } from "../hooks/useShippingSettings";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCampaign } from "../context/CampaignContext";
 import type { ICategory, IProduct } from "../types";
 
-const PROMISES = [
+const promises = (freeShippingThreshold: number) => [
   { icon: Banknote, title: "Cash on delivery", text: "Or pay securely with eSewa" },
   { icon: Truck, title: "Delivery across Nepal", text: "3–5 days in Kathmandu Valley" },
-  { icon: Gift, title: "Free shipping", text: `On orders over ${formatPrice(FREE_SHIPPING_THRESHOLD)}` },
+  { icon: Gift, title: "Free shipping", text: `On orders of ${formatPrice(freeShippingThreshold)} or more` },
   { icon: RotateCcw, title: `${RETURN_WINDOW_DAYS}-day returns`, text: `Request within ${RETURN_WINDOW_DAYS} days of delivery` },
 ];
 
 const Home = () => {
   usePageTitle(null);
   const { campaign, isPreview } = useCampaign();
+  const storePromises = promises(useShippingSettings().freeShippingThreshold);
   const heroCampaign = campaign && (isPreview || campaign.state === "live") ? campaign : null;
   const [featuredProducts, setFeaturedProducts] = useState<IProduct[]>([]);
   const [newArrivals, setNewArrivals] = useState<IProduct[]>([]);
@@ -70,7 +72,7 @@ const Home = () => {
       {/* Store promises */}
       <section aria-label="Why shop with us" className="bg-[var(--color-surface)] border-y border-[var(--color-border)]">
         <ul className="container-app grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 py-6 md:py-8">
-          {PROMISES.map(({ icon: Icon, title, text }) => (
+          {storePromises.map(({ icon: Icon, title, text }) => (
             <li key={title} className="flex items-center gap-3">
               <span className="w-11 h-11 shrink-0 bg-[var(--color-primary-soft)] rounded-full flex items-center justify-center">
                 <Icon className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />

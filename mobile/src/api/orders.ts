@@ -22,6 +22,17 @@ export const ordersAPI = {
     return response.data;
   },
 
+  /** Shipping for the current cart to an address (what placing the order will charge) */
+  getShippingQuote: async (destination: {
+    province: number;
+    district: string;
+    /** Matters for town-level free-delivery areas */
+    city?: string;
+  }): Promise<IApiResponse<{ subtotal: number; shippingCost: number; freeShippingThreshold: number }>> => {
+    const response = await api.post("/orders/shipping-quote", destination);
+    return response.data;
+  },
+
   getMyOrders: async (
     params: OrderQueryParams = {},
   ): Promise<

@@ -5,6 +5,9 @@
 import api from "./axios";
 import type { AxiosResponse } from "axios";
 import type {
+  IAdminLogEntry,
+  IShippingSettings,
+  OrderQueue,
   IApiResponse,
   IProduct,
   ICategory,
@@ -43,6 +46,11 @@ interface OrderQueryParams {
   // Cancelled orders that were paid online (money to return)
   refundRequired?: boolean;
   search?: string;
+  // Work queue (dashboard cards): confirm | awaiting | ship | collect
+  queue?: OrderQueue;
+  // Placed between these Nepal dates (YYYY-MM-DD, both included)
+  from?: string;
+  to?: string;
 }
 
 interface UserQueryParams {
@@ -112,7 +120,8 @@ export const updateProduct = (
   data: ProductWriteBody | Partial<IProduct>,
 ): ApiResponse<{ product: IProduct }> => api.put(`/admin/products/${id}`, data);
 
-export const deleteProduct = (id: string): ApiResponse<null> =>
+/** Products that were ordered are hidden (archived) instead, keeping their photos */
+export const deleteProduct = (id: string): ApiResponse<{ archived: boolean }> =>
   api.delete(`/admin/products/${id}`);
 
 export const uploadProductImages = (
@@ -206,6 +215,20 @@ export const markCODCollected = (
 ): ApiResponse<{ order: IOrder }> =>
   api.post("/admin/payments/cod-collected", { orderId });
 
+/** Every order matching the filters (not just one page), for CSV export */
+export const exportOrders = (params: Omit<OrderQueryParams, "page" | "limit"> = {}): ApiResponse<{ orders: IOrder[] }> =>
+  api.get("/admin/orders/export", { params });
+
+/** Internal note on an order (admins only) */
+export const updateOrderNote = (orderId: string, note: string): ApiResponse<{ order: IOrder }> =>
+  api.put(`/admin/orders/${orderId}/note`, { note });
+
+/** Record that the money owed on an order was given back */
+export const recordRefund = (
+  orderId: string,
+  details: { reference?: string; note?: string },
+): ApiResponse<{ order: IOrder }> => api.post(`/admin/orders/${orderId}/refund`, details);
+
 /**
  * Users APIs
  */
@@ -295,6 +318,17 @@ export const notifyCampaign = (id: string): ApiResponse<{ campaign: IAdminCampai
 export const getCampaignStats = (id: string): ApiResponse<{ stats: ICampaignStats }> =>
   api.get(`/admin/campaigns/${id}/stats`);
 
+/** Admin activity log, newest first */
+export const getActivity = (params: { page?: number; limit?: number } = {}): ApiResponse<{ entries: IAdminLogEntry[] }> =>
+  api.get("/admin/activity", { params });
+
+/** Shipping rates and free-delivery areas */
+export const getShippingSettings = (): ApiResponse<{ settings: IShippingSettings }> => api.get("/admin/shipping");
+
+export const updateShippingSettings = (
+  settings: Pick<IShippingSettings, "freeShippingThreshold" | "valleyRate" | "provinceRates" | "freeAreas">,
+): ApiResponse<{ settings: IShippingSettings }> => api.put("/admin/shipping", settings);
+
 /** Counts for the admin navigation badges (cheap; polled by AdminLayout) */
 export const getBadges = (): ApiResponse<IAdminBadges> => api.get("/admin/badges");
 
@@ -328,6 +362,9 @@ export const adminAPI = {
   updateOrderStatus,
   bulkUpdateOrderStatus,
   markCODCollected,
+  recordRefund,
+  exportOrders,
+  updateOrderNote,
   // Users
   getUsers,
   updateUserStatus,
@@ -344,6 +381,11 @@ export const adminAPI = {
   deleteCampaignBanner,
   notifyCampaign,
   getCampaignStats,
+  // Activity
+  getActivity,
+  // Shipping
+  getShippingSettings,
+  updateShippingSettings,
   // Contact
   getContactMessages,
   setContactMessageRead,

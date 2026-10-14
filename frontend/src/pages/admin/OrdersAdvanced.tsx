@@ -15,6 +15,7 @@ import type { BadgeVariant } from "../../components/admin/StatusBadge";
 import { ConfirmModal } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import OrderDetail from "./OrderDetail";
+import { isAwaitingOnlinePayment, isRefundOwed, orderStatusOf } from "../../utils/adminOrders";
 import {
   Eye,
   Package,
@@ -28,7 +29,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import type { IOrder, IUser, OrderStatus, PaymentStatus, PaymentMethod } from "../../types";
+import type { IOrder, IUser, OrderQueue, OrderStatus, PaymentStatus, PaymentMethod } from "../../types";
 
 // Status configuration
 const statusConfig: Record<
@@ -83,12 +84,19 @@ const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
 };
 const BULK_TARGETS: OrderStatus[] = ["confirmed", "processing", "shipped", "delivered"];
 
-const statusOf = (order: IOrder): OrderStatus | undefined => order.orderStatus || order.status;
-const paymentStatusOf = (order: IOrder): PaymentStatus | undefined =>
-  order.paymentStatus || order.payment?.status;
-/** Cancelled after an online payment went through: the customer is owed a refund */
-const isRefundOwed = (order: IOrder): boolean =>
-  statusOf(order) === "cancelled" && paymentStatusOf(order) === "paid";
+// ?queue= values (dashboard cards link here)
+const QUEUE_LABELS: Record<OrderQueue, string> = {
+  confirm: "To confirm",
+  awaiting: "Awaiting online payment",
+  ship: "Ready to ship",
+  collect: "Cash to collect",
+};
+
+const statusOf = orderStatusOf;
+
+/** Whether bulk "mark <target>" applies to an order (unpaid online orders confirm themselves) */
+const canMoveTo = (order: IOrder, target: OrderStatus): boolean =>
+  NEXT_STATUS[statusOf(order) as OrderStatus] === target && !(target === "confirmed" && isAwaitingOnlinePayment(order));
 
 const columnHelper = createColumnHelper<IOrder>();
 
@@ -110,11 +118,31 @@ const AdminOrdersPage = () => {
   const methodParam = searchParams.get("method") || "";
   const methodFilter = PAYMENT_METHODS.some((m) => m.value === methodParam) ? methodParam : "";
   const refundOnly = searchParams.get("refund") === "1";
+  const queueParam = searchParams.get("queue") || "";
+  const isDate = (value: string | null) => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+  const fromDate = isDate(searchParams.get("from")) ? searchParams.get("from")! : "";
+  const toDate = isDate(searchParams.get("to")) ? searchParams.get("to")! : "";
+  const queue = (Object.keys(QUEUE_LABELS) as OrderQueue[]).includes(queueParam as OrderQueue) ? (queueParam as OrderQueue) : null;
   const search = searchParams.get("search") || "";
   const pageIndex = Math.max(0, (Number(searchParams.get("page")) || 1) - 1);
   const pageSize = [10, 20, 50, 100].includes(Number(searchParams.get("limit"))) ? Number(searchParams.get("limit")) : 20;
   const openOrderId = searchParams.get("order");
-  const hasFilters = Boolean(statusFilter || paymentFilter || methodFilter || refundOnly || search);
+  const hasFilters = Boolean(statusFilter || paymentFilter || methodFilter || refundOnly || queue || search || fromDate || toDate);
+
+  // The same filters for the page of orders and for "export all"
+  const filters = useMemo(
+    () => ({
+      status: statusFilter || undefined,
+      paymentStatus: paymentFilter || undefined,
+      paymentMethod: methodFilter || undefined,
+      refundRequired: refundOnly || undefined,
+      queue: queue || undefined,
+      search: search || undefined,
+      from: fromDate || undefined,
+      to: toDate || undefined,
+    }),
+    [statusFilter, paymentFilter, methodFilter, refundOnly, queue, search, fromDate, toDate],
+  );
 
   const updateParams = useCallback(
     (changes: Record<string, string | null>, { keepPage = false } = {}) => {
@@ -148,15 +176,7 @@ const AdminOrdersPage = () => {
     let cancelled = false;
     setLoading(true);
     adminAPI
-      .getOrders({
-        page: pageIndex + 1,
-        limit: pageSize,
-        status: statusFilter || undefined,
-        paymentStatus: paymentFilter || undefined,
-        paymentMethod: methodFilter || undefined,
-        refundRequired: refundOnly || undefined,
-        search: search || undefined,
-      })
+      .getOrders({ page: pageIndex + 1, limit: pageSize, ...filters })
       .then((response) => {
         if (cancelled) return;
         const ordersData = response.data.data.orders;
@@ -175,7 +195,7 @@ const AdminOrdersPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [pageIndex, pageSize, statusFilter, paymentFilter, methodFilter, refundOnly, search, reloadKey]);
+  }, [pageIndex, pageSize, filters, reloadKey]);
 
   const refetch = () => {
     setReloadKey((k) => k + 1);
@@ -215,7 +235,7 @@ const AdminOrdersPage = () => {
 
   const runBulkUpdate = async () => {
     if (!bulk) return;
-    const eligible = bulk.orders.filter((o) => NEXT_STATUS[statusOf(o) as OrderStatus] === bulk.status);
+    const eligible = bulk.orders.filter((o) => canMoveTo(o, bulk.status));
     setBulkSaving(true);
     try {
       const response = await adminAPI.bulkUpdateOrderStatus(
@@ -243,8 +263,16 @@ const AdminOrdersPage = () => {
     }
   };
 
-  // Custom export handler
-  const handleExport = (data: IOrder[], format: "csv" | "json") => {
+  // Export every order matching the filters (the table only holds one page)
+  const handleExport = async (_pageRows: IOrder[], format: "csv" | "json") => {
+    let data: IOrder[];
+    try {
+      const response = await adminAPI.exportOrders(filters);
+      data = response.data.data.orders;
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not export orders"));
+      return;
+    }
     if (format === "csv") {
       const headers = [
         "Order #",
@@ -314,7 +342,7 @@ const AdminOrdersPage = () => {
       a.download = `orders-${new Date().toISOString().split("T")[0]}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Orders exported successfully!");
+      toast.success(`${data.length} order${data.length === 1 ? "" : "s"} exported`);
     } else {
       const blob = new Blob([JSON.stringify(data, null, 2)], {
         type: "application/json",
@@ -325,7 +353,7 @@ const AdminOrdersPage = () => {
       a.download = `orders-${new Date().toISOString().split("T")[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Orders exported successfully!");
+      toast.success(`${data.length} order${data.length === 1 ? "" : "s"} exported`);
     }
   };
 
@@ -508,7 +536,7 @@ const AdminOrdersPage = () => {
 
   const renderSelectionActions = (selected: IOrder[], clear: () => void) =>
     BULK_TARGETS.map((target) => {
-      const count = selected.filter((o) => NEXT_STATUS[statusOf(o) as OrderStatus] === target).length;
+      const count = selected.filter((o) => canMoveTo(o, target)).length;
       if (count === 0) return null;
       return (
         <button
@@ -522,7 +550,7 @@ const AdminOrdersPage = () => {
       );
     });
 
-  const bulkEligible = bulk ? bulk.orders.filter((o) => NEXT_STATUS[statusOf(o) as OrderStatus] === bulk.status) : [];
+  const bulkEligible = bulk ? bulk.orders.filter((o) => canMoveTo(o, bulk.status)) : [];
   const bulkSkipped = bulk ? bulk.orders.length - bulkEligible.length : 0;
 
   const quickStats: { status: OrderStatus; icon: React.ComponentType<{ className?: string }>; color: QuickStatCardProps["color"] }[] = [
@@ -608,6 +636,30 @@ const AdminOrdersPage = () => {
                 </option>
               ))}
             </select>
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="orders-from" className="text-sm text-(--color-text-muted)">
+                From
+              </label>
+              <input
+                id="orders-from"
+                type="date"
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(e) => updateParams({ from: e.target.value || null })}
+                className="input w-auto py-1.5 text-sm"
+              />
+              <label htmlFor="orders-to" className="text-sm text-(--color-text-muted)">
+                to
+              </label>
+              <input
+                id="orders-to"
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => updateParams({ to: e.target.value || null })}
+                className="input w-auto py-1.5 text-sm"
+              />
+            </div>
             <button
               type="button"
               aria-pressed={refundOnly}
@@ -621,6 +673,17 @@ const AdminOrdersPage = () => {
         </div>
         {hasFilters && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
+            {queue && (
+              <button
+                type="button"
+                onClick={() => updateParams({ queue: null })}
+                className="inline-flex items-center gap-1 rounded-full bg-(--color-primary-soft) px-3 py-1 font-medium text-(--color-primary)"
+                aria-label={`Remove filter: ${QUEUE_LABELS[queue]}`}
+              >
+                {QUEUE_LABELS[queue]}
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
             <span className="text-(--color-text-muted)">
               {loading ? "Searching…" : `${totalItems} matching order${totalItems === 1 ? "" : "s"}`}
             </span>
@@ -683,6 +746,7 @@ const AdminOrdersPage = () => {
       >
         {selectedOrder && (
           <OrderDetail
+            key={selectedOrder._id}
             order={selectedOrder}
             onStatusUpdated={handleStatusUpdated}
             onClose={closeOrder}

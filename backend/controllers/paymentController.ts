@@ -5,6 +5,7 @@
 import { Request, Response } from 'express';
 import { PaymentService } from '../services/payment';
 import asyncHandler from '../utils/asyncHandler';
+import { logAdminAction } from '../services/adminLogService';
 import { getFrontendUrl } from '../utils/helpers';
 
 /**
@@ -160,6 +161,7 @@ const markCODCollected = asyncHandler(async (req: Request, res: Response) => {
     const { orderId } = req.body;
     if (req.user) {
         const result = await PaymentService.markCODCollected(orderId, (req.user as any)._id);
+        await logAdminAction(req, 'order.cash_collected', { type: 'order', id: orderId });
     
         res.status(200).json({
             status: 'success',

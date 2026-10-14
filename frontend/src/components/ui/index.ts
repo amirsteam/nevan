@@ -36,6 +36,7 @@ export {
   PaymentStatusBadge,
   StockBadge,
 } from "./Badge";
+export { default as CountBadge } from "./CountBadge";
 export {
   default as Card,
   CardHeader,

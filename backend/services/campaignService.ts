@@ -373,13 +373,15 @@ export const updateCampaign = async (id: string, input: CampaignInput) => {
   return campaign;
 };
 
-export const deleteCampaign = async (id: string): Promise<void> => {
+/** Deletes the campaign and its banners; returns its name */
+export const deleteCampaign = async (id: string): Promise<string> => {
   const campaign = await getCampaign(id);
   for (const image of [campaign.bannerDesktop, campaign.bannerMobile]) {
     if (image?.publicId) await deleteImage(image.publicId).catch(() => undefined);
   }
   await campaign.deleteOne();
   clearCampaignCache();
+  return campaign.name;
 };
 
 /** Copy as a draft with the same look and sale; dates move forward a year */

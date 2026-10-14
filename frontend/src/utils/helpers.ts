@@ -3,7 +3,7 @@
  * Common helper functions for the frontend
  */
 
-import type { OrderStatus, PaymentStatus } from "../types";
+import type { IShippingSettings, OrderStatus, PaymentStatus } from "../types";
 import { FREE_SHIPPING_THRESHOLD } from "@shared/store";
 
 /**
@@ -146,36 +146,49 @@ export const populated = <T extends object>(ref: T | string | null | undefined):
   typeof ref === "object" && ref !== null ? ref : undefined;
 
 /**
- * Shipping cost in NPR. Mirrors calculateShippingCost in backend/services/orderService.ts,
- * which is what the customer is actually charged — keep the two in sync.
+ * Shipping settings until the API's arrive (GET /shipping/settings, edited by
+ * admins). Mirrors DEFAULT_SHIPPING_SETTINGS in backend/utils/shipping.ts.
  */
 export { FREE_SHIPPING_THRESHOLD };
 
+export const VALLEY_DISTRICTS = ["Kathmandu", "Lalitpur", "Bhaktapur"];
+
+export const DEFAULT_SHIPPING_SETTINGS: IShippingSettings = {
+  freeShippingThreshold: FREE_SHIPPING_THRESHOLD,
+  valleyRate: 100,
+  provinceRates: { 1: 250, 2: 250, 3: 150, 4: 200, 5: 250, 6: 300, 7: 300 },
+  freeAreas: [{ district: "Kavrepalanchok" }],
+  valleyDistricts: VALLEY_DISTRICTS,
+};
+
+/** "Panauti-7, Kavre" -> " panauti kavre " (padded, for whole-word matching) */
+const placeKey = (name: string): string => ` ${name.toLowerCase().replace(/[^a-z]+/g, " ").trim()} `;
+
+/** Whether an address is in one of the free-delivery areas */
+export const isFreeShippingArea = (district: string, city: string, settings: IShippingSettings): boolean =>
+  settings.freeAreas.some(
+    (area) =>
+      area.district.toLowerCase() === district.trim().toLowerCase() &&
+      (!area.city?.trim() || placeKey(city).includes(placeKey(area.city))),
+  );
+
+/**
+ * Shipping cost in NPR, shown at checkout only until POST /orders/shipping-quote
+ * answers (or if it can't be reached). Same rule as calculateShippingCost in
+ * backend/utils/shipping.ts, which is what the customer is charged.
+ */
 export const calculateShippingCost = (
   subtotal: number,
   province: number,
   district: string,
+  settings: IShippingSettings = DEFAULT_SHIPPING_SETTINGS,
+  city = "",
 ): number => {
-  if (subtotal >= FREE_SHIPPING_THRESHOLD) return 0;
-
-  if (
-    province === 3 &&
-    ["kathmandu", "lalitpur", "bhaktapur"].includes(district.trim().toLowerCase())
-  ) {
-    return 100;
-  }
-
-  const shippingRates: Record<number, number> = {
-    1: 250,
-    2: 250,
-    3: 150,
-    4: 200,
-    5: 250,
-    6: 300,
-    7: 300,
-  };
-
-  return shippingRates[province] || 200;
+  if (subtotal >= settings.freeShippingThreshold) return 0;
+  if (isFreeShippingArea(district, city, settings)) return 0;
+  const valley = (settings.valleyDistricts ?? VALLEY_DISTRICTS).map((d) => d.toLowerCase());
+  if (province === 3 && valley.includes(district.trim().toLowerCase())) return settings.valleyRate;
+  return settings.provinceRates[province] ?? 0;
 };
 
 /**

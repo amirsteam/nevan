@@ -16,6 +16,7 @@ import notificationRoutes from "./notificationRoutes";
 import campaignRoutes from "./campaignRoutes";
 import { contactRouter, newsletterRouter } from "./contactRoutes";
 import { getFeaturedReviews } from "../controllers/reviewController";
+import { getPublicSettings as getShippingSettings } from "../controllers/shippingController";
 
 const router = express.Router();
 
@@ -34,6 +35,7 @@ router.use("/campaigns", campaignRoutes);
 router.use("/contact", contactRouter);
 router.use("/newsletter", newsletterRouter);
 router.get("/reviews/featured", getFeaturedReviews);
+router.get("/shipping/settings", getShippingSettings);
 
 // Health check endpoint
 router.get("/health", (req: Request, res: Response) => {

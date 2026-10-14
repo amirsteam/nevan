@@ -6,6 +6,7 @@ import mongoose, { Types } from "mongoose";
 import Product, { IProduct } from "../models/Product";
 import Category from "../models/Category";
 import Cart from "../models/Cart";
+import Order from "../models/Order";
 import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
@@ -529,7 +530,7 @@ const updateProduct = async (
  */
 const deleteProduct = async (
   productId: string,
-): Promise<{ message: string }> => {
+): Promise<{ message: string; archived: boolean; name: string }> => {
   const product = await Product.findById(productId);
   if (!product) {
     throw new AppError("Product not found", 404);
@@ -537,6 +538,19 @@ const deleteProduct = async (
 
   // Clean up cart items referencing this product
   await cleanupCartsForProduct(productId);
+
+  // Past orders, packing slips and sales reports show this product's photos:
+  // a product that was ordered is hidden instead, keeping its photos
+  if (await Order.exists({ "items.product": productId })) {
+    (product as any).isActive = false;
+    await product.save();
+    invalidateProductCaches();
+    return {
+      message: "Product hidden from the shop (it has orders, so it was archived instead of deleted)",
+      archived: true,
+      name: (product as any).name,
+    };
+  }
 
   // Older products keep some photos only on variants; include those
   adoptVariantImages(product);
@@ -547,7 +561,7 @@ const deleteProduct = async (
 
   invalidateProductCaches();
 
-  return { message: "Product deleted successfully" };
+  return { message: "Product deleted", archived: false, name: (product as any).name };
 };
 
 /**

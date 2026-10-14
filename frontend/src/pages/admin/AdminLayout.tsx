@@ -16,6 +16,8 @@ import {
     Users,
     Mail,
     Megaphone,
+    Truck,
+    History,
     MessageCircle,
     LogOut,
     ChevronLeft,
@@ -33,6 +35,8 @@ const navItems: { to: string; icon: typeof Package; label: string; end?: boolean
     { to: '/admin/categories', icon: FolderTree, label: 'Categories' },
     { to: '/admin/users', icon: Users, label: 'Users' },
     { to: '/admin/campaigns', icon: Megaphone, label: 'Campaigns' },
+    { to: '/admin/shipping', icon: Truck, label: 'Shipping' },
+    { to: '/admin/activity', icon: History, label: 'Activity' },
     { to: '/admin/messages', icon: Mail, label: 'Contact forms', badge: 'messages' },
 ];
 
@@ -144,7 +148,9 @@ const AdminLayout = () => {
         refreshBadges();
     }, [location.pathname, refreshBadges]);
 
-    const ordersNeedingAction = (counts?.pendingOrders || 0) + (counts?.refundRequired || 0);
+    // Orders to confirm (not online orders still waiting for payment) plus refunds owed
+    const toConfirm = counts?.toConfirm ?? counts?.pendingOrders ?? 0;
+    const ordersNeedingAction = toConfirm + (counts?.refundRequired || 0);
     // Live from the chat connection (updates the moment a customer writes)
     const unreadChats = useAppSelector((state) => state.chat.unreadCount);
     const badges: Record<BadgeKey, { count: number; label: string }> = {
@@ -155,7 +161,7 @@ const AdminLayout = () => {
         orders: {
             count: ordersNeedingAction,
             label: [
-                counts?.pendingOrders ? `${counts.pendingOrders} pending` : '',
+                toConfirm ? `${toConfirm} to confirm` : '',
                 counts?.refundRequired ? `${counts.refundRequired} refund${counts.refundRequired > 1 ? 's' : ''} owed` : '',
             ]
                 .filter(Boolean)

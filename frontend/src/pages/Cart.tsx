@@ -11,7 +11,8 @@ import { fetchCart, updateCartItem, removeFromCart, selectCart } from "../store/
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { formatPrice } from "../utils/helpers";
 import { imageUrl, onImageError } from "../utils/image";
-import { FREE_SHIPPING_THRESHOLD } from "../config/store";
+import { useShippingSettings } from "../hooks/useShippingSettings";
+import { freeAreaNames, shippingRange } from "../utils/shippingText";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useChatOffset } from "../hooks/useChatOffset";
 import QuantitySelector from "../components/ui/QuantitySelector";
@@ -32,6 +33,7 @@ const linePrice = (item: ICartItem): number => item.currentPrice || item.priceAt
 
 const Cart = () => {
   usePageTitle("Your cart");
+  const shippingSettings = useShippingSettings();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { items, subtotal, savings, loading, hasLoaded } = useAppSelector(selectCart);
@@ -97,7 +99,9 @@ const Cart = () => {
     return stock !== undefined && stock < item.quantity;
   });
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const freeShipping = subtotal >= FREE_SHIPPING_THRESHOLD;
+  const freeShipping = subtotal >= shippingSettings.freeShippingThreshold;
+  const { min: minShipping, max: maxShipping } = shippingRange(shippingSettings);
+  const freeAreas = freeAreaNames(shippingSettings);
 
   return (
     <div className="container-app py-6 md:py-8 pb-32 lg:pb-8">
@@ -228,7 +232,9 @@ const Cart = () => {
               <div className="flex justify-between gap-3">
                 <dt className="text-[var(--color-text-muted)]">Shipping</dt>
                 <dd className={freeShipping ? "text-[var(--color-success)] font-medium" : "text-right"}>
-                  {freeShipping ? "Free" : "NPR 100–300, based on your address"}
+                  {freeShipping
+                    ? "Free"
+                    : `${formatPrice(minShipping)}–${formatPrice(maxShipping)}, based on your address${freeAreas.length ? ` (free to ${freeAreas.join(", ")})` : ""}`}
                 </dd>
               </div>
             </dl>

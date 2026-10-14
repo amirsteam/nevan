@@ -133,8 +133,8 @@ const Products = () => {
 
         setDeleting(true);
         try {
-            await adminAPI.deleteProduct(deleteDialog.product._id);
-            toast.success('Product deleted successfully');
+            const response = await adminAPI.deleteProduct(deleteDialog.product._id);
+            toast.success(response.data.message || 'Product deleted');
             fetchProducts();
         } catch (error) {
             toast.error(getErrorMessage(error, 'Failed to delete product'));
@@ -359,7 +359,7 @@ const Products = () => {
                 onClose={() => setDeleteDialog({ open: false, product: null })}
                 onConfirm={handleDeleteConfirm}
                 title="Delete Product"
-                message={`Are you sure you want to delete "${deleteDialog.product?.name}"? This action cannot be undone.`}
+                message={`Delete "${deleteDialog.product?.name}"? If it has been ordered before, it is hidden from the shop instead, so past orders keep its photos. Otherwise it is deleted for good.`}
                 confirmText="Delete"
                 variant="danger"
                 loading={deleting}

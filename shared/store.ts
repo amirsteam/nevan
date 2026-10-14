@@ -6,6 +6,10 @@
  */
 
 export const STORE_NAME = "Nevan Handicraft";
+export const STORE_SLOGAN = "Made locally to serve globally";
+
+/** What the clothes are made of */
+export const FABRIC = "100% cotton";
 
 export const CONTACT = {
   email: "anjanastha101@gmail.com",
@@ -20,28 +24,15 @@ export const CONTACT = {
 } as const;
 
 /**
- * Must match calculateShippingCost in backend/services/orderService.ts — the
- * API is what actually charges the customer.
+ * Default free-shipping threshold, shown until the API's settings arrive.
+ * Admins change the real threshold and rates (backend/utils/shipping.ts,
+ * /admin/shipping); pages read them with hooks/useShippingSettings.
  */
 export const FREE_SHIPPING_THRESHOLD = 5000;
 
-export interface ShippingZone {
-  zone: string;
-  cost: number;
-  delivery: string;
-}
-
-export const SHIPPING_ZONES: ShippingZone[] = [
-  { zone: "Kathmandu Valley (Kathmandu, Lalitpur, Bhaktapur)", cost: 100, delivery: "3–5 business days" },
-  { zone: "Rest of Bagmati Province", cost: 150, delivery: "3–5 business days" },
-  { zone: "Gandaki Province", cost: 200, delivery: "5–7 business days" },
-  { zone: "Koshi, Madhesh and Lumbini Provinces", cost: 250, delivery: "5–7 business days" },
-  { zone: "Karnali and Sudurpashchim Provinces", cost: 300, delivery: "7–10 business days" },
-];
-
 export const DELIVERY_ESTIMATE = "3–5 business days in Kathmandu Valley, 5–10 days elsewhere";
 
-/** Short delivery estimate for a province (checkout); matches SHIPPING_ZONES */
+/** Short delivery estimate for a province (checkout, shipping page) */
 export const deliveryEstimateFor = (province?: number): string => {
   if (!province) return DELIVERY_ESTIMATE;
   if (province === 3) return "3–5 business days";

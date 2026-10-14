@@ -32,6 +32,29 @@ const pageParams = [
   { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
 ];
 
+const shippingSettings = {
+  type: "object",
+  required: ["freeShippingThreshold", "valleyRate", "provinceRates", "freeAreas"],
+  properties: {
+    freeShippingThreshold: { type: "integer", minimum: 0, description: "Orders with a subtotal (after sale prices) of at least this ship free" },
+    valleyRate: { type: "integer", minimum: 0, description: "Kathmandu, Lalitpur and Bhaktapur districts" },
+    provinceRates: {
+      type: "object",
+      description: "NPR per province 1–7 outside the valley",
+      properties: Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((p) => [String(p), { type: "integer", minimum: 0 }])),
+    },
+    freeAreas: {
+      type: "array",
+      maxItems: 50,
+      items: {
+        type: "object",
+        required: ["district"],
+        properties: { district: { type: "string" }, city: { type: "string", description: "Empty = the whole district" } },
+      },
+    },
+  },
+};
+
 const op = (tag: string, summary: string, extra: Operation = {}, auth: "none" | "user" | "admin" = "user") => ({
   tags: [tag],
   summary: auth === "admin" ? `${summary} (admin)` : summary,
@@ -441,6 +464,25 @@ const openApiSpec = {
       }),
       get: op("Orders", "My orders", { parameters: [...pageParams, { name: "status", in: "query", schema: { type: "string" } }] }),
     },
+    "/orders/shipping-quote": {
+      post: op(
+        "Orders",
+        "Shipping for my current cart to an address — what placing the order will charge. " +
+          "Flat fee by province (Kathmandu Valley districts cheapest), free in the admins' free-delivery areas and from the threshold on the subtotal after sale prices. " +
+          "The district must be in the province (common spellings such as KTM or Kavre are accepted); city matters only for town-level free areas.",
+        {
+          requestBody: json({
+            type: "object",
+            required: ["province", "district"],
+            properties: {
+              province: { type: "integer", minimum: 1, maximum: 7 },
+              district: { type: "string" },
+              city: { type: "string", maxLength: 100 },
+            },
+          }),
+        },
+      ),
+    },
     "/orders/{id}": { get: op("Orders", "My order", { parameters: [pathParam("id")] }) },
     "/orders/{id}/cancel": {
       post: op("Orders", "Cancel my order (restores stock)", {
@@ -536,6 +578,9 @@ const openApiSpec = {
         }),
       }, "none"),
     },
+    "/shipping/settings": {
+      get: op("Shipping", "Current shipping rates, free-shipping threshold and free-delivery areas (for display; the API applies them to orders)", {}, "none"),
+    },
     "/reviews/featured": {
       get: op("Reviews", "Recent approved 4-5 star reviews with a comment (homepage testimonials; reviewer shown as first name + initial)", {
         parameters: [{ name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 12, default: 3 } }],
@@ -584,10 +629,21 @@ const openApiSpec = {
 
     // ---------------- Admin ----------------
     "/admin/dashboard": {
-      get: op("Admin", "Store stats, 7-day sales, orders by status, needs-attention counts, low-stock products and 30-day top products", {}, "admin"),
+      get: op(
+        "Admin",
+        "Store stats; sales for today / this month / last 30 days vs the period before (Nepal time, products and shipping split); " +
+          "cash on delivery still to collect; 7-day sales; orders by status; needs-attention counts that match their linked lists " +
+          "(toConfirm, awaitingPayment, toShip, cashToCollect, refundRequired, lowStock, soldOut, unreadMessages); low-stock products; 30-day top products",
+        {},
+        "admin",
+      ),
     },
     "/admin/campaigns/presets": {
       get: op("Admin", "Festival presets (look and copy) and the colour palettes campaigns can use", {}, "admin"),
+    },
+    "/admin/shipping": {
+      get: op("Admin", "Shipping settings for editing", {}, "admin"),
+      put: op("Admin", "Save shipping rates and free-delivery areas (apply to orders placed from now on)", { requestBody: json(shippingSettings) }, "admin"),
     },
     "/admin/campaigns": {
       get: op("Admin", "All campaigns (newest first) with state draft/scheduled/live/ended", {}, "admin"),
@@ -672,7 +728,12 @@ const openApiSpec = {
       get: op("Admin", "Orders, units, revenue and customer savings from items sold at this campaign's prices", { parameters: [pathParam("id")] }, "admin"),
     },
     "/admin/badges": {
-      get: op("Admin", "Navigation badge counts: pendingOrders, refundRequired (cancelled but paid), unreadMessages", {}, "admin"),
+      get: op(
+        "Admin",
+        "Navigation badge counts: toConfirm (COD orders to confirm), refundRequired, unreadMessages; pendingOrders (all pending, for older app versions)",
+        {},
+        "admin",
+      ),
     },
     "/admin/products": {
       get: op("Admin", "All products incl. inactive", {
@@ -726,7 +787,7 @@ const openApiSpec = {
           },
         }),
       }, "admin"),
-      delete: op("Admin", "Delete product", { parameters: [pathParam("id")] }, "admin"),
+      delete: op("Admin", "Delete product (one that has been ordered is hidden instead, keeping its photos; data.archived says which)", { parameters: [pathParam("id")] }, "admin"),
     },
     "/admin/products/{id}/images": {
       post: op(
@@ -753,8 +814,20 @@ const openApiSpec = {
       post: op("Admin", "Create category", {}, "admin"),
     },
     "/admin/categories/{id}": {
-      put: op("Admin", "Update category", { parameters: [pathParam("id")] }, "admin"),
-      delete: op("Admin", "Delete category", { parameters: [pathParam("id")] }, "admin"),
+      put: op("Admin", "Update category (only name, description, parent, order, isActive; can't move it under its own subcategory)", {
+        parameters: [pathParam("id")],
+        requestBody: json({
+          type: "object",
+          properties: {
+            name: { type: "string", maxLength: 100 },
+            description: { type: "string", maxLength: 500 },
+            parent: { type: "string", nullable: true },
+            order: { type: "integer", minimum: 0 },
+            isActive: { type: "boolean" },
+          },
+        }),
+      }, "admin"),
+      delete: op("Admin", "Delete category (409 while products, subcategories or campaigns still use it)", { parameters: [pathParam("id")] }, "admin"),
     },
     "/admin/categories/{id}/image": {
       post: op("Admin", "Upload category image (multipart, field `image`)", { parameters: [pathParam("id")] }, "admin"),
@@ -768,8 +841,25 @@ const openApiSpec = {
           { name: "paymentMethod", in: "query", schema: { type: "string", enum: ["cod", "esewa", "khalti"] } },
           { name: "search", in: "query", description: "Order number, recipient name/phone, or customer name/email", schema: { type: "string" } },
           { name: "refundRequired", in: "query", description: "Cancelled orders that were paid (refund needed)", schema: { type: "boolean" } },
+          {
+            name: "queue",
+            in: "query",
+            description:
+              "Work queue (dashboard cards): confirm = COD orders to confirm; awaiting = online orders waiting for payment; ship = confirmed or processing; collect = COD on its way, cash not collected",
+            schema: { type: "string", enum: ["confirm", "awaiting", "ship", "collect"] },
+          },
+          { name: "from", in: "query", description: "Placed on or after this Nepal date (YYYY-MM-DD)", schema: { type: "string", format: "date" } },
+          { name: "to", in: "query", description: "Placed on or before this Nepal date (YYYY-MM-DD)", schema: { type: "string", format: "date" } },
         ],
       }, "admin"),
+    },
+    "/admin/orders/export": {
+      get: op(
+        "Admin",
+        "Every order matching the list filters (same query parameters, up to 5000), for CSV export",
+        { parameters: [{ name: "status", in: "query", schema: { type: "string" } }, { name: "queue", in: "query", schema: { type: "string" } }] },
+        "admin",
+      ),
     },
     "/admin/orders/bulk-status": {
       post: op("Admin", "Change the status of up to 100 orders (same rules as a single update; returns updated and failed lists)", {
@@ -785,6 +875,27 @@ const openApiSpec = {
       }, "admin"),
     },
     "/admin/orders/{id}": { get: op("Admin", "Order by id", { parameters: [pathParam("id")] }, "admin") },
+    "/admin/orders/{id}/refund": {
+      post: op(
+        "Admin",
+        "Record that the money owed was given back. A paid order that was cancelled is refunded in full (payment status refunded); " +
+          "an open order paid twice gets only the extra payment back and stays paid. 409 if nothing is owed (e.g. already recorded).",
+        {
+          parameters: [pathParam("id")],
+          requestBody: json(
+            { type: "object", properties: { reference: { type: "string", maxLength: 100 }, note: { type: "string", maxLength: 500 } } },
+            false,
+          ),
+        },
+        "admin",
+      ),
+    },
+    "/admin/orders/{id}/note": {
+      put: op("Admin", "Internal note on an order (admins only, never shown to the customer)", {
+        parameters: [pathParam("id")],
+        requestBody: json({ type: "object", properties: { note: { type: "string", maxLength: 1000 } } }),
+      }, "admin"),
+    },
     "/admin/orders/{id}/status": {
       put: op("Admin", "Change order status", {
         parameters: [pathParam("id")],
@@ -799,7 +910,7 @@ const openApiSpec = {
       }, "admin"),
     },
     "/admin/users": {
-      get: op("Admin", "Users", {
+      get: op("Admin", "Users, each with orderStats (orders placed, spent on confirmed-to-delivered orders, last order)", {
         parameters: [
           ...pageParams,
           { name: "role", in: "query", schema: { type: "string", enum: ["customer", "admin"] } },
@@ -809,13 +920,13 @@ const openApiSpec = {
       }, "admin"),
     },
     "/admin/users/{id}/status": {
-      put: op("Admin", "Activate/deactivate user", {
+      put: op("Admin", "Activate/deactivate user (not your own account: 409)", {
         parameters: [pathParam("id")],
         requestBody: json({ type: "object", required: ["isActive"], properties: { isActive: { type: "boolean" } } }),
       }, "admin"),
     },
     "/admin/users/{id}/role": {
-      put: op("Admin", "Change user role", {
+      put: op("Admin", "Change user role (not your own account: 409)", {
         parameters: [pathParam("id")],
         requestBody: json({ type: "object", required: ["role"], properties: { role: { type: "string", enum: ["customer", "admin"] } } }),
       }, "admin"),
@@ -833,6 +944,11 @@ const openApiSpec = {
     },
     "/admin/subscribers": {
       get: op("Admin", "Active newsletter subscribers", { parameters: pageParams }, "admin"),
+    },
+    "/admin/activity": {
+      get: op("Admin", "Recent admin actions (role and status changes, refunds, cash collected, product/category deletes, shipping and campaign changes; kept a year)", {
+        parameters: [...pageParams],
+      }, "admin"),
     },
     "/admin/payments/cod-collected": {
       post: op("Admin", "Mark a COD order as paid", {

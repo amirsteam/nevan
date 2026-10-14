@@ -3,7 +3,8 @@
  * Accessible dialog: focus moves in and is trapped while open, Escape and the
  * backdrop close it, and focus returns to the opener afterwards.
  * `variant="sheet"` slides up from the bottom on phones (filters, menus) and
- * is a centered dialog from `sm` up.
+ * is a centered dialog from `sm` up. `variant="drawer"` is a full-height panel
+ * sliding in from the left (mobile site menu).
  */
 import { useEffect, useId, useRef, ReactNode } from "react";
 import { X } from "lucide-react";
@@ -19,7 +20,7 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "full";
-  variant?: "dialog" | "sheet";
+  variant?: "dialog" | "sheet" | "drawer";
   showCloseButton?: boolean;
   closeOnOverlayClick?: boolean;
   closeOnEscape?: boolean;
@@ -114,12 +115,22 @@ const Modal = ({
   if (!isOpen) return null;
 
   const isSheet = variant === "sheet";
+  const isDrawer = variant === "drawer";
+
+  const placement = isDrawer
+    ? "justify-start items-stretch"
+    : isSheet
+      ? "justify-center items-end sm:items-center sm:p-4"
+      : "justify-center items-center p-4";
+  const panel = isDrawer
+    ? "h-full w-[86vw] max-w-sm rounded-r-2xl animate-drawerIn pb-[env(safe-area-inset-bottom)]"
+    : isSheet
+      ? `${sizeClasses[size]} max-h-[88vh] rounded-t-2xl sm:rounded-xl animate-slideUp pb-[env(safe-area-inset-bottom)]`
+      : `${sizeClasses[size]} max-h-[calc(100vh-2rem)] rounded-xl animate-slideUp`;
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex justify-center ${
-        isSheet ? "items-end sm:items-center sm:p-4" : "items-center p-4"
-      }`}
+      className={`fixed inset-0 z-50 flex ${placement}`}
       onMouseDown={(e) => {
         if (closeOnOverlayClick && e.target === e.currentTarget) onClose();
       }}
@@ -138,11 +149,7 @@ const Modal = ({
         aria-label={!title ? ariaLabel : undefined}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`relative w-full ${sizeClasses[size]} flex flex-col bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--shadow-lg)] outline-none ${
-          isSheet
-            ? "max-h-[88vh] rounded-t-2xl sm:rounded-xl animate-slideUp pb-[env(safe-area-inset-bottom)]"
-            : "max-h-[calc(100vh-2rem)] rounded-xl animate-slideUp"
-        } ${className}`}
+        className={`relative ${isDrawer ? "" : "w-full"} flex flex-col bg-[var(--color-surface)] text-[var(--color-text)] shadow-[var(--shadow-lg)] outline-none ${panel} ${className}`}
       >
         {isSheet && (
           <div aria-hidden="true" className="sm:hidden mx-auto mt-2 h-1.5 w-10 rounded-full bg-[var(--color-border-strong)]" />

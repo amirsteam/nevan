@@ -5,7 +5,7 @@
 import { Link } from "react-router-dom";
 import { Mail, Phone, MapPin } from "lucide-react";
 import { FaFacebook, FaInstagram } from "react-icons/fa";
-import { CONTACT } from "../../config/store";
+import { CONTACT, FABRIC, STORE_SLOGAN } from "../../config/store";
 
 const Footer = (): React.ReactElement => {
   const currentYear = new Date().getFullYear();
@@ -24,9 +24,9 @@ const Footer = (): React.ReactElement => {
                 Handicraft
               </span>
             </Link>
+            <p className="font-display italic text-[var(--color-primary)] mb-2">{STORE_SLOGAN}.</p>
             <p className="text-sm text-[var(--color-text-muted)] mb-4">
-              Handmade baby clothing crafted with a mother's love.
-              Soft, safe, and made in Nepal.
+              Handmade {FABRIC} baby clothing, crafted with a mother's love in Panauti, Nepal.
             </p>
             <div className="flex gap-3">
               <a

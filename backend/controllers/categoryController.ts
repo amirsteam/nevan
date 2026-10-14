@@ -5,6 +5,7 @@
 import { Request, Response } from "express";
 import * as categoryService from "../services/categoryService";
 import asyncHandler from "../utils/asyncHandler";
+import { logAdminAction } from "../services/adminLogService";
 
 /**
  * @desc    Get all categories (tree structure)
@@ -108,7 +109,8 @@ const updateCategory = asyncHandler(async (req: Request, res: Response) => {
  * @access  Private/Admin
  */
 const deleteCategory = asyncHandler(async (req: Request, res: Response) => {
-  await categoryService.deleteCategory(req.params.id as string);
+  const { name } = await categoryService.deleteCategory(req.params.id as string);
+  await logAdminAction(req, "category.deleted", { type: "category", id: req.params.id, label: name });
 
   res.status(200).json({
     status: "success",

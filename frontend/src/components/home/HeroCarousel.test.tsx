@@ -71,13 +71,30 @@ describe("HeroCarousel", () => {
   it("fans the first three product photos out beside the brand pitch", () => {
     renderCarousel([product(1), product(2), product(3), product(4)]);
     const [brand] = screen.getAllByRole("group", { hidden: true });
-    const images = [...brand.querySelectorAll("img")];
+    // The collage's photos (the phone backdrop is a separate <picture>)
+    const images = [...brand.querySelectorAll("img")].filter((img) => !img.closest("picture"));
     expect(images).toHaveLength(3);
     expect(images[0].getAttribute("src")).toContain("w_420/v1/romper-1.jpg");
     expect(images.every((img) => img.getAttribute("loading") === "lazy")).toBe(true);
     const collageLinks = [...brand.querySelectorAll('a[href^="/products/"]')];
     expect(collageLinks.map((a) => a.getAttribute("href"))).toEqual(["/products/romper-1", "/products/romper-2", "/products/romper-3"]);
     expect(collageLinks.every((a) => a.getAttribute("tabindex") === "-1")).toBe(true);
+  });
+
+  it("puts the newest featured product's photo faintly behind the brand slide below desktop", () => {
+    renderCarousel([
+      product(1, { createdAt: "2026-01-01T00:00:00Z" }),
+      product(2, { createdAt: "2026-10-09T00:00:00Z" }),
+      product(3, { createdAt: "2026-05-01T00:00:00Z" }),
+    ]);
+    const [brand] = screen.getAllByRole("group", { hidden: true });
+    const backdrop = brand.querySelector("picture");
+    expect(backdrop).toHaveClass("lg:hidden");
+    expect(backdrop?.querySelector("img")?.getAttribute("src")).toContain("romper-2.jpg");
+    expect(backdrop?.querySelector("img")).toHaveClass("opacity-50");
+    // Desktop shows the collage instead and never downloads the photo
+    expect(backdrop?.querySelector("source")).toHaveAttribute("media", "(min-width: 1024px)");
+    expect(backdrop?.querySelector("source")?.getAttribute("srcset")).toMatch(/^data:image\/gif/);
   });
 
   it("leaves the collage out when no featured product has a photo", () => {

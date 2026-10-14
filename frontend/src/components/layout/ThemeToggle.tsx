@@ -49,7 +49,7 @@ const ThemeToggle = ({ variant = "icon", className = "" }: { variant?: "icon" | 
     <button
       type="button"
       onClick={() => setPreference(next.value)}
-      className={`p-2 rounded-lg hover:bg-[var(--color-surface-muted)] ${className}`}
+      className={`p-2.5 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors ${className}`}
       aria-label={`Theme: ${current.label}. Switch to ${next.label.toLowerCase()}`}
       title={`Theme: ${current.label}`}
     >

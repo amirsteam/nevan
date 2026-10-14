@@ -1,6 +1,7 @@
 /**
  * OrderDetail Component
- * View order details and update status
+ * View order details and update status; record cash collected (COD) and
+ * refunds. Unpaid online orders can't be confirmed by hand.
  */
 import { useState } from 'react';
 import { adminAPI } from '../../api';
@@ -18,9 +19,15 @@ import {
     XCircle,
     Loader2,
     Printer,
+    Phone,
+    MessageCircle,
+    Banknote,
+    RotateCcw,
+    Info,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { printPackingSlip } from '../../utils/packingSlip';
+import { isAwaitingOnlinePayment, isCashToCollect, isRefundOwed, whatsappNumber } from '../../utils/adminOrders';
 
 interface OrderDetailProps {
     order: IOrder;
@@ -32,6 +39,57 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [newStatus, setNewStatus] = useState<OrderStatus | ''>('');
     const [statusNote, setStatusNote] = useState('');
+    const [paymentBusy, setPaymentBusy] = useState(false);
+    const [refundReference, setRefundReference] = useState('');
+    const [refundNote, setRefundNote] = useState('');
+    const [adminNote, setAdminNote] = useState(order.notes || '');
+    const [savingNote, setSavingNote] = useState(false);
+    const noteChanged = adminNote.trim() !== (order.notes || '').trim();
+
+    const saveNote = async () => {
+        setSavingNote(true);
+        try {
+            await adminAPI.updateOrderNote(order._id, adminNote.trim());
+            toast.success('Note saved');
+            onStatusUpdated();
+        } catch (error) {
+            toast.error(getErrorMessage(error, 'Could not save the note'));
+        } finally {
+            setSavingNote(false);
+        }
+    };
+
+    const awaitingPayment = isAwaitingOnlinePayment(order);
+    const refundOwed = isRefundOwed(order);
+    const cashToCollect = isCashToCollect(order);
+
+    const collectCash = async () => {
+        setPaymentBusy(true);
+        try {
+            await adminAPI.markCODCollected(order._id);
+            toast.success('Cash marked as collected');
+            onStatusUpdated();
+        } catch (error) {
+            toast.error(getErrorMessage(error, 'Could not mark the cash as collected'));
+        } finally {
+            setPaymentBusy(false);
+        }
+    };
+
+    const recordRefund = async () => {
+        setPaymentBusy(true);
+        try {
+            await adminAPI.recordRefund(order._id, { reference: refundReference.trim(), note: refundNote.trim() });
+            toast.success('Refund recorded');
+            setRefundReference('');
+            setRefundNote('');
+            onStatusUpdated();
+        } catch (error) {
+            toast.error(getErrorMessage(error, 'Could not record the refund'));
+        } finally {
+            setPaymentBusy(false);
+        }
+    };
 
     // Get next possible statuses
     const getNextStatuses = (): OrderStatus[] => {
@@ -43,7 +101,9 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
             delivered: [],
             cancelled: [],
         };
-        return (order.status && transitions[order.status]) || [];
+        const next = (order.status && transitions[order.status]) || [];
+        // Unpaid online orders confirm themselves when the payment arrives
+        return awaitingPayment ? next.filter((s) => s !== 'confirmed') : next;
     };
 
     // Handle status update
@@ -113,6 +173,16 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                 </div>
             </div>
 
+            {awaitingPayment && (
+                <p className="flex items-start gap-2 rounded-lg bg-[var(--color-info)]/10 p-3 text-sm">
+                    <Info className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-info)]" aria-hidden="true" />
+                    <span>
+                        <strong>Waiting for the {order.payment?.method === 'esewa' ? 'eSewa' : 'online'} payment.</strong>{' '}
+                        The order confirms itself once it's paid, and is cancelled automatically if it isn't paid in time.
+                    </span>
+                </p>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Customer Info */}
                 <div className="card p-4">
@@ -140,9 +210,26 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                             {order.shippingAddress?.city}, {order.shippingAddress?.district}
                         </p>
                         <p>{getProvinceName(order.shippingAddress?.province)}</p>
-                        <p className="text-[var(--color-text-muted)]">
-                            Phone: {order.shippingAddress?.phone}
-                        </p>
+                        {order.shippingAddress?.phone && (
+                            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+                                <a
+                                    href={`tel:${order.shippingAddress.phone}`}
+                                    className="inline-flex items-center gap-1.5 font-medium text-[var(--color-primary)] hover:underline"
+                                >
+                                    <Phone className="w-4 h-4" aria-hidden="true" />
+                                    {order.shippingAddress.phone}
+                                </a>
+                                <a
+                                    href={`https://wa.me/${whatsappNumber(order.shippingAddress.phone)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-[var(--color-primary)] hover:underline"
+                                >
+                                    <MessageCircle className="w-4 h-4" aria-hidden="true" />
+                                    WhatsApp
+                                </a>
+                            </p>
+                        )}
                         {order.shippingAddress?.landmark && (
                             <p className="text-[var(--color-text-muted)]">
                                 Landmark: {order.shippingAddress?.landmark}
@@ -256,6 +343,80 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                 </div>
             </div>
 
+            {/* Payment actions: cash collected, refunds */}
+            {(cashToCollect || refundOwed || order.payment?.refundedAt) && (
+                <div className="card p-4 space-y-3">
+                    {cashToCollect && (
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm">
+                                <strong>Cash on delivery:</strong> {formatPrice(order.pricing?.total)} not collected yet.
+                            </p>
+                            <button type="button" onClick={collectCash} disabled={paymentBusy} className="btn btn-secondary text-sm">
+                                <Banknote className="w-4 h-4" aria-hidden="true" />
+                                Mark cash collected
+                            </button>
+                        </div>
+                    )}
+
+                    {refundOwed && (
+                        <div className="space-y-3">
+                            <p className="flex items-start gap-2 text-sm">
+                                <RotateCcw className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-error)]" aria-hidden="true" />
+                                <span>
+                                    <strong>Refund owed.</strong>{' '}
+                                    {order.status === 'cancelled'
+                                        ? `The customer paid ${formatPrice(order.pricing?.total)}, then the order was cancelled.`
+                                        : 'The customer paid twice; give the extra payment back. The order itself stays paid.'}{' '}
+                                    Once you've sent the money back, record it here.
+                                </span>
+                            </p>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label htmlFor="refund-reference" className="block text-sm font-medium mb-1">
+                                        Refund reference <span className="font-normal text-[var(--color-text-muted)]">(optional)</span>
+                                    </label>
+                                    <input
+                                        id="refund-reference"
+                                        className="input"
+                                        maxLength={100}
+                                        value={refundReference}
+                                        onChange={(e) => setRefundReference(e.target.value)}
+                                        placeholder="e.g. eSewa refund ID"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="refund-note" className="block text-sm font-medium mb-1">
+                                        Note <span className="font-normal text-[var(--color-text-muted)]">(optional)</span>
+                                    </label>
+                                    <input
+                                        id="refund-note"
+                                        className="input"
+                                        maxLength={500}
+                                        value={refundNote}
+                                        onChange={(e) => setRefundNote(e.target.value)}
+                                        placeholder="How it was refunded"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-end">
+                                <button type="button" onClick={recordRefund} disabled={paymentBusy} className="btn btn-primary text-sm">
+                                    {paymentBusy && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+                                    Mark refund done
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {!refundOwed && order.payment?.refundedAt && (
+                        <p className="flex items-center gap-2 text-sm text-[var(--color-success)]">
+                            <CheckCircle className="w-4 h-4" aria-hidden="true" />
+                            Refunded {formatDateTime(order.payment.refundedAt)}
+                            {order.payment.refundReference && ` (ref ${order.payment.refundReference})`}
+                        </p>
+                    )}
+                </div>
+            )}
+
             {/* Status History */}
             {!!order.statusHistory?.length && (
                 <div className="card p-4">
@@ -308,7 +469,7 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                                         ${newStatus === status
                                             ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
                                             : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'}
-                                        ${status === 'cancelled' ? 'text-red-500 hover:bg-red-50' : ''}
+                                        ${status === 'cancelled' && newStatus !== status ? 'text-[var(--color-error)] hover:bg-[var(--color-error)]/10' : ''}
                                     `}
                                 >
                                     {status}
@@ -348,7 +509,7 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                                     </button>
                                     <button
                                         onClick={handleStatusUpdate}
-                                        className={`btn ${newStatus === 'cancelled' ? 'bg-red-600 hover:bg-red-700 text-white' : 'btn-primary'}`}
+                                        className={`btn ${newStatus === 'cancelled' ? 'bg-[var(--color-error)] text-[var(--color-on-error)] hover:opacity-90' : 'btn-primary'}`}
                                         disabled={updatingStatus}
                                     >
                                         {updatingStatus ? (
@@ -367,9 +528,33 @@ const OrderDetail = ({ order, onStatusUpdated }: OrderDetailProps) => {
                 </div>
             )}
 
+            {/* Internal note (admins only) */}
+            <div className="card p-4">
+                <label htmlFor="admin-note" className="block font-semibold mb-1">
+                    Internal note
+                </label>
+                <p className="text-xs text-[var(--color-text-muted)] mb-2">Only admins see this, e.g. "Call before delivery" or courier details.</p>
+                <textarea
+                    id="admin-note"
+                    className="textarea"
+                    rows={2}
+                    maxLength={1000}
+                    value={adminNote}
+                    onChange={(e) => setAdminNote(e.target.value)}
+                />
+                {noteChanged && (
+                    <div className="flex justify-end mt-2">
+                        <button type="button" onClick={saveNote} disabled={savingNote} className="btn btn-secondary text-sm">
+                            {savingNote && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+                            Save note
+                        </button>
+                    </div>
+                )}
+            </div>
+
             {/* Customer Notes */}
             {order.customerNotes && (
-                <div className="card p-4 bg-yellow-50 border-yellow-200">
+                <div className="card p-4 bg-[var(--color-warning)]/10 border-[var(--color-warning)]/30">
                     <h3 className="font-semibold mb-2">Customer Notes</h3>
                     <p className="text-sm">{order.customerNotes}</p>
                 </div>

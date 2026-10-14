@@ -4,14 +4,14 @@
  */
 import { Link } from "react-router-dom";
 import { ArrowRight, Baby, Heart, Leaf, MapPin } from "lucide-react";
-import { CONTACT } from "../../config/store";
-// Cropped and resized from founder.jpg (the About page uses the original)
+import { CONTACT, FABRIC } from "../../config/store";
+// Cropped and resized from founder.jpg (also used on the About page)
 import founder480 from "../../assets/founder-480.jpg";
 import founder960 from "../../assets/founder-960.jpg";
 
 const VALUES = [
   { icon: Heart, title: "Handmade with care", text: "Crafted slowly, with warmth, patience and intention." },
-  { icon: Leaf, title: "Soft, baby-friendly fabrics", text: "Gentle, safe materials chosen for comfort first." },
+  { icon: Leaf, title: `Soft ${FABRIC}`, text: "Breathable and gentle on a baby's skin." },
   { icon: Baby, title: "For moms, by moms", text: "We know the little details that matter, because we're moms too." },
 ];
 
@@ -25,7 +25,7 @@ const BrandStory = () => (
           src={founder480}
           srcSet={`${founder480} 480w, ${founder960} 960w`}
           sizes="(min-width: 640px) 28rem, 90vw"
-          alt="The founder of Nevan Handicraft"
+          alt="Anjana Shrestha, founder of Nevan Handicraft"
           width={480}
           height={640}
           loading="lazy"

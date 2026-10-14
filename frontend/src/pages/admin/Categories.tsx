@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { adminAPI } from '../../api';
+import CategoryThumb from '../../components/CategoryThumb';
 import {
     DataTable,
     SearchInput,
@@ -112,17 +113,15 @@ const Categories = () => {
             label: '',
             width: '60px',
             render: (_, category) => (
-                <div className="w-12 h-12 rounded-lg overflow-hidden bg-[var(--color-bg)] flex items-center justify-center">
-                    {category.image?.url ? (
-                        <img
-                            src={category.image.url}
-                            alt={category.name}
-                            className="w-full h-full object-cover"
-                        />
-                    ) : (
-                        <FolderTree className="w-5 h-5 text-[var(--color-text-muted)]" />
-                    )}
-                </div>
+                <CategoryThumb
+                    category={category}
+                    size={48}
+                    fallback={
+                        <span className="w-12 h-12 rounded-lg bg-[var(--color-bg)] flex items-center justify-center">
+                            <FolderTree className="w-5 h-5 text-[var(--color-text-muted)]" aria-hidden="true" />
+                        </span>
+                    }
+                />
             ),
         },
         {

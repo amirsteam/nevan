@@ -1,199 +1,325 @@
 /**
  * About Page
- * Displays brand story, values, and mission
- * Converted from React Bootstrap to Tailwind CSS
+ * Who makes the clothes (Anjana Shrestha, Panauti), how the brand grew, the
+ * Outstanding Entrepreneur Award 2082, values, real reviews and how to reach us.
  */
-import { Link } from 'react-router-dom';
-import { Heart, Leaf, Baby, Mail } from 'lucide-react';
-import founderImage from '../assets/founder.jpg';
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowRight, Award, Baby, Heart, Leaf, Mail, MapPin, MessageCircle, Phone, Truck } from "lucide-react";
+import { FaFacebook, FaInstagram } from "react-icons/fa";
+import Breadcrumb from "../components/ui/Breadcrumb";
+import ReviewsSection from "../components/home/ReviewsSection";
+import { reviewsAPI, type FeaturedReview } from "../api/contact";
+import { CONTACT, FABRIC, STORE_SLOGAN } from "../config/store";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useShippingSettings } from "../hooks/useShippingSettings";
+import { freeAreaNames } from "../utils/shippingText";
+import CategoryThumb from "../components/CategoryThumb";
+// Cropped and resized from founder.jpg
+import founder480 from "../assets/founder-480.jpg";
+import founder960 from "../assets/founder-960.jpg";
+import certificate from "../assets/award-certificate.jpg";
+
+const FOUNDER = "Anjana Shrestha";
+const AWARD = "Outstanding Entrepreneur Award 2082";
+
+const MILESTONES = [
+  {
+    when: "The Covid years",
+    title: "Nevan Collection",
+    text: `${FOUNDER} began sewing reusable, eco-friendly cloth masks — the first Nevan brand.`,
+  },
+  {
+    when: "Becoming a mother",
+    title: "Nevan Sprouts",
+    text: "Motherhood brought a new idea: baby clothes that are soft, comfortable and made by hand.",
+  },
+  {
+    when: "Today",
+    title: "Nevan Handicraft",
+    text: "Both brands now grow together under one name, made in Panauti, Kavrepalanchok.",
+  },
+  {
+    when: "2082 BS",
+    title: AWARD,
+    text: "Honoured by the Office of Industry and Commerce, Kavrepalanchok, on the 11th Industry Day.",
+  },
+];
+
+const VALUES = [
+  { icon: Heart, title: "Handmade with love", text: "Every piece is crafted with warmth, patience and intention — the care a mother gives." },
+  { icon: Leaf, title: `Soft ${FABRIC}`, text: `Breathable ${FABRIC}, gentle on a baby's skin — crafted slowly and thoughtfully.` },
+  { icon: Baby, title: "For moms, by moms", text: "We know the small details that matter for comfort and quality, because we're moms too." },
+];
+
+const eyebrow = "text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-primary)] mb-2";
+const contactText = "flex items-center gap-3 py-2";
+const contactRow = `${contactText} hover:text-[var(--color-primary)] transition-colors`;
 
 const About = () => {
-  usePageTitle("About us", "Nevan Handicraft makes soft, handmade baby clothing in Panauti, Nepal.");
-    return (
-        <div className="min-h-screen">
-            {/* HERO SECTION */}
-            <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] py-20 mb-16">
-                <div className="container-app text-center">
-                    <h1 className="text-4xl md:text-5xl font-bold mb-4">About Nevan Handicraft</h1>
-                    <p className="text-xl md:text-2xl text-white/90 font-light">
-                        A mother’s love, stitched into every creation.
-                    </p>
-                </div>
+  usePageTitle(
+    "About us",
+    `Meet ${FOUNDER}, the mother behind Nevan Handicraft's handmade ${FABRIC} baby clothing in Panauti, Nepal — winner of the ${AWARD}.`,
+  );
+  const shipping = useShippingSettings();
+  const freeAreas = freeAreaNames(shipping);
+  const [reviews, setReviews] = useState<FeaturedReview[]>([]);
+
+  useEffect(() => {
+    reviewsAPI
+      .getFeatured(3)
+      .then((res) => setReviews(res.data.reviews || []))
+      .catch(() => {
+        // The section stays hidden without reviews
+      });
+  }, []);
+
+  return (
+    <div>
+      {/* Hero: who makes the clothes */}
+      <section aria-labelledby="about-title" className="bg-[var(--color-primary-soft)] overflow-clip">
+        <div className="container-app pt-6 pb-14 md:pb-20">
+          <Breadcrumb items={[{ label: "About us" }]} className="mb-8 md:mb-12" />
+          <div className="grid lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] gap-10 lg:gap-16 items-center">
+            <div className="max-w-xl">
+              <p className={eyebrow}>Our story</p>
+              <h1 id="about-title" className="text-4xl md:text-5xl font-bold leading-tight mb-5">
+                A mother's love, stitched into every creation
+              </h1>
+              <p className="text-lg text-[var(--color-text-muted)] leading-relaxed">
+                Nevan Handicraft is the work of <strong className="text-[var(--color-text)]">{FOUNDER}</strong>, a mother and maker
+                in Panauti, Kavrepalanchok. Every piece is made by hand in {FABRIC}, with the care she would want for her own
+                child.
+              </p>
+              <p className="mt-5 font-display text-xl md:text-2xl italic text-[var(--color-primary)]">“{STORE_SLOGAN}.”</p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/products" className="btn btn-primary px-6 py-3">
+                  Shop baby clothing
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </Link>
+                <a href="#award" className="btn btn-secondary bg-[var(--color-surface)] px-6 py-3">
+                  <Award className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
+                  See her award
+                </a>
+              </div>
             </div>
 
-            <div className="container-app">
-                {/* STORY SECTION */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center mb-24">
-                    <div className="relative">
-                        <div className="absolute inset-0 bg-[var(--color-primary)] opacity-10 rounded-2xl transform translate-x-4 translate-y-4"></div>
-                        <img
-                            src={founderImage}
-                            alt="The Founder of Nevan Handicraft"
-                            className="relative rounded-2xl shadow-lg w-full h-[500px] object-cover"
-                        />
-                    </div>
-
-                    <div>
-                        <h2 className="text-3xl font-bold text-[var(--color-primary)] mb-6">Our Story</h2>
-
-                        <div className="space-y-4 text-lg text-[var(--color-text)]">
-                            <p>
-                                Nevan Handicraft began with a heartfelt intention — to create
-                                meaningful, honest, and handmade pieces that bring warmth into
-                                everyday life.
-                            </p>
-
-                            <p>
-                                During the Covid era, our first brand <span className="font-semibold text-[var(--color-primary)]">Nevan Collection</span> was
-                                born, crafting reusable and eco-friendly handmade masks. When life
-                                moved forward and motherhood unfolded, a new inspiration bloomed:
-                                <span className="font-semibold text-[var(--color-primary)]"> Nevan Sprouts</span>, a baby clothing brand rooted in softness,
-                                comfort, and a mother’s touch.
-                            </p>
-
-                            <p>
-                                Today, both brands grow together under <span className="font-semibold text-[var(--color-primary)]">Nevan Handicraft</span> — a
-                                home where creativity, care, and heartfelt crafting become
-                                beautiful memories.
-                            </p>
-                        </div>
-
-                        <Link 
-                            to="/" 
-                            className="inline-flex items-center justify-center px-8 py-3 mt-8 border-2 border-[var(--color-primary)] text-[var(--color-primary)] font-medium rounded-lg hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
-                        >
-                            Back to Home
-                        </Link>
-                    </div>
-                </div>
-
-                {/* VALUES SECTION */}
-                <div className="mb-24">
-                    <h2 className="text-3xl font-bold text-center mb-12">What Inspires Us</h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        {/* Handmade With Love */}
-                        <div className="bg-[var(--color-surface)] p-8 rounded-xl shadow-sm border border-[var(--color-border)] text-center hover:shadow-md transition-shadow">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-100 text-yellow-600 mb-6">
-                                <Heart className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-xl font-bold mb-4">Handmade With Love</h3>
-                            <p className="text-[var(--color-text-muted)]">
-                                Every piece is crafted with warmth, patience, and intention —
-                                the kind of care only a mother can give.
-                            </p>
-                        </div>
-
-                        {/* Eco-Friendly Mindset */}
-                        <div className="bg-[var(--color-surface)] p-8 rounded-xl shadow-sm border border-[var(--color-border)] text-center hover:shadow-md transition-shadow">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-600 mb-6">
-                                <Leaf className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-xl font-bold mb-4">Eco-Friendly Mindset</h3>
-                            <p className="text-[var(--color-text-muted)]">
-                                Slow, ethical, and sustainable crafting using soft, safe,
-                                eco-friendly materials for every child.
-                            </p>
-                        </div>
-
-                        {/* For Moms, By Moms */}
-                        <div className="bg-[var(--color-surface)] p-8 rounded-xl shadow-sm border border-[var(--color-border)] text-center hover:shadow-md transition-shadow">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 text-blue-600 mb-6">
-                                <Baby className="w-8 h-8" />
-                            </div>
-                            <h3 className="text-xl font-bold mb-4">For Moms, By Moms</h3>
-                            <p className="text-[var(--color-text-muted)]">
-                                We understand comfort, quality and the small details — because
-                                we are moms too.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* MISSION / VISION / PROMISES */}
-                <div className="max-w-6xl mx-auto mb-24 bg-[var(--color-surface)] rounded-2xl p-8 md:p-12 shadow-sm border border-[var(--color-border)]">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-                        {/* Mission */}
-                        <div>
-                            <h3 className="text-2xl font-bold text-[var(--color-primary)] mb-6 flex items-center gap-2">
-                                <span className="w-2 h-8 bg-[var(--color-primary)] rounded-full"></span>
-                                Mission
-                            </h3>
-                            <ul className="space-y-3 text-[var(--color-text-muted)] list-disc pl-5">
-                                <li>To create honest, comfortable handmade products.</li>
-                                <li>To bring joy, safety and warmth to every family.</li>
-                                <li>One stitch, one accessory, and one outfit at a time.</li>
-                            </ul>
-                        </div>
-
-                        {/* Vision */}
-                        <div>
-                            <h3 className="text-2xl font-bold text-[var(--color-primary)] mb-6 flex items-center gap-2">
-                                <span className="w-2 h-8 bg-[var(--color-primary)] rounded-full"></span>
-                                Vision
-                            </h3>
-                            <p className="text-[var(--color-text-muted)] leading-relaxed">
-                                To grow Nevan Handicraft into a trusted handmade brand where
-                                mothers find comfort, creativity and quality. A place where small,
-                                meaningful creations make a big difference in everyday life.
-                            </p>
-                        </div>
-
-                        {/* Promise */}
-                        <div>
-                            <h3 className="text-2xl font-bold text-[var(--color-primary)] mb-6 flex items-center gap-2">
-                                <span className="w-2 h-8 bg-[var(--color-primary)] rounded-full"></span>
-                                Our Promise
-                            </h3>
-                            <ul className="space-y-3 text-[var(--color-text-muted)] list-disc pl-5">
-                                <li>Handmade with care.</li>
-                                <li>Soft, safe & baby-friendly fabrics.</li>
-                                <li>Eco-friendly and ethical mindset.</li>
-                                <li>Slow, thoughtful crafting.</li>
-                                <li>Gratitude in every order.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                {/* WHY MOMS TRUST US */}
-                <div className="bg-[var(--color-surface-muted)] rounded-3xl p-12 text-center mb-24 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-32 h-32 bg-[var(--color-primary)] opacity-5 rounded-full -translate-x-1/2 -translate-y-1/2"></div>
-                    <div className="absolute bottom-0 right-0 w-48 h-48 bg-[var(--color-accent)] opacity-5 rounded-full translate-x-1/3 translate-y-1/3"></div>
-                    
-                    <h2 className="text-3xl font-bold mb-6 relative z-10">Why Moms Trust Us</h2>
-                    <p className="max-w-3xl mx-auto text-lg text-[var(--color-text-muted)] leading-relaxed relative z-10">
-                        Because we are moms too. We understand comfort, softness, quality,
-                        and the little things that truly matter. Every product carries a
-                        piece of our heart and hard work.
-                    </p>
-                </div>
-
-                {/* THANK YOU SECTION */}
-                <div className="bg-green-50 rounded-3xl p-12 text-center mb-20 border border-green-100">
-                    <Heart className="w-12 h-12 text-green-600 mx-auto mb-6" />
-                    <h2 className="text-3xl font-bold mb-6 text-[var(--color-text)]">Thank You</h2>
-                    <p className="max-w-2xl mx-auto text-lg text-[var(--color-text)] mb-8 leading-relaxed">
-                        To every mom, every family and every supporter — thank you for
-                        believing in us, choosing handmade, and helping us grow.
-                        <br /><br />
-                        Nevan Handicraft will always remain what it started as:
-                        <br />
-                        <span className="font-semibold text-green-800">A mother’s love turned into something beautiful.</span>
-                    </p>
-
-                    <Link 
-                        to="/contact" 
-                        className="inline-flex items-center gap-2 px-8 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all"
-                    >
-                        <Mail className="w-5 h-5" />
-                        Contact Us
-                    </Link>
-                </div>
-            </div>
+            <figure className="relative w-full max-w-sm sm:max-w-md mx-auto lg:mr-0">
+              <span aria-hidden="true" className="absolute inset-0 translate-x-3 translate-y-3 md:translate-x-5 md:translate-y-5 rounded-[2rem] bg-[var(--color-brand)]/20" />
+              <img
+                src={founder480}
+                srcSet={`${founder480} 480w, ${founder960} 960w`}
+                sizes="(min-width: 640px) 28rem, 90vw"
+                alt={`${FOUNDER}, founder of Nevan Handicraft, holding her ${AWARD} certificate`}
+                width={480}
+                height={640}
+                fetchPriority="high"
+                className="relative w-full aspect-[4/5] object-cover rounded-[2rem] shadow-[var(--shadow-lg)]"
+              />
+              <figcaption className="absolute left-4 -bottom-5 md:-left-6 inline-flex items-center gap-2 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium shadow-[var(--shadow-md)]">
+                <Award className="w-4 h-4 text-[var(--color-primary)]" aria-hidden="true" />
+                {FOUNDER} · Outstanding Entrepreneur 2082
+              </figcaption>
+            </figure>
+          </div>
         </div>
-    );
+      </section>
+
+      {/* How the brand grew (also explains the three Nevan names) */}
+      <section aria-labelledby="journey-title" className="py-14 md:py-20">
+        <div className="container-app">
+          <div className="max-w-2xl mb-10">
+            <p className={eyebrow}>How Nevan grew</p>
+            <h2 id="journey-title" className="text-3xl md:text-4xl font-bold">
+              From cloth masks to baby clothes
+            </h2>
+          </div>
+          <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-0">
+            {MILESTONES.map((m, i) => (
+              <li key={m.title} className="relative lg:pr-8">
+                {/* Line between steps on wide screens */}
+                {i < MILESTONES.length - 1 && (
+                  <span aria-hidden="true" className="hidden lg:block absolute top-5 left-10 right-0 h-px bg-[var(--color-border-strong)]" />
+                )}
+                <span
+                  aria-hidden="true"
+                  className="relative z-10 w-10 h-10 rounded-full bg-[var(--color-primary)] text-[var(--color-on-primary)] font-semibold flex items-center justify-center"
+                >
+                  {i + 1}
+                </span>
+                <p className="mt-4 text-sm text-[var(--color-text-muted)]">{m.when}</p>
+                <h3 className="mt-1 text-lg font-semibold flex items-center gap-3">
+                  {/* The two brands show their logos */}
+                  <CategoryThumb category={{ slug: "", name: m.title }} size={56} />
+                  {m.title}
+                </h3>
+                <p className="mt-2 text-[var(--color-text-muted)] leading-relaxed">{m.text}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* The award */}
+      <section id="award" aria-labelledby="award-title" className="py-14 md:py-20 bg-[var(--color-surface-muted)] scroll-mt-20">
+        <div className="container-app grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+          <figure className="order-last lg:order-first">
+            <a
+              href={certificate}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-md)] transition-shadow hover:shadow-[var(--shadow-lg)]"
+            >
+              <img
+                src={certificate}
+                alt={`${AWARD} certificate (सम्मान-पत्र) from the Office of Industry and Commerce, Dhulikhel, Kavrepalanchok, presented to ${FOUNDER}, proprietor of Nevan Handicraft`}
+                width={720}
+                height={501}
+                loading="lazy"
+                decoding="async"
+                className="w-full h-auto"
+              />
+            </a>
+            <figcaption className="mt-3 text-sm text-[var(--color-text-muted)]">
+              The certificate, in Nepali. Select it to open it full size.
+            </figcaption>
+          </figure>
+
+          <div className="max-w-xl">
+            <p className={eyebrow}>Recognition</p>
+            <h2 id="award-title" className="text-3xl md:text-4xl font-bold mb-2">
+              Honoured for making in Nepal
+            </h2>
+            <p lang="ne" className="text-[var(--color-text-muted)] mb-6">
+              उत्कृष्ट उद्यमी सम्मान २०८२
+            </p>
+            <div className="space-y-4 text-lg leading-relaxed">
+              <p>
+                On the 11th Industry Day, the Office of Industry and Commerce in Dhulikhel, Kavrepalanchok (Government of Bagmati
+                Province), presented {FOUNDER}, proprietor of Nevan Handicraft, with the{" "}
+                <strong>{AWARD}</strong>.
+              </p>
+              <p className="text-[var(--color-text-muted)]">
+                It recognises her work making goods in Nepal instead of importing them, and creating jobs in the community.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Values */}
+      <section aria-labelledby="values-title" className="py-14 md:py-20">
+        <div className="container-app">
+          <div className="max-w-2xl mb-10">
+            <p className={eyebrow}>What we care about</p>
+            <h2 id="values-title" className="text-3xl md:text-4xl font-bold">
+              Made the way a mother would want
+            </h2>
+          </div>
+          <ul className="grid md:grid-cols-3 gap-5">
+            {VALUES.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6">
+                <span className="w-12 h-12 rounded-full bg-[var(--color-primary-soft)] flex items-center justify-center mb-5">
+                  <Icon className="w-6 h-6 text-[var(--color-primary)]" aria-hidden="true" />
+                </span>
+                <h3 className="text-lg font-semibold mb-2">{title}</h3>
+                <p className="text-[var(--color-text-muted)] leading-relaxed">{text}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* Real reviews (hidden until there are some) */}
+      <ReviewsSection reviews={reviews} />
+
+      {/* Where we are and how to reach us */}
+      <section aria-labelledby="reach-title" className="py-14 md:py-20">
+        <div className="container-app grid lg:grid-cols-2 gap-10 lg:gap-16">
+          <div className="max-w-xl">
+            <p className={eyebrow}>Say hello</p>
+            <h2 id="reach-title" className="text-3xl md:text-4xl font-bold mb-4">
+              Made in Panauti, Kavre
+            </h2>
+            <p className="text-lg text-[var(--color-text-muted)] leading-relaxed">
+              Questions about sizes, fabrics or a gift? Call or message {FOUNDER.split(" ")[0]} and the team directly.
+            </p>
+            {freeAreas.length > 0 && (
+              <p className="mt-5 inline-flex items-start gap-2 rounded-lg bg-[var(--color-primary-soft)] px-4 py-3 text-sm">
+                <Truck className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+                <span>
+                  <strong>Free delivery</strong> to {freeAreas.join(", ")}, whatever the order amount.
+                </span>
+              </p>
+            )}
+          </div>
+
+          <ul className="rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-6 divide-y divide-[var(--color-border)]">
+            <li>
+              <p className={contactText}>
+                <MapPin className="w-5 h-5 text-[var(--color-primary)] shrink-0" aria-hidden="true" />
+                {CONTACT.address}
+              </p>
+            </li>
+            <li>
+              <a href={CONTACT.phoneHref} className={contactRow}>
+                <Phone className="w-5 h-5 text-[var(--color-primary)] shrink-0" aria-hidden="true" />
+                {CONTACT.phoneDisplay}
+              </a>
+            </li>
+            <li>
+              <a href={CONTACT.whatsappHref} target="_blank" rel="noopener noreferrer" className={contactRow}>
+                <MessageCircle className="w-5 h-5 text-[var(--color-primary)] shrink-0" aria-hidden="true" />
+                WhatsApp us
+              </a>
+            </li>
+            <li>
+              <a href={`mailto:${CONTACT.email}`} className={`${contactRow} break-all`}>
+                <Mail className="w-5 h-5 text-[var(--color-primary)] shrink-0" aria-hidden="true" />
+                {CONTACT.email}
+              </a>
+            </li>
+            <li className="flex gap-6">
+              <a href={CONTACT.facebook} target="_blank" rel="noopener noreferrer" className={contactRow}>
+                <FaFacebook className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+                Facebook
+              </a>
+              <a href={CONTACT.instagram} target="_blank" rel="noopener noreferrer" className={contactRow}>
+                <FaInstagram className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
+                Instagram
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      {/* Closing */}
+      <section aria-labelledby="thanks-title" className="pb-16 md:pb-24">
+        <div className="container-app">
+          <div className="rounded-3xl bg-[var(--color-primary-soft)] px-6 py-12 md:px-12 text-center">
+            <Heart className="w-10 h-10 text-[var(--color-primary)] mx-auto mb-5" aria-hidden="true" />
+            <h2 id="thanks-title" className="text-3xl font-bold mb-3">
+              Thank you for choosing handmade
+            </h2>
+            <p className="font-display italic text-lg text-[var(--color-primary)] mb-3">{STORE_SLOGAN}.</p>
+            <p className="max-w-2xl mx-auto text-lg text-[var(--color-text-muted)] leading-relaxed">
+              To every mom, every family and every supporter: thank you for helping a small Nepali business grow.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link to="/products" className="btn btn-primary px-6 py-3">
+                Shop the collection
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
+              <Link to="/contact" className="btn btn-secondary bg-[var(--color-surface)] px-6 py-3">
+                <Mail className="w-4 h-4" aria-hidden="true" />
+                Contact us
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 };
 
 export default About;

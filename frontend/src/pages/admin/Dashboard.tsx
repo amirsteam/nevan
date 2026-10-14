@@ -1,12 +1,15 @@
 /**
  * Admin Dashboard
- * What needs doing today (each item links to a filtered list), store
- * performance, low stock and best sellers.
+ * What needs doing today (each count matches the filtered list it links to),
+ * sales for today / this month / the last 30 days against the period before
+ * (Nepal time), low stock and best sellers. Refreshes itself every 2 minutes
+ * while the tab is visible.
  */
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { adminAPI } from "../../api";
 import { formatPrice, formatDate, getErrorMessage } from "../../utils/helpers";
+import { imageUrl, imageSrcSet } from "../../utils/image";
 import {
   LineChart,
   Line,
@@ -35,13 +38,52 @@ import {
   Plus,
   FolderTree,
   RefreshCw,
+  Hourglass,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { StatusBadge } from "../../components/admin";
 import CampaignCard from "../../components/admin/CampaignCard";
 import { useAppSelector } from "../../store/hooks";
 import { ChartSkeleton, DashboardStatSkeleton, EmptyState, LoadingRegion, Skeleton } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import type { IDashboardStats, OrderStatus } from "../../types";
+import type { IDashboardStats, IPeriodTotals, OrderStatus } from "../../types";
+
+const AUTO_REFRESH_MS = 2 * 60 * 1000;
+const THUMB = 40;
+
+/** "+12%" / "−5%" / "new" against the previous period */
+const Change = ({ current, previous }: { current: number; previous: number }) => {
+  if (previous === 0 && current === 0) return <span className="text-[var(--color-text-muted)]">No sales yet</span>;
+  if (previous === 0) return <span className="text-[var(--color-success)]">New</span>;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  const Icon = pct > 0 ? TrendingUp : pct < 0 ? TrendingDown : Minus;
+  const tone = pct > 0 ? "text-[var(--color-success)]" : pct < 0 ? "text-[var(--color-error)]" : "text-[var(--color-text-muted)]";
+  return (
+    <span className={`inline-flex items-center gap-1 ${tone}`}>
+      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+      {pct > 0 ? "+" : pct < 0 ? "−" : ""}
+      {Math.abs(pct)}%
+    </span>
+  );
+};
+
+/** Small product photo (Cloudinary resizes it) */
+const Thumb = ({ url }: { url?: string }) =>
+  url ? (
+    <img
+      src={imageUrl(url, THUMB)}
+      srcSet={imageSrcSet(url, THUMB)}
+      alt=""
+      width={THUMB}
+      height={THUMB}
+      loading="lazy"
+      className="w-10 h-10 rounded-lg object-cover shrink-0"
+    />
+  ) : (
+    <span className="w-10 h-10 rounded-lg bg-[var(--color-surface-muted)] shrink-0" />
+  );
 
 // Status colours (brand-aligned; readable on light and dark surfaces)
 const STATUS_COLORS: Record<OrderStatus, string> = {
@@ -108,6 +150,13 @@ const Dashboard = () => {
     };
   }, [reloadKey]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setReloadKey((k) => k + 1);
+    }, AUTO_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
   if (loading) {
     return (
       <LoadingRegion label="Loading dashboard" className="space-y-6">
@@ -150,21 +199,31 @@ const Dashboard = () => {
     link: string;
     icon: typeof Clock;
     tone: "warning" | "info" | "error";
+    /** Informational: shown, but doesn't need an admin */
+    passive?: boolean;
   }[] = [
     {
-      label: "Pending orders",
-      count: attention?.pendingOrders || 0,
-      hint: "Confirm or cancel",
-      link: "/admin/orders?status=pending",
+      label: "To confirm",
+      count: attention?.toConfirm ?? attention?.pendingOrders ?? 0,
+      hint: "Cash on delivery orders",
+      link: "/admin/orders?queue=confirm",
       icon: Clock,
       tone: "warning",
     },
     {
       label: "Ready to ship",
       count: attention?.toShip || 0,
-      hint: "Confirmed or processing",
-      link: "/admin/orders?status=confirmed",
+      hint: "Confirmed or being packed",
+      link: "/admin/orders?queue=ship",
       icon: Truck,
+      tone: "info",
+    },
+    {
+      label: "Cash to collect",
+      count: attention?.cashToCollect || 0,
+      hint: stats.cashToCollect ? formatPrice(stats.cashToCollect.amount) : "COD on its way",
+      link: "/admin/orders?queue=collect",
+      icon: Banknote,
       tone: "info",
     },
     {
@@ -178,10 +237,18 @@ const Dashboard = () => {
     {
       label: "Low stock",
       count: attention?.lowStock || 0,
-      hint: `${stats.lowStockThreshold ?? 5} or fewer left`,
-      link: "/admin/products?stock=low",
+      hint: `${stats.lowStockThreshold ?? 5} or fewer left of a size`,
+      link: "/admin/products?stock=low&status=active",
       icon: PackageX,
       tone: "warning",
+    },
+    {
+      label: "Sold out",
+      count: attention?.soldOut || 0,
+      hint: "Visible but can't be bought",
+      link: "/admin/products?stock=out&status=active",
+      icon: PackageX,
+      tone: "error",
     },
     {
       label: "Unread chats",
@@ -199,13 +266,22 @@ const Dashboard = () => {
       icon: Mail,
       tone: "info",
     },
+    {
+      label: "Awaiting payment",
+      count: attention?.awaitingPayment || 0,
+      hint: "Online orders confirm themselves once paid",
+      link: "/admin/orders?queue=awaiting",
+      icon: Hourglass,
+      tone: "info",
+      passive: true,
+    },
   ];
   const toneClasses = {
     warning: "bg-[var(--color-warning)]/10 text-[var(--color-warning)]",
     info: "bg-[var(--color-info)]/10 text-[var(--color-info)]",
     error: "bg-[var(--color-error)]/10 text-[var(--color-error)]",
   };
-  const allClear = attentionItems.every((item) => item.count === 0);
+  const allClear = attentionItems.every((item) => item.passive || item.count === 0);
 
   const recentOrders = stats.recentOrders || [];
 
@@ -223,46 +299,12 @@ const Dashboard = () => {
     }))
     .filter((entry) => entry.value > 0);
 
-  const statCards: {
-    label: string;
-    value: string | number;
-    icon: typeof Banknote;
-    color: string;
-    bg: string;
-    link?: string;
-  }[] = [
-    {
-      label: "Revenue",
-      value: formatPrice(stats.totalRevenue || 0),
-      icon: Banknote,
-      color: "text-[var(--color-success)]",
-      bg: "bg-[var(--color-success)]/10",
-    },
-    {
-      label: "Total Orders",
-      value: stats.totalOrders || 0,
-      icon: ShoppingCart,
-      color: "text-[var(--color-info)]",
-      bg: "bg-[var(--color-info)]/10",
-      link: "/admin/orders",
-    },
-    {
-      label: "Total Users",
-      value: stats.totalUsers || 0,
-      icon: Users,
-      color: "text-[var(--color-primary)]",
-      bg: "bg-[var(--color-primary-soft)]",
-      link: "/admin/users",
-    },
-    {
-      label: "Total Products",
-      value: stats.totalProducts || 0,
-      icon: Package,
-      color: "text-[var(--color-accent-strong)]",
-      bg: "bg-[var(--color-accent)]/15",
-      link: "/admin/products",
-    },
+  const periods: { label: string; key: keyof IDashboardStats["revenue"]; versus: string }[] = [
+    { label: "Today", key: "today", versus: "vs yesterday so far" },
+    { label: "This month", key: "month", versus: "vs last month so far" },
+    { label: "Last 30 days", key: "last30", versus: "vs the 30 days before" },
   ];
+  const emptyTotals: IPeriodTotals = { sales: 0, products: 0, shipping: 0, orders: 0 };
 
   return (
     <div className="space-y-6">
@@ -298,13 +340,13 @@ const Dashboard = () => {
             <span className="font-medium">All caught up — nothing waiting on you.</span>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             {attentionItems.map((item) => (
               <Link
                 key={item.label}
                 to={item.link}
                 className={`card p-4 flex items-start gap-3 transition-colors hover:border-[var(--color-primary)] ${
-                  item.count === 0 ? "opacity-60" : ""
+                  item.count === 0 || item.passive ? "opacity-70" : ""
                 }`}
               >
                 <span className={`p-2 rounded-lg shrink-0 ${toneClasses[item.tone]}`}>
@@ -321,35 +363,39 @@ const Dashboard = () => {
         )}
       </section>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        {statCards.map((stat) => {
-          const content = (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    {stat.label}
-                  </p>
-                  <p className="text-2xl font-bold mt-1">{stat.value}</p>
-                </div>
-                <div
-                  className={`w-12 h-12 ${stat.bg} rounded-lg flex items-center justify-center`}
-                >
-                  <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                </div>
+      {/* Sales (Nepal time) */}
+      <section aria-labelledby="sales-heading" className="space-y-3">
+        <h2 id="sales-heading" className="font-semibold">
+          Sales
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6">
+          {periods.map(({ label, key, versus }) => {
+            const period = stats.revenue?.[key];
+            const current = period?.current || emptyTotals;
+            const previous = period?.previous || emptyTotals;
+            return (
+              <div key={key} className="stat-card">
+                <p className="text-sm text-[var(--color-text-muted)]">{label}</p>
+                <p className="text-2xl font-bold mt-1">{formatPrice(current.sales)}</p>
+                <p className="text-xs mt-1 flex flex-wrap items-center gap-x-2">
+                  <Change current={current.sales} previous={previous.sales} />
+                  <span className="text-[var(--color-text-muted)]">{versus}</span>
+                </p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-2">
+                  {current.orders} order{current.orders === 1 ? "" : "s"} · {formatPrice(current.products)} products +{" "}
+                  {formatPrice(current.shipping)} shipping
+                </p>
               </div>
-          );
-          return stat.link ? (
-            <Link key={stat.label} to={stat.link} className="stat-card cursor-pointer">
-              {content}
-            </Link>
-          ) : (
-            <div key={stat.label} className="stat-card">
-              {content}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Sales count confirmed, shipped and delivered orders (cancelled and unpaid online orders aren't included).
+          {stats.cashToCollect?.amount
+            ? ` ${formatPrice(stats.cashToCollect.amount)} of it is cash on delivery not collected yet.`
+            : ""}
+        </p>
+      </section>
 
       {/* Festival/event campaign */}
       <CampaignCard />
@@ -443,7 +489,15 @@ const Dashboard = () => {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 8,
+                    color: "var(--color-text)",
+                  }}
+                  itemStyle={{ color: "var(--color-text)" }}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -477,7 +531,7 @@ const Dashboard = () => {
             </h2>
             {(stats.lowStockCount || 0) > 0 && (
               <Link
-                to="/admin/products?stock=low"
+                to="/admin/products?stock=low&status=active"
                 className="text-sm text-[var(--color-primary)] flex items-center gap-1"
               >
                 View all {stats.lowStockCount}
@@ -495,11 +549,7 @@ const Dashboard = () => {
                     to={`/admin/products/${product._id}/edit`}
                     className="flex items-center gap-3 p-3 hover:bg-[var(--color-surface-muted)]"
                   >
-                    {product.image ? (
-                      <img src={product.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                    ) : (
-                      <span className="w-10 h-10 rounded-lg bg-[var(--color-surface-muted)] shrink-0" />
-                    )}
+                    <Thumb url={product.image} />
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium truncate">{product.name}</span>
                       {product.lowVariants.length > 0 && (
@@ -540,11 +590,7 @@ const Dashboard = () => {
                   <span className="w-6 text-center text-sm font-semibold text-[var(--color-text-muted)]">
                     {index + 1}
                   </span>
-                  {product.image ? (
-                    <img src={product.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                  ) : (
-                    <span className="w-10 h-10 rounded-lg bg-[var(--color-surface-muted)] shrink-0" />
-                  )}
+                  <Thumb url={product.image} />
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium truncate">{product.name}</span>
                     <span className="block text-xs text-[var(--color-text-muted)]">
@@ -636,20 +682,13 @@ const Dashboard = () => {
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { label: "Add new product", link: "/admin/products/new", icon: Plus },
-          {
-            label: "View all orders",
-            link: "/admin/orders",
-            icon: ShoppingCart,
-          },
-          {
-            label: "Manage categories",
-            link: "/admin/categories",
-            icon: FolderTree,
-          },
-          { label: "View customers", link: "/admin/users", icon: Users },
+          { label: `All orders (${stats.totalOrders || 0})`, link: "/admin/orders", icon: ShoppingCart },
+          { label: `Products (${stats.totalProducts || 0} live)`, link: "/admin/products", icon: Package },
+          { label: `Customers (${stats.totalUsers || 0})`, link: "/admin/users", icon: Users },
+          { label: "Manage categories", link: "/admin/categories", icon: FolderTree },
         ].map((item) => (
           <Link
             key={item.label}

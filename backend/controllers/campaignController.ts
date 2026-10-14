@@ -7,6 +7,7 @@ import { Request, Response } from "express";
 import asyncHandler from "../utils/asyncHandler";
 import AppError from "../utils/AppError";
 import * as campaignService from "../services/campaignService";
+import { logAdminAction } from "../services/adminLogService";
 
 /**
  * @desc    The campaign running now (null when none). Admins can pass
@@ -58,6 +59,7 @@ const getOne = asyncHandler(async (req: Request, res: Response) => {
 
 const create = asyncHandler(async (req: Request, res: Response) => {
   const campaign = await campaignService.createCampaign(req.body, adminId(req));
+  await logAdminAction(req, "campaign.created", { type: "campaign", id: campaign._id, label: campaign.name });
   res.status(201).json({
     status: "success",
     message: "Campaign created",
@@ -67,6 +69,7 @@ const create = asyncHandler(async (req: Request, res: Response) => {
 
 const update = asyncHandler(async (req: Request, res: Response) => {
   const campaign = await campaignService.updateCampaign(String(req.params.id), req.body);
+  await logAdminAction(req, "campaign.updated", { type: "campaign", id: campaign._id, label: campaign.name });
   res.status(200).json({
     status: "success",
     message: "Campaign saved",
@@ -75,7 +78,8 @@ const update = asyncHandler(async (req: Request, res: Response) => {
 });
 
 const remove = asyncHandler(async (req: Request, res: Response) => {
-  await campaignService.deleteCampaign(String(req.params.id));
+  const name = await campaignService.deleteCampaign(String(req.params.id));
+  await logAdminAction(req, "campaign.deleted", { type: "campaign", id: req.params.id, label: name });
   res.status(200).json({ status: "success", message: "Campaign deleted", data: null });
 });
 
@@ -104,6 +108,7 @@ const deleteBanner = asyncHandler(async (req: Request, res: Response) => {
 
 const notify = asyncHandler(async (req: Request, res: Response) => {
   const campaign = await campaignService.notifyNow(String(req.params.id));
+  await logAdminAction(req, "campaign.notified", { type: "campaign", id: campaign._id, label: campaign.name });
   res.status(200).json({
     status: "success",
     message: "Notification sent",

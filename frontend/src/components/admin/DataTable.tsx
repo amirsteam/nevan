@@ -187,8 +187,10 @@ const DataTable = <T extends object>({
                                                 setOpenActionMenu(openActionMenu === cell(row, rowKey) ? null : cell(row, rowKey));
                                             }}
                                             className="p-1 rounded hover:bg-[var(--color-bg)]"
+                                            aria-label="More actions"
+                                            aria-expanded={openActionMenu === cell(row, rowKey)}
                                         >
-                                            <MoreVertical className="w-4 h-4" />
+                                            <MoreVertical className="w-4 h-4" aria-hidden="true" />
                                         </button>
 
                                         {/* Actions dropdown */}

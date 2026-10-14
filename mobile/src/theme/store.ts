@@ -3,7 +3,7 @@
  * (and frontend/src/utils/nepal.ts) the app needs. Kept as a copy because
  * Metro doesn't bundle files outside mobile/. Keep in sync with:
  *   - shared/store.ts (contact details, free-shipping threshold)
- *   - calculateShippingCost in backend/services/orderService.ts (what the
+ *   - calculateShippingCost in backend/utils/shipping.ts (what the
  *     customer is actually charged)
  */
 
@@ -38,9 +38,17 @@ const PROVINCE_RATES: Record<number, number> = {
   7: 300,
 };
 
-/** Shipping cost in NPR (preview; the API computes the real charge the same way) */
+// Default free-delivery districts (the shop is in Panauti, Kavre). Admins can
+// change these; checkout shows the API's quote, this only fills in until then.
+const FREE_DISTRICTS = ["kavrepalanchok"];
+
+/**
+ * Shipping cost in NPR with the default settings (preview until the API's
+ * quote arrives; admins can change rates on the web admin).
+ */
 export const calculateShippingCost = (subtotal: number, province: number, district: string): number => {
   if (subtotal >= FREE_SHIPPING_THRESHOLD) return 0;
+  if (FREE_DISTRICTS.includes(district.trim().toLowerCase())) return 0;
   if (province === 3 && VALLEY_DISTRICTS.includes(district.trim().toLowerCase())) return 100;
   return PROVINCE_RATES[province] || 200;
 };

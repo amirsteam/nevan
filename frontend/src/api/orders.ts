@@ -8,6 +8,7 @@ import type {
   IApiResponse,
   IOrder,
   ICreateOrderData,
+  IShippingQuote,
   IPaymentMethod,
   IPaymentInitiateResponse,
   IPaymentStatusCheck,
@@ -25,6 +26,17 @@ export const ordersAPI = {
     orderData: ICreateOrderData,
   ): Promise<IApiResponse<{ order: IOrder }>> => {
     const response = await api.post("/orders", orderData);
+    return response.data;
+  },
+
+  /** Shipping for the current cart to an address (the API's own calculation) */
+  getShippingQuote: async (destination: {
+    province: number;
+    district: string;
+    /** Matters for town-level free-delivery areas */
+    city?: string;
+  }): Promise<IApiResponse<IShippingQuote>> => {
+    const response = await api.post("/orders/shipping-quote", destination);
     return response.data;
   },
 

@@ -13,6 +13,10 @@ import AppError from "../utils/AppError";
 import { sendOrderStatusNotification } from "./pushNotificationService";
 import { getLiveCampaign } from "./campaignService";
 import { priceFor } from "../utils/campaignPricing";
+import { DAY_MS, nepalDateStart } from "../utils/nepalTime";
+import { calculateShippingCost, ShippingDestination } from "../utils/shipping";
+import { getShippingSettings } from "./shippingService";
+import { getCart } from "./cartService";
 
 interface ShippingAddress {
   name: string;
@@ -45,6 +49,11 @@ interface GetOrdersOptions {
   search?: string;
   // Cancelled but paid (payment arrived after cancellation): needs a manual refund
   refundRequired?: string | boolean;
+  // Admin work queue, see ORDER_QUEUE_FILTERS
+  queue?: string;
+  // Placed between these Nepal calendar dates (YYYY-MM-DD, both included)
+  from?: string;
+  to?: string;
 }
 
 const ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
@@ -59,9 +68,24 @@ const REFUND_REQUIRED_FILTER = {
   $or: [{ status: "cancelled", "payment.status": "paid" }, { "payment.refundRequired": true }],
 };
 
+/**
+ * Admin work queues: the dashboard cards and sidebar badge count these, and
+ * the order list shows the same orders for ?queue=…
+ */
+const ORDER_QUEUE_FILTERS: Record<string, Record<string, unknown>> = {
+  // COD orders to confirm (online orders confirm themselves once paid)
+  confirm: { status: "pending", $or: [{ "payment.method": "cod" }, { "payment.status": "paid" }] },
+  // Online orders whose payment hasn't arrived yet; nothing to do but wait
+  awaiting: { status: "pending", "payment.method": { $ne: "cod" }, "payment.status": { $ne: "paid" } },
+  // Confirmed or being packed: ready to hand to the courier
+  ship: { status: { $in: ["confirmed", "processing"] } },
+  // COD orders on their way whose cash isn't marked collected yet
+  collect: { "payment.method": "cod", "payment.status": { $ne: "paid" }, status: { $in: ["confirmed", "processing", "shipped"] } },
+};
+
 /** Mongo filter for the admin order list; unknown values are ignored */
 const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<string, unknown>> => {
-  const { status, paymentStatus, paymentMethod, search, refundRequired } = options;
+  const { status, paymentStatus, paymentMethod, search, refundRequired, queue, from, to } = options;
   const filter: Record<string, unknown> = {};
   const and: Record<string, unknown>[] = [];
 
@@ -74,6 +98,20 @@ const buildAdminOrderFilter = async (options: GetOrdersOptions): Promise<Record<
   }
   if (refundRequired === true || refundRequired === "true") {
     and.push(REFUND_REQUIRED_FILTER);
+  }
+  if (typeof queue === "string" && ORDER_QUEUE_FILTERS[queue]) {
+    and.push(ORDER_QUEUE_FILTERS[queue]);
+  }
+  const fromDate = nepalDateStart(from);
+  const toDate = nepalDateStart(to);
+  if (fromDate || toDate) {
+    and.push({
+      createdAt: {
+        ...(fromDate ? { $gte: fromDate } : {}),
+        // "to" includes that whole day
+        ...(toDate ? { $lt: new Date(toDate.getTime() + DAY_MS) } : {}),
+      },
+    });
   }
 
   if (typeof search === "string" && search.trim()) {
@@ -198,7 +236,7 @@ const createOrder = async (
   }
 
   // Calculate totals
-  const shippingCost = calculateShippingCost(shippingAddress, subtotal);
+  const shippingCost = calculateShippingCost(shippingAddress, subtotal, await getShippingSettings());
   const discount = 0; // Implement coupon logic here
   const tax = 0; // Nepal doesn't have sales tax for most products
   const total = subtotal + shippingCost - discount + tax;
@@ -558,38 +596,20 @@ const flagDuplicatePayment = async (order: IOrder, transactionId: string): Promi
 };
 
 /**
- * Calculate shipping cost based on location
+ * Shipping for the user's current cart to an address: exactly what createOrder
+ * will charge (same cart, same sale prices), for checkout to show
  */
-const calculateShippingCost = (
-  address: ShippingAddress,
-  subtotal: number,
-): number => {
-  // Free shipping for orders over NPR 5000
-  if (subtotal >= 5000) return 0;
-
-  // Kathmandu Valley (province 3): NPR 100. Keep in sync with
-  // calculateShippingCost in frontend/src/utils/helpers.ts (checkout preview).
-  if (
-    address.province === 3 &&
-    ["kathmandu", "lalitpur", "bhaktapur"].includes(
-      String(address.district || "").trim().toLowerCase(),
-    )
-  ) {
-    return 100;
-  }
-
-  // Other areas: NPR 150-300 based on province
-  const shippingRates: Record<number, number> = {
-    1: 250, // Province 1 (Eastern)
-    2: 250, // Madhesh
-    3: 150, // Bagmati
-    4: 200, // Gandaki
-    5: 250, // Lumbini
-    6: 300, // Karnali
-    7: 300, // Sudurpashchim
+const getShippingQuote = async (
+  userId: string,
+  destination: ShippingDestination,
+): Promise<{ subtotal: number; shippingCost: number; freeShippingThreshold: number }> => {
+  const { subtotal } = (await getCart(userId)) as unknown as { subtotal: number };
+  const settings = await getShippingSettings();
+  return {
+    subtotal,
+    shippingCost: calculateShippingCost(destination, subtotal, settings),
+    freeShippingThreshold: settings.freeShippingThreshold,
   };
-
-  return shippingRates[address.province] || 200;
 };
 
 /**
@@ -704,6 +724,22 @@ const getAllOrders = async (
   return { orders, pagination };
 };
 
+/** Most orders one export returns */
+const MAX_EXPORT_ORDERS = 5000;
+
+/** Every order matching the admin list filters (not just one page), for CSV export */
+const exportOrders = async (options: GetOrdersOptions = {}): Promise<IOrder[]> => {
+  const filter = await buildAdminOrderFilter(options);
+  return Order.find(filter).sort({ createdAt: -1 }).limit(MAX_EXPORT_ORDERS).populate("user", "name email phone");
+};
+
+/** Internal note on an order, for admins only (never shown to the customer) */
+const updateAdminNote = async (orderId: string, note: string): Promise<IOrder> => {
+  const order = await Order.findByIdAndUpdate(orderId, { $set: { notes: note } }, { new: true });
+  if (!order) throw new AppError("Order not found", 404);
+  return order;
+};
+
 /**
  * Update order status (Admin)
  */
@@ -718,6 +754,15 @@ const updateOrderStatus = async (
     throw new AppError("Order not found", 404);
   }
 
+  // Online orders confirm themselves when the payment arrives; confirming one
+  // by hand would ship it unpaid (and stop the unpaid-order expiry)
+  if (status === "confirmed" && order.payment.method !== "cod" && order.payment.status !== "paid") {
+    throw new AppError(
+      `Waiting for the ${order.payment.method === "esewa" ? "eSewa" : "online"} payment — the order confirms itself once it's paid`,
+      400,
+    );
+  }
+
   if (status === "cancelled") {
     const from = Object.keys(ORDER_TRANSITIONS).filter((s) => ORDER_TRANSITIONS[s].includes("cancelled"));
     if (!from.includes(order.status)) {
@@ -729,6 +774,10 @@ const updateOrderStatus = async (
     }
   } else {
     await (order as any).updateOrderStatus(status, adminId, note);
+    // Delivering a COD order collects the cash: complete its payment record too
+    if (status === "delivered" && order.payment.method === "cod") {
+      await completeCodPaymentRecord(order, adminId);
+    }
   }
 
   // Send push notification to user about status change
@@ -745,6 +794,75 @@ const updateOrderStatus = async (
   }
 
   return order;
+};
+
+/** Mark an order's COD payment record collected (no-op if already done) */
+const completeCodPaymentRecord = async (order: IOrder, adminId: string): Promise<void> => {
+  const payment = await Payment.findOne({ order: order._id, gateway: "cod" });
+  if (payment && payment.status !== "completed") {
+    await (payment as any).markComplete(`COD-${order.orderNumber}`, { collectedBy: adminId });
+  }
+};
+
+/**
+ * Record that the money owed back on an order was refunded (outside the
+ * system, e.g. through eSewa or in cash). A paid order that was cancelled is
+ * refunded in full; an open order paid twice gets only the extra payment back
+ * and stays paid. One conditional update, so a refund is recorded once.
+ */
+const recordRefund = async (
+  orderId: string,
+  adminId: string,
+  reference: string,
+  note: string,
+): Promise<IOrder> => {
+  const now = new Date();
+  const history = (status: string, text: string) => ({
+    statusHistory: { status, changedBy: adminId, changedAt: now, note: text },
+  });
+  const ref = reference ? ` (ref ${reference})` : "";
+  const extra = note ? ` — ${note}` : "";
+
+  // Cancelled after payment: everything goes back
+  const cancelled = await Order.findOneAndUpdate(
+    { _id: orderId, status: "cancelled", "payment.status": "paid" },
+    {
+      $set: {
+        "payment.status": "refunded",
+        "payment.refundRequired": false,
+        "payment.refundedAt": now,
+        "payment.refundReference": reference || undefined,
+      },
+      $push: history("cancelled", `Refunded in full${ref}${extra}`),
+    },
+    { new: true },
+  );
+  if (cancelled) {
+    const payments = await Payment.find({ order: orderId, status: "completed" });
+    for (const payment of payments) await (payment as any).processRefund(undefined, note || "Order cancelled after payment");
+    return cancelled;
+  }
+
+  // Paid twice: only the extra payment goes back; the order stays paid
+  const current = await Order.findById(orderId).select("status payment");
+  if (!current) throw new AppError("Order not found", 404);
+  const duplicate = await Order.findOneAndUpdate(
+    { _id: orderId, "payment.refundRequired": true },
+    {
+      $set: { "payment.refundRequired": false, "payment.refundedAt": now, "payment.refundReference": reference || undefined },
+      $push: history(current.status, `Extra payment refunded${ref}${extra}`),
+    },
+    { new: true },
+  );
+  if (!duplicate) throw new AppError("This order has no refund owed (it may have been recorded already)", 409);
+
+  const extraPayments = await Payment.find({
+    order: orderId,
+    status: "completed",
+    "gatewayResponse.transactionId": { $ne: current.payment.transactionId },
+  });
+  for (const payment of extraPayments) await (payment as any).processRefund(undefined, note || "Duplicate payment");
+  return duplicate;
 };
 
 interface BulkStatusResult {
@@ -783,17 +901,23 @@ const bulkUpdateOrderStatus = async (
 };
 
 export {
+  ORDER_QUEUE_FILTERS,
   REFUND_REQUIRED_FILTER,
   bulkUpdateOrderStatus,
   createOrder,
+  getShippingQuote,
   getUserOrders,
   getOrderById,
   cancelOrder,
   claimPayment,
+  completeCodPaymentRecord,
   expireUnpaidOrders,
   flagDuplicatePayment,
   releaseOrderStock,
   reserveOrderStock,
   getAllOrders,
+  exportOrders,
+  updateAdminNote,
+  recordRefund,
   updateOrderStatus,
 };

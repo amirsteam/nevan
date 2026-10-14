@@ -1,5 +1,6 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
+import { cache } from '../utils/cache';
 
 // Deterministic secrets for tests (never read from a developer's .env)
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test-access-secret';
@@ -26,6 +27,8 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  // The database is emptied below, so nothing cached from it may survive
+  cache.clear();
   const collections = mongoose.connection.collections;
   for (const key in collections) {
     const collection = collections[key];
