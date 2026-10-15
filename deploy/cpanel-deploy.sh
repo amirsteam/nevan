@@ -83,6 +83,12 @@ source "$NODEVENV_ACTIVATE"
 set -u
 echo "    node $(node -v), npm $(npm -v)"
 
+# Shared hosting caps processes/threads per account (CloudLinux): native build
+# tools that start one thread per CPU core (Tailwind's engine uses rayon) abort
+# with "Resource temporarily unavailable". Keep their thread pools small.
+export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-1}"
+export UV_THREADPOOL_SIZE="${UV_THREADPOOL_SIZE:-2}"
+
 # Copy helpers: rsync when available, cp otherwise
 replace_dir() { # replace dst with exactly the contents of src
   if command -v rsync >/dev/null; then run rsync -a --delete "$1/" "$2/"
