@@ -583,6 +583,8 @@ export interface IPublicCampaign {
   greeting: string;
   emoji: string;
   ctaLabel: string;
+  // Show the sale popup to each visitor once while live (default true)
+  showPopup?: boolean;
   bannerDesktop: string | null;
   bannerMobile: string | null;
   startsAt: string;
@@ -610,6 +612,8 @@ export interface IAdminCampaign {
   emoji?: string;
   palette: string;
   ctaLabel: string;
+  // Show the sale popup to each visitor once while live (default true)
+  showPopup?: boolean;
   bannerDesktop?: { url: string; publicId?: string } | null;
   bannerMobile?: { url: string; publicId?: string } | null;
   startsAt: string;

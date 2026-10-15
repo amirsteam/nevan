@@ -4,7 +4,8 @@
  */
 import type { ReactNode } from "react";
 import { Heart, Package, PartyPopper, Truck } from "lucide-react";
-import logo from "../../assets/logo.png";
+// Store logo with its wordmark (640×342, cropped from the 1024px app icon); drawn on white
+import logo from "../../assets/nevan-handicraft-logo.webp";
 import { RETURN_WINDOW_DAYS } from "../../config/store";
 import { useShippingSettings } from "../../hooks/useShippingSettings";
 import { formatPrice } from "../../utils/helpers";
@@ -21,7 +22,10 @@ const Benefits = () => {
   return (
     <aside className="hidden lg:flex lg:order-first flex-col gap-10 bg-[var(--color-primary-soft)] p-10 xl:p-12">
       <div>
-        <img src={logo} alt="" className="h-14 w-auto mb-6" />
+        {/* On a white card so it keeps its colours on the pink panel (same as the welcome popup) */}
+        <span className="mb-6 inline-flex rounded-2xl bg-white px-4 py-2 shadow-[var(--shadow-md)]">
+          <img src={logo} alt="" width={640} height={342} className="h-16 w-auto xl:h-20" />
+        </span>
         <h2 className="text-2xl font-bold mb-2">Made for little ones, handmade in Nepal</h2>
         <p className="text-[var(--color-text-muted)]">One account for your orders, wishlist and addresses.</p>
       </div>

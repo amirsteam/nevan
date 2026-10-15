@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useId, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Check, CheckCheck, Trash2, Package, MessageCircle, Tag, Loader2 } from "lucide-react";
+import { Bell, BellRing, Check, CheckCheck, Trash2, Package, MessageCircle, Tag, Loader2 } from "lucide-react";
 import { notificationsAPI } from "../api/notifications";
 import { useAppDispatch } from "../store/hooks";
 import { openChat } from "../store/chatSlice";
@@ -164,12 +164,12 @@ const NotificationBell = () => {
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2.5 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors"
+        className="relative p-2 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors"
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
         aria-expanded={open}
         aria-controls={panelId}
       >
-        <Bell className="w-5 h-5" aria-hidden="true" />
+        <BellRing className="w-6 h-6" strokeWidth={1.75} aria-hidden="true" />
         <CountBadge count={unreadCount} tone="alert" />
       </button>
 

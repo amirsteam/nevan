@@ -107,7 +107,8 @@ const productBody = {
   required: ["name", "description", "category"],
   description:
     "With variants, `price`/`comparePrice` are derived from the cheapest variant and `stock` is their total; " +
-    "`ageGroups` follow the sizes when they're on the age scale. Without variants `price` (> 0) is required.",
+    "`ageGroups` follow the sizes when they're on the scale (Small 0-12 months, Medium 1-3 years, Large 3-5 years, " +
+    "XL 5-7 years; One Size and custom sizes set no band). Without variants `price` (> 0) is required.",
   properties: {
     name: { type: "string", maxLength: 100 },
     description: { type: "string", maxLength: 2000 },
@@ -124,8 +125,8 @@ const productBody = {
     ageRecommendation: { type: "string" },
     ageGroups: {
       type: "array",
-      description: "Age bands used by the storefront age filter",
-      items: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] },
+      description: "Age bands used by the storefront age filter (older bands are moved to these on save)",
+      items: { type: "string", enum: ["0-12 Months", "1-3 Years", "3-5 Years", "5-7 Years"] },
     },
     gender: { type: "string", enum: ["boy", "girl", "unisex"], nullable: true },
     metaTitle: { type: "string" },
@@ -372,7 +373,7 @@ const openApiSpec = {
           { name: "search", in: "query", schema: { type: "string" } },
           { name: "minPrice", in: "query", schema: { type: "number" } },
           { name: "maxPrice", in: "query", schema: { type: "number" } },
-          { name: "age", in: "query", description: "Age band (products tagged with it)", schema: { type: "string", enum: ["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years", "4-6 Years", "6-10 Years"] } },
+          { name: "age", in: "query", description: "Age band (products tagged with it); older bands such as 2-4 Years show the bands they overlap", schema: { type: "string", enum: ["0-12 Months", "1-3 Years", "3-5 Years", "5-7 Years"] } },
           { name: "gender", in: "query", description: "boy/girl also include unisex products", schema: { type: "string", enum: ["boy", "girl", "unisex"] } },
           { name: "campaign", in: "query", description: "Campaign slug: only the products its sale/collection covers (sale page)", schema: { type: "string" } },
           {
@@ -659,6 +660,7 @@ const openApiSpec = {
               emoji: { type: "string" },
               palette: { type: "string", enum: ["brand", "marigold", "diyo", "sindoor", "holi", "pine", "himal", "teej"] },
               ctaLabel: { type: "string", maxLength: 30 },
+              showPopup: { type: "boolean", description: "Show the sale popup to each visitor once while live (default true)" },
               startsAt: { type: "string", format: "date-time" },
               endsAt: { type: "string", format: "date-time" },
               status: { type: "string", enum: ["draft", "published"] },
@@ -691,6 +693,7 @@ const openApiSpec = {
               emoji: { type: "string" },
               palette: { type: "string", enum: ["brand", "marigold", "diyo", "sindoor", "holi", "pine", "himal", "teej"] },
               ctaLabel: { type: "string", maxLength: 30 },
+              showPopup: { type: "boolean", description: "Show the sale popup to each visitor once while live (default true)" },
               startsAt: { type: "string", format: "date-time" },
               endsAt: { type: "string", format: "date-time" },
               status: { type: "string", enum: ["draft", "published"] },

@@ -20,6 +20,7 @@ vi.mock("../../context/AuthContext", () => ({ useAuth: () => auth.value }));
 const socket = vi.hoisted(() => ({ request: vi.fn(), send: vi.fn(), connect: vi.fn() }));
 vi.mock("../../services/socketService", () => ({ default: socket }));
 vi.mock("../../hooks/useChatConnection", () => ({ refreshRooms: vi.fn() }));
+vi.mock("../../api/products", () => ({ productsAPI: { getFeatured: vi.fn().mockResolvedValue({ data: { products: [] } }) } }));
 vi.mock("react-hot-toast", () => ({ default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 const guestRoom: ChatRoomSummary = {
@@ -81,14 +82,36 @@ describe("ChatWindow", () => {
     expect(socket.send).toHaveBeenCalledWith("message-read", { roomId: "room1" });
   });
 
-  it("shows a returning customer their earlier messages", async () => {
+  it("shows a returning customer their conversation from the chat home", async () => {
     auth.value = { user: { _id: "c1", role: "customer", name: "Asha" }, isAuthenticated: true, loading: false };
     socket.request.mockImplementation(async (event: string) =>
       event === "join-chat" ? { success: true, roomId: "room1", status: "open", messages: history, hasMore: false } : { success: true },
     );
+    const user = userEvent.setup();
     renderWindow();
 
+    expect(screen.getByText(/Hi Asha, message us with any questions/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: /Your conversation/ }));
+
     expect(await screen.findByText("Do you have the muslin romper in 6-12 months?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to help and suggested questions" }));
+    expect(screen.getByRole("button", { name: "Track my order" })).toBeInTheDocument();
+  });
+
+  it("sends a question typed on the chat home to the team", async () => {
+    auth.value = { user: { _id: "c1", role: "customer", name: "Asha" }, isAuthenticated: true, loading: false };
+    socket.request.mockImplementation(async (event: string) =>
+      event === "join-chat" ? { success: true, roomId: "room1", status: "open", messages: [], hasMore: false } : { success: true },
+    );
+    const user = userEvent.setup();
+    renderWindow();
+
+    await user.type(screen.getByRole("textbox", { name: "Message the Nevan team" }), "Do you make custom sizes?{Enter}");
+
+    await vi.waitFor(() =>
+      expect(socket.request).toHaveBeenCalledWith("send-message", { roomId: "room1", content: "Do you make custom sizes?" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
   });
 
   it("renders inside the admin Live chat page without a close button", () => {

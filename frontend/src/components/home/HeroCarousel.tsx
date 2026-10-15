@@ -179,7 +179,7 @@ const HeroCollage = ({ products, loadImages }: { products: IProduct[]; loadImage
     })}
     <span className="absolute z-30 right-0 xl:right-4 bottom-10 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium shadow-[var(--shadow-md)]">
       <Heart className="w-4 h-4 fill-[var(--color-primary)] text-[var(--color-primary)]" />
-      Newborn to 10 years
+      Newborn to 7 years
     </span>
   </div>
 );
@@ -226,7 +226,7 @@ const BrandSlide = ({ collage, backdrop, loadImages, priority }: BrandSlideProps
         </h1>
         {/* Full-strength text below lg, where it sits over the product photo */}
         <p className="text-base md:text-lg text-[var(--color-text)] lg:text-[var(--color-text-muted)] mb-6 max-w-xl">
-          Gentle fabrics and thoughtful designs from newborn to 10 years.
+          Gentle fabrics and thoughtful designs from newborn to 7 years.
         </p>
         <div className="flex flex-wrap gap-3 mb-6">
           <Link to="/products" className="btn btn-primary px-6 py-3 text-base">

@@ -10,6 +10,7 @@
 import type { IProduct } from "../../../types";
 import {
   ageGroupsForSizes,
+  currentAgeGroups,
   paletteHex,
   productColors,
   productSizes,
@@ -163,7 +164,8 @@ export const fromProduct = (product?: IProduct | null): EditorState => {
       ageRecommendation: product?.ageRecommendation || "",
       category,
       gender: product?.gender || "",
-      ageGroups: product?.ageGroups || [],
+      // Tags from the older age bands move to the current ones (the API accepts only these)
+      ageGroups: currentAgeGroups(product?.ageGroups || []),
       isFeatured: product?.isFeatured || false,
       isActive: product ? product.isActive !== false : true,
       metaTitle: product?.metaTitle || "",

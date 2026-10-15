@@ -6,11 +6,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Award, Baby, Heart, Leaf, Mail, MapPin, MessageCircle, Phone, Truck } from "lucide-react";
-import { FaFacebook, FaInstagram } from "react-icons/fa";
 import Breadcrumb from "../components/ui/Breadcrumb";
 import ReviewsSection from "../components/home/ReviewsSection";
 import { reviewsAPI, type FeaturedReview } from "../api/contact";
 import { CONTACT, FABRIC, STORE_SLOGAN } from "../config/store";
+import { SOCIAL_LINKS } from "../config/social";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useShippingSettings } from "../hooks/useShippingSettings";
 import { freeAreaNames } from "../utils/shippingText";
@@ -173,8 +173,8 @@ const About = () => {
               <img
                 src={certificate}
                 alt={`${AWARD} certificate (सम्मान-पत्र) from the Office of Industry and Commerce, Dhulikhel, Kavrepalanchok, presented to ${FOUNDER}, proprietor of Nevan Handicraft`}
-                width={720}
-                height={501}
+                width={1600}
+                height={1126}
                 loading="lazy"
                 decoding="async"
                 className="w-full h-auto"
@@ -279,15 +279,14 @@ const About = () => {
                 {CONTACT.email}
               </a>
             </li>
-            <li className="flex gap-6">
-              <a href={CONTACT.facebook} target="_blank" rel="noopener noreferrer" className={contactRow}>
-                <FaFacebook className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
-                Facebook
-              </a>
-              <a href={CONTACT.instagram} target="_blank" rel="noopener noreferrer" className={contactRow}>
-                <FaInstagram className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
-                Instagram
-              </a>
+            <li className="flex flex-wrap gap-x-6">
+              {SOCIAL_LINKS.map(({ network, href, logo }) => (
+                <a key={network} href={href} target="_blank" rel="noopener noreferrer" className={contactRow}>
+                  <img src={logo} alt="" width={24} height={24} loading="lazy" className="w-6 h-6 shrink-0" />
+                  {network}
+                  <span className="sr-only">(opens in a new tab)</span>
+                </a>
+              ))}
             </li>
           </ul>
         </div>

@@ -8,7 +8,7 @@ import app from "../app";
 import Product from "../models/Product";
 import Category from "../models/Category";
 import * as productService from "../services/productService";
-import { publicIdFromUrl, sortSizes, ageGroupsForSizes } from "../utils/productVariants";
+import { publicIdFromUrl, sortSizes, ageGroupsForSizes, applySizeRenames, currentAgeGroups } from "../utils/productVariants";
 import { createUser, createProduct } from "./helpers";
 
 jest.mock("../config/cloudinary", () => ({
@@ -55,16 +55,58 @@ describe("helpers", () => {
     expect(publicIdFromUrl("https://images.unsplash.com/photo-1?w=600")).toBeNull();
   });
 
-  it("orders sizes by age and maps them to Shop by Age bands", () => {
-    expect(sortSizes(["2-3 Years", "90 cm", "0-3 Months", "One Size", "12-18 Months"])).toEqual([
-      "0-3 Months",
-      "12-18 Months",
-      "2-3 Years",
+  it("orders sizes by age and maps them to Shop by Age bands (up to 7 years)", () => {
+    expect(sortSizes(["XL (5-7 years)", "90 cm", "Small (0-12 months)", "One Size", "Medium (1-3 years)", "XXL Size (8-10 yrs)"])).toEqual([
+      "Small (0-12 months)",
+      "Medium (1-3 years)",
+      "XL (5-7 years)",
+      "XXL Size (8-10 yrs)",
       "One Size",
       "90 cm",
     ]);
-    expect(ageGroupsForSizes(["12-18 Months", "18-24 Months", "2-3 Years"])).toEqual(["1-2 Years", "2-4 Years"]);
-    expect(ageGroupsForSizes(["90 cm"])).toEqual([]);
+    expect(ageGroupsForSizes(["Medium (1-3 years)", "Large (3-5 years)"])).toEqual(["1-3 Years", "3-5 Years"]);
+    // Older names map to the new bands; XXL (past 7 years), One Size and custom sizes to none
+    expect(ageGroupsForSizes(["Medium Size (1-4 yrs)", "XL Size (6-8 yrs)"])).toEqual(["1-3 Years", "5-7 Years"]);
+    expect(ageGroupsForSizes(["XXL Size (8-10 yrs)", "One Size", "90 cm"])).toEqual([]);
+  });
+
+  it("moves older age bands to the ones they overlap", () => {
+    expect(currentAgeGroups(["2-4 Years", "0-3 Months", "1-3 Years"])).toEqual(["0-12 Months", "1-3 Years", "3-5 Years"]);
+    expect(currentAgeGroups(["Teen"])).toEqual([]);
+  });
+
+  it("renames older sizes to the client's scale without touching anything else", () => {
+    const id = new mongoose.Types.ObjectId();
+    const product: any = {
+      sizes: ["Small Size (0-1 yrs)", "Medium Size (1-4 yrs)", "XXL Size (8-10 yrs)"],
+      variants: [
+        { _id: id, size: "Small Size (0-1 yrs)", color: "Red", price: 900, stock: 4, sku: "R-S" },
+        { size: "medium size (1-4 yrs)", color: "Red", price: 950, stock: 2 },
+        { size: "XXL Size (8-10 yrs)", color: "Red", price: 1100, stock: 1 },
+        { size: "Standard Size", color: "Blue", price: 300, stock: 9 },
+      ],
+    };
+
+    const { renamed, conflict } = applySizeRenames(product);
+
+    expect(conflict).toBeUndefined();
+    expect(product.variants.map((v: any) => v.size)).toEqual(["Small (0-12 months)", "Medium (1-3 years)", "XXL Size (8-10 yrs)", "One Size"]);
+    expect(product.sizes).toEqual(["Small (0-12 months)", "Medium (1-3 years)", "XXL Size (8-10 yrs)"]);
+    expect(product.variants[0]).toMatchObject({ _id: id, price: 900, stock: 4, sku: "R-S" });
+    expect(renamed.map((r) => r.to)).toEqual(["Small (0-12 months)", "Medium (1-3 years)", "One Size"]);
+  });
+
+  it("leaves a product alone when a rename would duplicate a size and colour", () => {
+    const product: any = {
+      variants: [
+        { size: "Standard Size", color: "Red", price: 300, stock: 1 },
+        { size: "One Size", color: "red", price: 300, stock: 1 },
+      ],
+    };
+    const { renamed, conflict } = applySizeRenames(product);
+    expect(conflict).toMatch(/twice/);
+    expect(renamed).toEqual([]);
+    expect(product.variants.map((v: any) => v.size)).toEqual(["Standard Size", "One Size"]);
   });
 });
 
@@ -100,7 +142,7 @@ describe("creating a product with sizes and colours", () => {
     ]);
     expect(product.variants.map((v: any) => v.color)).toEqual(["Dusty Rose", "Dusty Rose", "Sage", "Sage"]);
     expect(product.variants[3].comparePrice).toBeUndefined();
-    expect(product.ageGroups).toEqual(["0-3 Months", "6-12 Months"]);
+    expect(product.ageGroups).toEqual(["0-12 Months"]);
   });
 
   it("rejects a size priced at 0 and a single product without a price", async () => {
@@ -157,7 +199,7 @@ describe("older products with a photo per variant", () => {
     expect(saved!.variants.map((v) => v.image)).toEqual([cloud("red-a"), cloud("red-a"), cloud("blue")]);
     // The old product-wide compare price now sits on each size it was higher than
     expect(saved!.variants.map((v) => v.comparePrice)).toEqual([1600, 1600, 1600]);
-    expect(saved!.ageGroups).toEqual(["0-3 Months", "3-6 Months", "6-12 Months", "1-2 Years", "2-4 Years"]);
+    expect(saved!.ageGroups).toEqual(["0-12 Months", "1-3 Years"]);
   });
 
   it("get photos already in the gallery tagged with their colour; photos shared by colours stay general", async () => {
@@ -328,6 +370,8 @@ describe("product form options", () => {
       variants: [
         { size: "90 cm", color: "Marigold", price: 900, stock: 1 },
         { size: "90 cm", color: "Red", price: 900, stock: 1 },
+        // An older size stays on its product but isn't suggested for new ones
+        { size: "XXL Size (8-10 yrs)", color: "Red", price: 950, stock: 1 },
       ],
     });
     const res = await request(app)
@@ -335,7 +379,13 @@ describe("product form options", () => {
       .set("Authorization", `Bearer ${await adminToken()}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data.sizes.builtIn[0]).toBe("0-3 Months");
+    expect(res.body.data.sizes.builtIn).toEqual([
+      "Small (0-12 months)",
+      "Medium (1-3 years)",
+      "Large (3-5 years)",
+      "XL (5-7 years)",
+      "One Size",
+    ]);
     expect(res.body.data.sizes.custom).toEqual(["90 cm"]);
     expect(res.body.data.colors.palette).toContainEqual({ name: "Red", hex: "#c62828" });
     // Red is already in the palette, so only Marigold is listed as used

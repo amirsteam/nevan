@@ -11,14 +11,30 @@ import { createUser, createProduct } from "./helpers";
 
 describe("Product age and gender filters", () => {
   it("returns only products tagged with the age band", async () => {
-    const newborn = await createProduct({ name: "Newborn Romper", ageGroups: ["0-3 Months", "3-6 Months"] });
-    await createProduct({ name: "Toddler Jacket", ageGroups: ["1-2 Years"] });
+    const newborn = await createProduct({ name: "Newborn Romper", ageGroups: ["0-12 Months"] });
+    await createProduct({ name: "Toddler Jacket", ageGroups: ["1-3 Years"] });
     await createProduct({ name: "Untagged Cap" });
 
-    const res = await request(app).get("/api/v1/products").query({ age: "3-6 Months" });
+    const res = await request(app).get("/api/v1/products").query({ age: "0-12 Months" });
 
     expect(res.status).toBe(200);
     expect(res.body.data.products.map((p: any) => p._id)).toEqual([String(newborn._id)]);
+  });
+
+  it("keeps links to the older age bands working", async () => {
+    const toddler = await createProduct({ name: "Toddler Jacket", ageGroups: ["1-3 Years"] });
+    const preschool = await createProduct({ name: "Preschool Kurta", ageGroups: ["3-5 Years"] });
+    await createProduct({ name: "Big Kid Set", ageGroups: ["5-7 Years"] });
+
+    // "2-4 Years" overlaps 1-3 and 3-5 years
+    const res = await request(app).get("/api/v1/products").query({ age: "2-4 Years" });
+
+    expect(res.body.data.products.map((p: any) => p._id).sort()).toEqual([String(toddler._id), String(preschool._id)].sort());
+  });
+
+  it("moves tags from the older age bands to the current ones when a product is saved", async () => {
+    const product = await createProduct({ name: "Old Romper", ageGroups: ["3-6 Months", "6-10 Years"] });
+    expect(product.ageGroups).toEqual(["0-12 Months", "5-7 Years"]);
   });
 
   it("includes unisex products for boy/girl, and only unisex for unisex", async () => {
@@ -72,9 +88,9 @@ describe("Product age and gender filters", () => {
     const good = await request(app)
       .put(`/api/v1/admin/products/${product._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ ageGroups: ["0-3 Months"], gender: "girl" });
+      .send({ ageGroups: ["0-12 Months"], gender: "girl" });
     expect(good.status).toBe(200);
-    expect(good.body.data.product.ageGroups).toEqual(["0-3 Months"]);
+    expect(good.body.data.product.ageGroups).toEqual(["0-12 Months"]);
     expect(good.body.data.product.gender).toBe("girl");
 
     // Clearing gender unsets it

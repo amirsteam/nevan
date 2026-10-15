@@ -3,7 +3,7 @@
  * Same rules as backend/utils/productVariants.ts.
  */
 import { AGE_GROUPS } from "../config/store";
-import { COLOR_PALETTE, SIZE_AGE_GROUPS, SIZE_ORDER } from "./constants";
+import { COLOR_PALETTE, LEGACY_AGE_GROUPS, SIZE_AGE_GROUPS, SIZE_ORDER } from "./constants";
 import type { IImage, IProduct } from "../types";
 
 export const sameName = (a: string | null | undefined, b: string | null | undefined): boolean =>
@@ -27,6 +27,17 @@ export const ageGroupsForSizes = (sizes: string[]): string[] => {
   for (const size of sizes) {
     const key = Object.keys(SIZE_AGE_GROUPS).find((s) => sameName(s, size));
     if (key) SIZE_AGE_GROUPS[key].forEach((group) => covered.add(group));
+  }
+  return AGE_GROUPS.filter((group) => covered.has(group));
+};
+
+/** Age tags on the current bands: older bands become the ones they overlap, unknown ones are dropped */
+export const currentAgeGroups = (groups: readonly string[]): string[] => {
+  const covered = new Set<string>();
+  for (const group of groups) {
+    const current = AGE_GROUPS.find((g) => sameName(g, group));
+    if (current) covered.add(current);
+    else (LEGACY_AGE_GROUPS[group] ?? []).forEach((g) => covered.add(g));
   }
   return AGE_GROUPS.filter((group) => covered.has(group));
 };

@@ -36,6 +36,8 @@ export interface ICampaign extends Document {
   emoji?: string;
   palette: string;
   ctaLabel: string;
+  // Show the sale popup to each visitor once while the campaign is live
+  showPopup: boolean;
   bannerDesktop?: ICampaignImage;
   bannerMobile?: ICampaignImage;
   startsAt: Date;
@@ -64,6 +66,7 @@ const campaignSchema = new Schema<ICampaign>(
     emoji: { type: String, trim: true, maxlength: 16 },
     palette: { type: String, enum: PALETTE_KEYS, default: "brand" },
     ctaLabel: { type: String, trim: true, maxlength: 30, default: "Shop the sale" },
+    showPopup: { type: Boolean, default: true },
     bannerDesktop: imageSchema,
     bannerMobile: imageSchema,
     startsAt: { type: Date, required: true },

@@ -24,6 +24,18 @@ export const CONTACT = {
 } as const;
 
 /**
+ * When the shop answers messages and calls, in Nepal time (Saturday is the day
+ * off). Must match CONTACT.replyTime. Days: 0 = Sunday … 6 = Saturday.
+ */
+export const OPENING_HOURS = {
+  days: [0, 1, 2, 3, 4, 5],
+  opensAt: 10,
+  closesAt: 19,
+  label: "Sunday–Friday, 10am–7pm",
+  closedLabel: "Saturday closed",
+} as const;
+
+/**
  * Default free-shipping threshold, shown until the API's settings arrive.
  * Admins change the real threshold and rates (backend/utils/shipping.ts,
  * /admin/shipping); pages read them with hooks/useShippingSettings.
@@ -44,19 +56,12 @@ export const RETURN_WINDOW_DAYS = 7;
 
 // Age bands for "Shop by Age" and the shop filter. Must match AGE_GROUPS in
 // backend/utils/constants.ts (the API rejects other values).
-export const AGE_GROUPS = [
-  "0-3 Months",
-  "3-6 Months",
-  "6-12 Months",
-  "1-2 Years",
-  "2-4 Years",
-  "4-6 Years",
-  "6-10 Years",
-] as const;
+// One band per size on the client's scale (Small … XL), up to 7 years.
+export const AGE_GROUPS = ["0-12 Months", "1-3 Years", "3-5 Years", "5-7 Years"] as const;
 
 export type AgeGroup = (typeof AGE_GROUPS)[number];
 
-/** "0-3 Months" -> "0–3 months" */
+/** "0-12 Months" -> "0–12 months" */
 export const formatAgeGroup = (age: string): string => age.replace("-", "–").replace(/Months|Years/, (w) => w.toLowerCase());
 
 export const PRODUCT_GENDERS = ["boy", "girl", "unisex"] as const;

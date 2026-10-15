@@ -8,7 +8,7 @@ import AuthContext from '../../context/AuthContext';
 import cartReducer from '../../store/cartSlice';
 
 // Mock logo asset
-vi.mock('../../assets/logo.png', () => ({ default: 'test-logo' }));
+vi.mock('../../assets/nevan-handicraft-logo.webp', () => ({ default: 'test-logo' }));
 
 // Campaign and category data are swapped per test
 const mocks = vi.hoisted(() => ({
@@ -74,36 +74,38 @@ describe('Header Component', () => {
     mocks.campaign = { campaign: null, loading: false, isPreview: false };
   });
 
-  it('renders "Sign in" and "Sign up" links when unauthenticated', () => {
+  it('shows "Hello, sign in / My Account" linking to sign-in when signed out', () => {
     renderHeader({ isAuthenticated: false });
-    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
-    expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/register');
+    const account = screen.getByRole('link', { name: 'Sign in to My Account' });
+    expect(account).toHaveAttribute('href', '/login');
+    expect(account).toHaveTextContent('Hello, sign in');
+    expect(account).toHaveTextContent('My Account');
   });
 
-  it('renders user initial when authenticated', () => {
+  it('greets a signed-in customer by first name', () => {
     renderHeader({
       isAuthenticated: true,
       user: { name: 'John Doe', email: 'john@example.com' }
     });
-    expect(screen.getByText('J')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My Account' })).toHaveTextContent('Hello, John');
+    expect(screen.queryByRole('link', { name: /Sign in/ })).not.toBeInTheDocument();
   });
 
-  it('falls back to the email initial when the user has no name', () => {
+  it('falls back to the email name when the user has no name', () => {
     renderHeader({ isAuthenticated: true, user: { name: '', email: 'sita@example.com' } });
-    expect(screen.getByText('S')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My Account' })).toHaveTextContent('Hello, sita');
   });
 
-  it('opens the account menu and closes it with Escape, returning focus to the avatar', () => {
+  it('opens the account menu and closes it with Escape, returning focus to the account button', () => {
     renderHeader({ isAuthenticated: true, user: { name: 'John Doe', email: 'john@example.com' } });
-    const avatar = screen.getByRole('button', { name: 'Account menu' });
-    fireEvent.click(avatar);
-    expect(avatar).toHaveAttribute('aria-expanded', 'true');
+    const account = screen.getByRole('button', { name: 'My Account' });
+    fireEvent.click(account);
+    expect(account).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('link', { name: 'My orders' })).toHaveAttribute('href', '/orders');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('link', { name: 'My orders' })).not.toBeInTheDocument();
-    expect(avatar).toHaveFocus();
+    expect(account).toHaveFocus();
   });
 
   it('shows shop-by-age, gender and category links in the Shop menu', () => {
@@ -112,9 +114,15 @@ describe('Header Component', () => {
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const ages = screen.getByRole('list', { name: 'Shop by age' });
-    expect(within(ages).getByRole('link', { name: /Newborn/ })).toHaveAttribute('href', '/products?age=0-3%20Months');
+    expect(within(ages).getByRole('link', { name: /Baby/ })).toHaveAttribute('href', '/products?age=0-12%20Months');
     expect(screen.getByRole('link', { name: 'Girls' })).toHaveAttribute('href', '/products?gender=girl');
     expect(screen.getByRole('link', { name: 'Jhablas' })).toHaveAttribute('href', '/products?category=jhablas');
+  });
+
+  it('links to About us in the main navigation', () => {
+    renderHeader();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('link', { name: 'About us' })).toHaveAttribute('href', '/about');
   });
 
   it('links to the sale only while a campaign with a sale is live', () => {
@@ -131,7 +139,7 @@ describe('Header Component', () => {
     renderHeader();
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
     const drawer = screen.getByRole('dialog', { name: 'Menu' });
-    expect(within(drawer).getByRole('link', { name: /Toddler/ })).toHaveAttribute('href', '/products?age=1-2%20Years');
+    expect(within(drawer).getByRole('link', { name: /Toddler/ })).toHaveAttribute('href', '/products?age=1-3%20Years');
     expect(within(drawer).getByRole('link', { name: 'Create account' })).toHaveAttribute('href', '/register');
     expect(within(drawer).getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', expect.stringContaining('wa.me'));
 

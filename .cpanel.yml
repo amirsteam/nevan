@@ -1,0 +1,8 @@
+---
+# cPanel Git™ Version Control → Manage → Pull or Deploy → "Deploy HEAD Commit"
+# runs these tasks. The script builds and deploys both apps; its settings are in
+# ~/.nevan-deploy.env (see deploy/nevan-deploy.env.example). The repository must
+# be cloned to ~/repositories/nevan.
+deployment:
+  tasks:
+    - /bin/bash "$HOME/repositories/nevan/deploy/cpanel-deploy.sh"

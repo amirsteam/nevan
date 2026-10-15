@@ -32,6 +32,7 @@ export interface CampaignInput {
   emoji?: string;
   palette?: string;
   ctaLabel?: string;
+  showPopup?: boolean;
   startsAt?: string | Date;
   endsAt?: string | Date;
   status?: "draft" | "published";
@@ -144,6 +145,7 @@ export const toPublicCampaign = async (campaign: LeanCampaign) => {
     greeting: campaign.greeting || "",
     emoji: campaign.emoji || "",
     ctaLabel: campaign.ctaLabel || "Shop the sale",
+    showPopup: campaign.showPopup !== false,
     bannerDesktop: campaign.bannerDesktop?.url || null,
     bannerMobile: campaign.bannerMobile?.url || null,
     startsAt: campaign.startsAt,
@@ -305,6 +307,7 @@ const applyInput = (campaign: ICampaign, input: CampaignInput): void => {
   for (const field of textFields) {
     if (input[field] !== undefined) (campaign as any)[field] = input[field];
   }
+  if (input.showPopup !== undefined) campaign.showPopup = Boolean(input.showPopup);
   if (input.startsAt !== undefined) campaign.startsAt = new Date(input.startsAt);
   if (input.endsAt !== undefined) campaign.endsAt = new Date(input.endsAt);
   if (input.status !== undefined) campaign.status = input.status;
@@ -404,6 +407,7 @@ export const duplicateCampaign = async (id: string, adminId?: string) => {
     emoji: source.emoji,
     palette: source.palette,
     ctaLabel: source.ctaLabel,
+    showPopup: source.showPopup !== false,
     status: "draft",
     startsAt: nextYear(source.startsAt),
     endsAt: nextYear(source.endsAt),

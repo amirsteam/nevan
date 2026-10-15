@@ -27,9 +27,11 @@ const withRouter = (ui: React.ReactNode) => render(<MemoryRouter>{ui}</MemoryRou
 describe("ShopByAge", () => {
   it("links every age band and gender to the filtered shop", () => {
     withRouter(<ShopByAge />);
-    const newborn = screen.getByRole("link", { name: /0–3\s*months\s*Newborn/ });
-    expect(newborn).toHaveAttribute("href", "/products?age=0-3%20Months");
-    expect(screen.getByRole("link", { name: /6–10\s*years\s*Junior/ })).toHaveAttribute("href", "/products?age=6-10%20Years");
+    // One band per size, up to 7 years
+    const baby = screen.getByRole("link", { name: /0–12\s*months\s*Baby/ });
+    expect(baby).toHaveAttribute("href", "/products?age=0-12%20Months");
+    expect(screen.getByRole("link", { name: /5–7\s*years\s*Big kid/ })).toHaveAttribute("href", "/products?age=5-7%20Years");
+    expect(screen.queryByRole("link", { name: /10\s*years/ })).not.toBeInTheDocument();
 
     const genders = within(screen.getByRole("navigation", { name: "Shop by gender" })).getAllByRole("link");
     expect(genders.map((a) => a.getAttribute("href"))).toEqual([

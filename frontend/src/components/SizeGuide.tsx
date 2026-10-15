@@ -1,7 +1,7 @@
 /**
  * SizeGuide Component
- * Approximate measurements for the store's sizes (the age scale in
- * utils/constants, plus the older S–XXL sizes), shown in the accessible
+ * Approximate measurements for the store's sizes (Small 0–12 months … XL
+ * 5–7 years, plus older names still on some products), shown in the accessible
  * Modal. Given the product's sizes it shows just those; the selected size is
  * highlighted.
  */
@@ -23,22 +23,15 @@ interface SizeRow {
 
 // Approximate ranges; individual products may fit differently
 const SIZE_DATA: SizeRow[] = [
-  { size: "0-3 Months", short: "0–3M", age: "0–3 months", weightKg: [3, 6], heightCm: [50, 62], chestCm: [38, 42] },
-  { size: "3-6 Months", short: "3–6M", age: "3–6 months", weightKg: [6, 8], heightCm: [62, 68], chestCm: [42, 44] },
-  { size: "6-12 Months", short: "6–12M", age: "6–12 months", weightKg: [8, 10.5], heightCm: [68, 80], chestCm: [44, 48] },
-  { size: "12-18 Months", short: "12–18M", age: "12–18 months", weightKg: [10.5, 12], heightCm: [80, 86], chestCm: [48, 50] },
-  { size: "18-24 Months", short: "18–24M", age: "18–24 months", weightKg: [12, 13.5], heightCm: [86, 92], chestCm: [50, 52] },
-  { size: "2-3 Years", short: "2–3Y", age: "2–3 years", weightKg: [13.5, 15], heightCm: [92, 98], chestCm: [52, 54] },
-  { size: "3-4 Years", short: "3–4Y", age: "3–4 years", weightKg: [15, 17], heightCm: [98, 104], chestCm: [54, 56] },
-  { size: "4-5 Years", short: "4–5Y", age: "4–5 years", weightKg: [17, 19], heightCm: [104, 110], chestCm: [56, 58] },
-  { size: "5-6 Years", short: "5–6Y", age: "5–6 years", weightKg: [19, 21], heightCm: [110, 116], chestCm: [58, 60] },
-  { size: "6-7 Years", short: "6–7Y", age: "6–7 years", weightKg: [21, 23], heightCm: [116, 122], chestCm: [60, 62] },
-  { size: "7-8 Years", short: "7–8Y", age: "7–8 years", weightKg: [23, 26], heightCm: [122, 128], chestCm: [62, 64] },
-  { size: "8-10 Years", short: "8–10Y", age: "8–10 years", weightKg: [26, 33], heightCm: [128, 140], chestCm: [64, 68] },
-  { size: "Small Size (0-1 yrs)", short: "S", age: "0–1 yr", weightKg: [3, 10], heightCm: [50, 76], chestCm: [38, 48], legacy: true },
-  { size: "Medium Size (1-4 yrs)", short: "M", age: "1–4 yrs", weightKg: [10, 16], heightCm: [76, 103], chestCm: [48, 55], legacy: true },
-  { size: "Large Size (4-6 yrs)", short: "L", age: "4–6 yrs", weightKg: [16, 21], heightCm: [103, 116], chestCm: [55, 60], legacy: true },
-  { size: "XL Size (6-8 yrs)", short: "XL", age: "6–8 yrs", weightKg: [21, 26], heightCm: [116, 128], chestCm: [60, 64], legacy: true },
+  { size: "Small (0-12 months)", short: "S", age: "0–12 months", weightKg: [3, 10.5], heightCm: [50, 80], chestCm: [38, 48] },
+  { size: "Medium (1-3 years)", short: "M", age: "1–3 years", weightKg: [10.5, 15], heightCm: [80, 98], chestCm: [48, 54] },
+  { size: "Large (3-5 years)", short: "L", age: "3–5 years", weightKg: [15, 19], heightCm: [98, 110], chestCm: [54, 58] },
+  { size: "XL (5-7 years)", short: "XL", age: "5–7 years", weightKg: [19, 23], heightCm: [110, 122], chestCm: [58, 62] },
+  // Older names: the same garments under their earlier labels, shown only for products that still use them
+  { size: "Small Size (0-1 yrs)", short: "S", age: "0–12 months", weightKg: [3, 10.5], heightCm: [50, 80], chestCm: [38, 48], legacy: true },
+  { size: "Medium Size (1-4 yrs)", short: "M", age: "1–3 years", weightKg: [10.5, 15], heightCm: [80, 98], chestCm: [48, 54], legacy: true },
+  { size: "Large Size (4-6 yrs)", short: "L", age: "3–5 years", weightKg: [15, 19], heightCm: [98, 110], chestCm: [54, 58], legacy: true },
+  { size: "XL Size (6-8 yrs)", short: "XL", age: "5–7 years", weightKg: [19, 23], heightCm: [110, 122], chestCm: [58, 62], legacy: true },
   { size: "XXL Size (8-10 yrs)", short: "XXL", age: "8–10 yrs", weightKg: [26, 33], heightCm: [128, 140], chestCm: [64, 68], legacy: true },
 ];
 

@@ -27,8 +27,11 @@ import { refreshRooms } from "../../hooks/useChatConnection";
 import { getErrorMessage } from "../../utils/helpers";
 import MessageList from "./MessageList";
 import GuestChatStart from "./GuestChatStart";
+import ChatHome from "./ChatHome";
 import { loadGuestSession } from "../../utils/guestChat";
 import { CONTACT } from "../../config/store";
+import { openStatus } from "../../utils/openingHours";
+import logo from "../../assets/nevan-handicraft-logo.webp";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -73,12 +76,23 @@ const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
 
     const [inputMessage, setInputMessage] = useState("");
     const draft = useAppSelector((state) => state.chat.draft);
+    const unreadCount = useAppSelector((state) => state.chat.unreadCount);
+
+    // Shoppers start on the help home (suggested questions); straight to the
+    // conversation when there's a reply to read or a message to write
+    const [view, setView] = useState<"home" | "chat">(() => (draft || unreadCount > 0 ? "chat" : "home"));
+    // Typed on the home screen: sent once the conversation is ready
+    const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
     // Start the message box with a draft (e.g. "Order #NV-123: " from an order page)
-    useEffect(() => {
-        if (!draft) return;
+    const [seenDraft, setSeenDraft] = useState("");
+    if (draft && draft !== seenDraft) {
+        setSeenDraft(draft);
         setInputMessage((current) => current || draft);
-        dispatch(clearDraft());
+        setView("chat");
+    }
+    useEffect(() => {
+        if (draft) dispatch(clearDraft());
     }, [draft, dispatch]);
     const [isSending, setIsSending] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
@@ -156,6 +170,19 @@ const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
         return false;
     };
 
+    // Send what was typed on the home screen once the conversation is open
+    // (for new guests, after they've given their name)
+    const canSendPending = connected && roomStatus === "open" && Boolean(activeRoomId);
+    useEffect(() => {
+        if (!pendingMessage || !canSendPending) return;
+        const content = pendingMessage;
+        setPendingMessage(null);
+        sendMessage({ content }).then((sent) => {
+            if (!sent) setInputMessage((current) => current || content);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingMessage, canSendPending]);
+
     const handleSendMessage = async (e: FormEvent) => {
         e.preventDefault();
         const content = inputMessage.trim();
@@ -229,6 +256,17 @@ const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
     };
 
     const showInbox = isAdmin && !activeRoomId;
+    const showHome = !isAdmin && view === "home";
+    const shopStatus = openStatus();
+
+    const goToChat = (prefill?: string) => {
+        if (prefill) setInputMessage((current) => current || prefill);
+        setView("chat");
+    };
+    const sendFromHome = (message: string) => {
+        setPendingMessage(message);
+        setView("chat");
+    };
     const customerName = activeRoom ? roomDisplayName(activeRoom) : undefined;
     const canWrite = connected && roomStatus === "open";
 
@@ -237,12 +275,60 @@ const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
             className={
                 embedded
                     ? "h-full bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] flex flex-col overflow-hidden"
-                    : "fixed z-[60] inset-0 sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[380px] sm:h-[min(560px,calc(100vh-7rem))] bg-[var(--color-surface)] sm:rounded-2xl shadow-[var(--shadow-lg)] flex flex-col overflow-hidden sm:border border-[var(--color-border)] pb-[env(safe-area-inset-bottom)] animate-slideUp"
+                    : "fixed z-[60] inset-0 sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[400px] sm:h-[min(600px,calc(100vh-7rem))] bg-[var(--color-surface)] sm:rounded-2xl shadow-[var(--shadow-lg)] flex flex-col overflow-hidden sm:border border-[var(--color-border)] pb-[env(safe-area-inset-bottom)] animate-slideUp"
             }
             role={embedded ? "region" : "dialog"}
             aria-label="Support chat"
         >
-            {/* Header */}
+            {!isAdmin ? (
+                /* Shopper header: the shop, whether it's answering now, back to help */
+                <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] px-3 py-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] sm:pt-2.5 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        {view === "chat" && (
+                            <button
+                                type="button"
+                                onClick={() => setView("home")}
+                                className="p-1 rounded-full hover:bg-white/15"
+                                aria-label="Back to help and suggested questions"
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+                        )}
+                        <span className="flex h-9 shrink-0 items-center rounded-lg bg-white px-1.5" aria-hidden="true">
+                            <img src={logo} alt="" width={640} height={342} className="h-7 w-auto" />
+                        </span>
+                        <div className="min-w-0">
+                            <h3 className="font-semibold text-sm truncate">Nevan Handicraft</h3>
+                            <span className="flex items-center gap-1.5 text-xs truncate">
+                                <span
+                                    aria-hidden="true"
+                                    className={`h-2 w-2 shrink-0 rounded-full ${shopStatus.open ? "bg-green-300" : "bg-white/60"}`}
+                                />
+                                {!needsGuestStart && connectionStatus === "connecting"
+                                    ? "Connecting…"
+                                    : !needsGuestStart && (connectionStatus === "error" || connectionStatus === "disconnected") && view === "chat"
+                                        ? "Offline — tap reconnect"
+                                        : shopStatus.open
+                                            ? "Online · replies in a few hours"
+                                            : shopStatus.label}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        {!needsGuestStart && view === "chat" && (connectionStatus === "error" || connectionStatus === "disconnected") && (
+                            <button onClick={handleReconnect} className="p-1.5 hover:bg-white/15 rounded-lg transition-colors" title="Reconnect" aria-label="Reconnect">
+                                <RefreshCw size={18} />
+                            </button>
+                        )}
+                        {!embedded && (
+                            <button onClick={() => dispatch(setIsOpen(false))} className="p-2 hover:bg-white/15 rounded-lg transition-colors" aria-label="Close chat window">
+                                <X size={18} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            ) : (
+            /* Admin header */
             <div className="bg-[var(--color-primary)] text-[var(--color-on-primary)] px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:pt-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                     {isAdmin && activeRoomId && (
@@ -292,9 +378,17 @@ const ChatWindow = ({ embedded = false }: ChatWindowProps) => {
                     )}
                 </div>
             </div>
+            )}
 
-            {needsGuestStart ? (
-                <GuestChatStart />
+            {showHome ? (
+                <ChatHome
+                    onSend={sendFromHome}
+                    onAskTeam={goToChat}
+                    lastMessage={messages.at(-1)}
+                    unreadCount={unreadCount}
+                />
+            ) : needsGuestStart ? (
+                <GuestChatStart pendingMessage={pendingMessage} />
             ) : showInbox ? (
                 <>
                     {/* Admin inbox */}

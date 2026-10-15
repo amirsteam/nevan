@@ -12,7 +12,7 @@ const ShopByAge = () => (
     {/* No .reveal: this sits at the fold and would load half-faded */}
     <div className="container-app">
       <SectionHeader id="shop-by-age-title" title="Shop by age" subtitle="Find the right fit for your growing baby" />
-      <ul className="flex md:grid md:grid-cols-4 lg:grid-cols-7 gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-none py-1 -mx-4 px-4 scroll-px-4 sm:-mx-5 sm:px-5 sm:scroll-px-5 md:mx-0 md:px-0 md:overflow-visible">
+      <ul className="flex md:grid md:grid-cols-4 gap-3 lg:gap-4 overflow-x-auto snap-x snap-mandatory scrollbar-none py-1 -mx-4 px-4 scroll-px-4 sm:-mx-5 sm:px-5 sm:scroll-px-5 md:mx-0 md:px-0 md:overflow-visible">
         {AGE_GROUPS.map((age, i) => {
           const [range, unit] = splitAge(age);
           // Alternate the two brand text colours (both AA on the surface)

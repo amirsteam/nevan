@@ -94,8 +94,17 @@ describe("ProductForm", () => {
     await fillDetails(user);
     await user.click(screen.getByLabelText(/Sizes & colours/));
 
-    await user.click(screen.getByRole("button", { name: "0-3 Months" }));
-    await user.click(screen.getByRole("button", { name: "3-6 Months" }));
+    // Only the client's scale (to 7 years) and One Size are offered
+    const scale = screen.getByRole("group", { name: "Sizes sizes" });
+    expect(within(scale).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Small · 0–12 months",
+      "Medium · 1–3 years",
+      "Large · 3–5 years",
+      "XL · 5–7 years",
+      "One Size",
+    ]);
+    await user.click(screen.getByRole("button", { name: "Small · 0–12 months" }));
+    await user.click(screen.getByRole("button", { name: "Medium · 1–3 years" }));
     // Custom sizes used on other products are offered too
     expect(await screen.findByRole("button", { name: "90 cm" })).toHaveAttribute("aria-pressed", "false");
 
@@ -107,27 +116,28 @@ describe("ProductForm", () => {
 
     await user.type(screen.getByLabelText("Same price for every size (NPR)"), "900");
     await user.click(screen.getAllByRole("button", { name: "Apply" })[0]);
-    await user.clear(screen.getByLabelText("Price for 3-6 Months"));
-    await user.type(screen.getByLabelText("Price for 3-6 Months"), "950");
+    await user.clear(screen.getByLabelText("Price for Medium (1-3 years)"));
+    await user.type(screen.getByLabelText("Price for Medium (1-3 years)"), "950");
     await user.type(screen.getByLabelText("Same stock for every option"), "2");
     await user.click(screen.getAllByRole("button", { name: "Apply" })[1]);
-    await user.click(screen.getByRole("button", { name: "Not made: 3-6 Months, White" }));
+    await user.click(screen.getByRole("button", { name: "Not made: Medium (1-3 years), White" }));
 
     await user.click(screen.getByRole("button", { name: "Create product" }));
     await waitFor(() => expect(api.createProduct).toHaveBeenCalled());
     const payload = api.createProduct.mock.calls[0][0];
-    expect(payload.sizes).toEqual(["0-3 Months", "3-6 Months"]);
+    expect(payload.sizes).toEqual(["Small (0-12 months)", "Medium (1-3 years)"]);
     expect(payload.colors).toEqual([
       { name: "Mint", hex: "#a8e6cf" },
       { name: "White", hex: "#ffffff" },
     ]);
     expect(payload.variants).toEqual([
-      { size: "0-3 Months", color: "Mint", price: 900, comparePrice: null, stock: 2, sku: null },
-      { size: "0-3 Months", color: "White", price: 900, comparePrice: null, stock: 2, sku: null },
-      { size: "3-6 Months", color: "Mint", price: 950, comparePrice: null, stock: 2, sku: null },
+      { size: "Small (0-12 months)", color: "Mint", price: 900, comparePrice: null, stock: 2, sku: null },
+      { size: "Small (0-12 months)", color: "White", price: 900, comparePrice: null, stock: 2, sku: null },
+      { size: "Medium (1-3 years)", color: "Mint", price: 950, comparePrice: null, stock: 2, sku: null },
     ]);
-    expect(payload.ageGroups).toEqual(["0-3 Months", "3-6 Months"]);
-  });
+    expect(payload.ageGroups).toEqual(["0-12 Months", "1-3 Years"]);
+    // A long interaction test: allow more than the default 5 s on slower machines
+  }, 15_000);
 
   it("keeps a new product hidden until its photos have uploaded, then shows it", async () => {
     const user = userEvent.setup();

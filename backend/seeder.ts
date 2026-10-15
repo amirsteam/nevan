@@ -5,12 +5,19 @@
  * Usage:
  *   npm run seed -- --import   # Import sample data
  *   npm run seed -- --destroy  # Delete all data
+ *
+ * Both DELETE every user, product, order, payment… first. Refuses to run with
+ * NODE_ENV=production or against a live database (scripts/lib/scriptDb.ts).
+ * Sample passwords come from SEED_ADMIN_PASSWORD / SEED_CUSTOMER_PASSWORD, or
+ * are generated and printed once.
  */
 import dotenv from 'dotenv';
 dotenv.config();
 
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'; // Using bcryptjs for broader compatibility in scripts
+import crypto from 'crypto';
+import { describe, isLiveDatabase } from './scripts/lib/scriptDb';
 import User from './models/User';
 import Category from './models/Category';
 import Product from './models/Product';
@@ -24,6 +31,13 @@ const run = async () => {
     try {
         if (!process.env.MONGODB_URI) {
             throw new Error("MONGODB_URI environment variable is not defined");
+        }
+        // The seeder wipes the database: never against real shop data
+        if (process.env.NODE_ENV === 'production' || isLiveDatabase(process.env.MONGODB_URI)) {
+            throw new Error(
+                `Refusing to seed ${describe(process.env.MONGODB_URI)}: it would delete the live shop's data ` +
+                `(NODE_ENV=${process.env.NODE_ENV ?? 'unset'}). Point MONGODB_URI at a development database.`,
+            );
         }
 
         await mongoose.connect(process.env.MONGODB_URI);
@@ -45,8 +59,14 @@ const run = async () => {
 
             // Create admin user with pre-hashed password
             console.log('👤 Creating users...');
-            const hashedPassword1 = await bcrypt.hash('Bivan@2036', 12);
-            const hashedPassword2 = await bcrypt.hash('Bimala@2036', 12);
+            // Never hard-code passwords here: this repository is public
+            const adminPassword = process.env.SEED_ADMIN_PASSWORD || `Adm1n-${crypto.randomBytes(6).toString('hex')}`;
+            const customerPassword = process.env.SEED_CUSTOMER_PASSWORD || `Cust0-${crypto.randomBytes(6).toString('hex')}`;
+            const hashedPassword1 = await bcrypt.hash(adminPassword, 12);
+            const hashedPassword2 = await bcrypt.hash(customerPassword, 12);
+            if (!process.env.SEED_ADMIN_PASSWORD || !process.env.SEED_CUSTOMER_PASSWORD) {
+                console.log(`   Sample passwords — admin: ${adminPassword}, customer: ${customerPassword}`);
+            }
 
             await User.collection.insertMany([
                 {
@@ -196,8 +216,8 @@ const run = async () => {
             console.log('   Created 9 products');
 
             console.log('\n✨ Data imported successfully!\n');
-            console.log('🔐 Admin: amir@svi.edu.np / Bivan@2036');
-            console.log('👤 Customer: bimala@svi.edu.np / Bimala@2036\n');
+            console.log('🔐 Admin: amir@svi.edu.np (password above or SEED_ADMIN_PASSWORD)');
+            console.log('👤 Customer: bimala@svi.edu.np (password above or SEED_CUSTOMER_PASSWORD)\n');
 
         } else if (arg === '--destroy' || arg === '-d') {
             console.log('🗑️  Deleting all data...');

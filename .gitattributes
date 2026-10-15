@@ -1,0 +1,4 @@
+# Scripts that run on the Linux server must keep LF line endings
+*.sh text eol=lf
+.cpanel.yml text eol=lf
+deploy/*.example text eol=lf

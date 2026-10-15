@@ -3,11 +3,32 @@
  * Shared constants for the backend
  */
 
-// Built-in sizes offered in the admin size picker, smallest first (baby
-// clothes are sized by age). Variants may also use custom sizes (any text up
-// to MAX_SIZE_LENGTH characters), so don't treat this list as exhaustive.
-// Keep in sync with SIZE_SCALE in frontend/src/utils/constants.ts.
+// The store's sizes (the client's scale, up to 7 years), smallest first. These
+// are the only sizes the admin picker offers; variants may also use a custom
+// size (any text up to MAX_SIZE_LENGTH characters).
+// Keep in sync with frontend/src/utils/constants.ts.
 export const PRODUCT_SIZES = [
+  "Small (0-12 months)",
+  "Medium (1-3 years)",
+  "Large (3-5 years)",
+  "XL (5-7 years)",
+  "One Size",
+] as const;
+
+export type ProductSize = (typeof PRODUCT_SIZES)[number];
+
+// Older size names that may still be stored on products. They keep working and
+// sorting but are never offered again; `npm run migrate-size-scale` renames the
+// ones with a matching new size (SIZE_RENAMES). XXL (8-10 yrs) is past the
+// 7-year limit and stays only until its stock is sold.
+export const LEGACY_SIZES = [
+  "Small Size (0-1 yrs)",
+  "Medium Size (1-4 yrs)",
+  "Large Size (4-6 yrs)",
+  "XL Size (6-8 yrs)",
+  "XXL Size (8-10 yrs)",
+  "Standard Size",
+  // Finer age scale used briefly during development
   "0-3 Months",
   "3-6 Months",
   "6-12 Months",
@@ -20,65 +41,89 @@ export const PRODUCT_SIZES = [
   "6-7 Years",
   "7-8 Years",
   "8-10 Years",
-  "One Size",
 ] as const;
 
-export type ProductSize = (typeof PRODUCT_SIZES)[number];
+// Old name → new name, applied by the size-scale migration
+export const SIZE_RENAMES: Readonly<Record<string, ProductSize>> = {
+  "Small Size (0-1 yrs)": "Small (0-12 months)",
+  "Medium Size (1-4 yrs)": "Medium (1-3 years)",
+  "Large Size (4-6 yrs)": "Large (3-5 years)",
+  "XL Size (6-8 yrs)": "XL (5-7 years)",
+  "Standard Size": "One Size",
+};
 
-// Size names used before the age-based scale (still on older products)
-export const LEGACY_SIZES = [
+// Display order for sizes on a product: the scale, older names (XXL after XL),
+// then One Size; unknown (custom) sizes come after
+export const SIZE_ORDER: readonly string[] = [
+  "0-3 Months",
+  "3-6 Months",
+  "6-12 Months",
   "Small Size (0-1 yrs)",
+  "Small (0-12 months)",
+  "12-18 Months",
+  "18-24 Months",
+  "2-3 Years",
   "Medium Size (1-4 yrs)",
+  "Medium (1-3 years)",
+  "3-4 Years",
+  "4-5 Years",
   "Large Size (4-6 yrs)",
+  "Large (3-5 years)",
+  "5-6 Years",
+  "6-7 Years",
   "XL Size (6-8 yrs)",
+  "XL (5-7 years)",
+  "7-8 Years",
+  "8-10 Years",
   "XXL Size (8-10 yrs)",
   "Standard Size",
-] as const;
-
-// Display order for sizes on a product; unknown (custom) sizes come after
-export const SIZE_ORDER: readonly string[] = [
-  ...PRODUCT_SIZES.filter((size) => size !== "One Size"),
-  ...LEGACY_SIZES,
   "One Size",
 ];
 
 export const MAX_SIZE_LENGTH = 40;
 export const MAX_COLOR_LENGTH = 30;
 
-// Age bands shoppers filter by ("Shop by Age"). Keep in sync with AGE_GROUPS in
-// shared/types.ts (storefront, admin form and mobile).
-export const AGE_GROUPS = [
-  "0-3 Months",
-  "3-6 Months",
-  "6-12 Months",
-  "1-2 Years",
-  "2-4 Years",
-  "4-6 Years",
-  "6-10 Years",
-] as const;
+// Age bands shoppers filter by ("Shop by Age"): one per size, up to 7 years.
+// Keep in sync with AGE_GROUPS in shared/store.ts (storefront and admin form).
+export const AGE_GROUPS = ["0-12 Months", "1-3 Years", "3-5 Years", "5-7 Years"] as const;
 
 export type AgeGroup = (typeof AGE_GROUPS)[number];
 
-// "Shop by Age" bands each size covers: a product's age groups are worked out
-// from its sizes (sizes not listed here leave the admin's own tags alone)
+// Bands used before the client's scale → the new bands they overlap. Used to
+// move stored tags (migration) and to keep old "?age=" links working.
+export const LEGACY_AGE_GROUPS: Readonly<Record<string, readonly AgeGroup[]>> = {
+  "0-3 Months": ["0-12 Months"],
+  "3-6 Months": ["0-12 Months"],
+  "6-12 Months": ["0-12 Months"],
+  "1-2 Years": ["1-3 Years"],
+  "2-4 Years": ["1-3 Years", "3-5 Years"],
+  "4-6 Years": ["3-5 Years", "5-7 Years"],
+  "6-10 Years": ["5-7 Years"],
+};
+
+// "Shop by Age" band each size covers: a product's age groups are worked out
+// from its sizes (sizes not listed here — custom sizes, One Size and XXL, which
+// is past the 7-year limit — leave the admin's own tags alone)
 export const SIZE_AGE_GROUPS: Readonly<Record<string, readonly AgeGroup[]>> = {
-  "0-3 Months": ["0-3 Months"],
-  "3-6 Months": ["3-6 Months"],
-  "6-12 Months": ["6-12 Months"],
-  "12-18 Months": ["1-2 Years"],
-  "18-24 Months": ["1-2 Years"],
-  "2-3 Years": ["2-4 Years"],
-  "3-4 Years": ["2-4 Years"],
-  "4-5 Years": ["4-6 Years"],
-  "5-6 Years": ["4-6 Years"],
-  "6-7 Years": ["6-10 Years"],
-  "7-8 Years": ["6-10 Years"],
-  "8-10 Years": ["6-10 Years"],
-  "Small Size (0-1 yrs)": ["0-3 Months", "3-6 Months", "6-12 Months"],
-  "Medium Size (1-4 yrs)": ["1-2 Years", "2-4 Years"],
-  "Large Size (4-6 yrs)": ["4-6 Years"],
-  "XL Size (6-8 yrs)": ["6-10 Years"],
-  "XXL Size (8-10 yrs)": ["6-10 Years"],
+  "Small (0-12 months)": ["0-12 Months"],
+  "Medium (1-3 years)": ["1-3 Years"],
+  "Large (3-5 years)": ["3-5 Years"],
+  "XL (5-7 years)": ["5-7 Years"],
+  // Older names
+  "Small Size (0-1 yrs)": ["0-12 Months"],
+  "Medium Size (1-4 yrs)": ["1-3 Years"],
+  "Large Size (4-6 yrs)": ["3-5 Years"],
+  "XL Size (6-8 yrs)": ["5-7 Years"],
+  "0-3 Months": ["0-12 Months"],
+  "3-6 Months": ["0-12 Months"],
+  "6-12 Months": ["0-12 Months"],
+  "12-18 Months": ["1-3 Years"],
+  "18-24 Months": ["1-3 Years"],
+  "2-3 Years": ["1-3 Years"],
+  "3-4 Years": ["3-5 Years"],
+  "4-5 Years": ["3-5 Years"],
+  "5-6 Years": ["5-7 Years"],
+  "6-7 Years": ["5-7 Years"],
 };
 
 // Colour suggestions with swatches for the admin colour picker. Products keep

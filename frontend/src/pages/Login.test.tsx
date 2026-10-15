@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AuthContext from "../context/AuthContext";
 import Login from "./Login";
 
-vi.mock("../assets/logo.png", () => ({ default: "test-logo" }));
+vi.mock("../assets/nevan-handicraft-logo.webp", () => ({ default: "test-logo" }));
 
 const renderLogin = (login = vi.fn(), state?: unknown) => {
   const auth = {

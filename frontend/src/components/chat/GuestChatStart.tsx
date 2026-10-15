@@ -11,7 +11,12 @@ import { setGuest, setIsOpen } from "../../store/chatSlice";
 import { saveGuestSession } from "../../utils/guestChat";
 import { getErrorMessage } from "../../utils/helpers";
 
-const GuestChatStart = () => {
+interface GuestChatStartProps {
+    /** Typed on the chat home; sent as soon as the chat starts */
+    pendingMessage?: string | null;
+}
+
+const GuestChatStart = ({ pendingMessage }: GuestChatStartProps) => {
     const dispatch = useAppDispatch();
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
@@ -44,11 +49,22 @@ const GuestChatStart = () => {
     return (
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
             <div>
-                <h4 className="font-semibold text-[var(--color-text)]">Chat with us 👋</h4>
+                <h4 className="font-semibold text-[var(--color-text)]">
+                    {pendingMessage ? "Almost there" : "Chat with us"} <span aria-hidden="true">👋</span>
+                </h4>
                 <p className="text-sm text-[var(--color-text-muted)] mt-1">
-                    Questions about sizes, delivery or an order? Our team usually replies within a few hours.
+                    {pendingMessage
+                        ? "Tell us your name and we'll send your message to the team."
+                        : "Questions about sizes, delivery or an order? Our team usually replies within a few hours."}
                 </p>
             </div>
+
+            {pendingMessage && (
+                <div className="rounded-2xl rounded-br-md bg-[var(--color-primary-soft)] px-3.5 py-2.5 text-sm">
+                    <span className="block text-xs font-medium text-[var(--color-text-muted)] mb-0.5">Your message</span>
+                    <span className="block whitespace-pre-wrap break-words text-[var(--color-text)]">{pendingMessage}</span>
+                </div>
+            )}
 
             <div>
                 <label htmlFor="guest-chat-name" className="block text-sm font-medium mb-1">
@@ -85,15 +101,15 @@ const GuestChatStart = () => {
 
             <button type="submit" disabled={submitting} className="btn btn-primary w-full flex items-center justify-center gap-2">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                Start chat
+                {pendingMessage ? "Send message" : "Start chat"}
             </button>
 
             <p className="text-xs text-[var(--color-text-muted)] text-center">
                 Have an account?{" "}
                 <Link to="/login" onClick={() => dispatch(setIsOpen(false))} className="text-[var(--color-primary)] hover:underline">
-                    Log in
+                    Sign in
                 </Link>{" "}
-                to see your orders in chat. Your guest conversation moves to your account when you log in.
+                to see your orders in chat. Your guest conversation moves to your account when you sign in.
             </p>
         </form>
     );

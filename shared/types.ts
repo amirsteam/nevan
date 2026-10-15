@@ -7,14 +7,13 @@
 // Common Types
 // ============================================
 
-// Product size options - shared across frontend and backend
+// The store's sizes (up to 7 years). The admin rules and older names live in
+// backend/utils/constants.ts and frontend/src/utils/constants.ts.
 export const PRODUCT_SIZES = [
-  "Small Size (0-1 yrs)",
-  "Medium Size (1-4 yrs)",
-  "Large Size (4-6 yrs)",
-  "XL Size (6-8 yrs)",
-  "XXL Size (8-10 yrs)",
-  "Standard Size",
+  "Small (0-12 months)",
+  "Medium (1-3 years)",
+  "Large (3-5 years)",
+  "XL (5-7 years)",
   "One Size",
 ] as const;
 

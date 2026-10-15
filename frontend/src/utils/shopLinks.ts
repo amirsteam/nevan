@@ -4,14 +4,12 @@
  */
 import type { AgeGroup } from "../config/store";
 
+// One band per size: Small, Medium, Large, XL
 export const AGE_LABELS: Record<AgeGroup, string> = {
-  "0-3 Months": "Newborn",
-  "3-6 Months": "Infant",
-  "6-12 Months": "Crawler",
-  "1-2 Years": "Toddler",
-  "2-4 Years": "Little kid",
-  "4-6 Years": "Big kid",
-  "6-10 Years": "Junior",
+  "0-12 Months": "Baby",
+  "1-3 Years": "Toddler",
+  "3-5 Years": "Little kid",
+  "5-7 Years": "Big kid",
 };
 
 // The shop's gender filter also includes unisex items for boy/girl
@@ -27,7 +25,7 @@ export const genderLink = (gender: string): string => `/products?gender=${gender
 
 export const NEW_IN_PATH = "/products?sort=-createdAt";
 
-/** "0-3 Months" -> ["0–3", "months"] */
+/** "0-12 Months" -> ["0–12", "months"] */
 export const splitAge = (age: string): [string, string] => {
   const [range, unit = ""] = age.split(" ");
   return [range.replace("-", "–"), unit.toLowerCase()];

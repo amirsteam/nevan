@@ -19,6 +19,8 @@ export interface ProductQueryParams {
   minPrice?: number | string;
   maxPrice?: number | string;
   featured?: boolean;
+  // Only products marked Featured in the admin
+  isFeatured?: boolean;
   // Shop filters: age band and boy/girl/unisex
   age?: string;
   gender?: string;

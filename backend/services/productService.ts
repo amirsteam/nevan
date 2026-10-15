@@ -11,8 +11,8 @@ import { paginate, PaginationResult } from "../utils/helpers";
 import AppError from "../utils/AppError";
 import { deleteImage } from "../config/cloudinary";
 import { cache, CACHE_KEYS } from "../utils/cache";
-import { PRODUCT_SIZES, AGE_GROUPS, PRODUCT_GENDERS, COLOR_PALETTE } from "../utils/constants";
-import { adoptVariantImages, forgetRemovedPhotos } from "../utils/productVariants";
+import { PRODUCT_SIZES, LEGACY_SIZES, PRODUCT_GENDERS, COLOR_PALETTE } from "../utils/constants";
+import { adoptVariantImages, currentAgeGroups, forgetRemovedPhotos } from "../utils/productVariants";
 import { campaignProductFilter } from "./campaignService";
 
 interface ProductsOptions {
@@ -230,9 +230,11 @@ const getProducts = async (
     filter.isFeatured = isFeatured === "true" || isFeatured === true;
   }
 
-  // Unknown values are ignored rather than returning nothing
-  if (typeof age === "string" && (AGE_GROUPS as readonly string[]).includes(age)) {
-    filter.ageGroups = age;
+  // Older band links ("?age=2-4 Years") show the bands they overlap; unknown values are ignored
+  if (typeof age === "string") {
+    const bands = currentAgeGroups([age]);
+    if (bands.length === 1) filter.ageGroups = bands[0];
+    else if (bands.length > 1) filter.ageGroups = { $in: bands };
   }
 
   if (typeof gender === "string" && (PRODUCT_GENDERS as readonly string[]).includes(gender)) {
@@ -366,8 +368,10 @@ const createProduct = async (productData: ProductData): Promise<IProduct> => {
 const getSizeOptions = async (): Promise<{ builtIn: string[]; custom: string[] }> => {
   const used: string[] = await Product.distinct("variants.size");
   const builtIn = [...PRODUCT_SIZES] as string[];
+  // Older names (e.g. XXL) are kept on their products but never suggested again
+  const retired = new Set<string>(LEGACY_SIZES.map((s) => s.toLowerCase()));
   const custom = used
-    .filter((size) => size && !builtIn.includes(size))
+    .filter((size) => size && !builtIn.includes(size) && !retired.has(size.toLowerCase()))
     .sort((a, b) => a.localeCompare(b));
   return { builtIn, custom };
 };

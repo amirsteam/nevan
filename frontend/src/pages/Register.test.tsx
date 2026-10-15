@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AuthContext from "../context/AuthContext";
 import Register from "./Register";
 
-vi.mock("../assets/logo.png", () => ({ default: "test-logo" }));
+vi.mock("../assets/nevan-handicraft-logo.webp", () => ({ default: "test-logo" }));
 
 const renderRegister = (register = vi.fn()) => {
   const auth = {

@@ -163,6 +163,21 @@ describe("Campaign admin", () => {
 });
 
 describe("Live campaign on the storefront", () => {
+  it("offers the sale popup by default and lets the admin switch it off", async () => {
+    const campaign = await liveCampaign();
+    const live = await request(app).get("/api/v1/campaigns/live");
+    expect(live.body.data.campaign.showPopup).toBe(true);
+
+    const res = await request(app)
+      .put(`/api/v1/admin/campaigns/${campaign._id}`)
+      .set("Authorization", `Bearer ${await asAdmin()}`)
+      .send({ showPopup: false });
+    expect(res.status).toBe(200);
+    clearCampaignCache();
+    const after = await request(app).get("/api/v1/campaigns/live");
+    expect(after.body.data.campaign.showPopup).toBe(false);
+  });
+
   it("is returned with its theme and sale summary while live, and not after it ends", async () => {
     const campaign = await liveCampaign();
     const live = await request(app).get("/api/v1/campaigns/live");

@@ -11,6 +11,7 @@ import CartSync from "./CartSync";
 import PendingCartSync from "./PendingCartSync";
 import AnnouncementBar from "../campaign/AnnouncementBar";
 import UtilityBar from "./UtilityBar";
+import WelcomePopup from "../promo/WelcomePopup";
 
 const Layout = (): React.ReactElement => {
   return (
@@ -32,6 +33,7 @@ const Layout = (): React.ReactElement => {
       </main>
       <Footer />
       <AuthPromptModal />
+      <WelcomePopup />
     </div>
   );
 };

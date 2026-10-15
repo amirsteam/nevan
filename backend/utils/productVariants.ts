@@ -9,11 +9,20 @@
  *   from the variants (cheapest variant / total), so listings, filters and
  *   sorting see real prices.
  * - `sizes` and `colors` keep the admin's order (colours also a swatch hex);
- *   `ageGroups` follow the sizes when they are on the age scale.
+ *   `ageGroups` follow the sizes when they are on the age scale (up to 7
+ *   years); tags from the older bands are moved to the current ones.
  */
 import crypto from "crypto";
 import { Types } from "mongoose";
-import { AGE_GROUPS, COLOR_PALETTE, SIZE_AGE_GROUPS, SIZE_ORDER, type AgeGroup } from "./constants";
+import {
+  AGE_GROUPS,
+  COLOR_PALETTE,
+  LEGACY_AGE_GROUPS,
+  SIZE_AGE_GROUPS,
+  SIZE_ORDER,
+  SIZE_RENAMES,
+  type AgeGroup,
+} from "./constants";
 
 const norm = (value: unknown): string => String(value ?? "").trim().toLowerCase();
 
@@ -49,6 +58,20 @@ export const ageGroupsForSizes = (sizes: string[]): AgeGroup[] => {
   for (const size of sizes) {
     const key = Object.keys(SIZE_AGE_GROUPS).find((s) => norm(s) === norm(size));
     if (key) SIZE_AGE_GROUPS[key].forEach((group) => covered.add(group));
+  }
+  return AGE_GROUPS.filter((group) => covered.has(group));
+};
+
+/**
+ * Age bands on the current scale: older bands ("2-4 Years") become the bands
+ * they overlap, unknown values are dropped, order follows AGE_GROUPS.
+ */
+export const currentAgeGroups = (groups: readonly string[]): AgeGroup[] => {
+  const covered = new Set<string>();
+  for (const group of groups) {
+    const current = AGE_GROUPS.find((g) => norm(g) === norm(group));
+    if (current) covered.add(current);
+    else (LEGACY_AGE_GROUPS[group] ?? []).forEach((g) => covered.add(g));
   }
   return AGE_GROUPS.filter((group) => covered.has(group));
 };
@@ -118,6 +141,52 @@ export const forgetRemovedPhotos = (product: ProductDoc, removedUrls: string[]):
   for (const variant of product.variants || []) {
     if (variant.image && removed.has(variant.image)) variant.image = null;
   }
+};
+
+/**
+ * Rename older size names to the client's scale (SIZE_RENAMES, e.g.
+ * "Medium Size (1-4 yrs)" → "Medium (1-3 years)") on the variants and the
+ * size order. Variant ids, prices, stock and photos are untouched. Nothing
+ * changes when a rename would give two variants the same size and colour.
+ */
+export const applySizeRenames = (
+  product: ProductDoc,
+): { renamed: { from: string; to: string }[]; conflict?: string } => {
+  const target = (size: unknown): string | undefined => {
+    const key = Object.keys(SIZE_RENAMES).find((s) => norm(s) === norm(size));
+    return key ? SIZE_RENAMES[key] : undefined;
+  };
+  const variants: any[] = product.variants || [];
+
+  const seen = new Map<string, string>();
+  for (const v of variants) {
+    const size = target(v.size) ?? String(v.size).trim();
+    const key = `${norm(size)}|${norm(v.color)}`;
+    if (seen.has(key)) return { renamed: [], conflict: `${size} / ${v.color} would appear twice` };
+    seen.set(key, size);
+  }
+
+  const renamed: { from: string; to: string }[] = [];
+  const note = (from: string, to: string) => {
+    if (!renamed.some((r) => norm(r.from) === norm(from))) renamed.push({ from, to });
+  };
+  variants.forEach((v) => {
+    const to = target(v.size);
+    if (to) {
+      note(String(v.size), to);
+      v.size = to;
+    }
+  });
+  if (product.sizes?.length) {
+    const sizes: string[] = [];
+    for (const size of product.sizes) {
+      const to = target(size) ?? size;
+      if (to !== size) note(String(size), to);
+      if (!sizes.some((s) => norm(s) === norm(to))) sizes.push(to);
+    }
+    product.sizes = sizes;
+  }
+  return { renamed };
 };
 
 /** Recompute every field derived from the variants and photos */
@@ -205,6 +274,11 @@ export const syncDerivedFields = (product: ProductDoc): void => {
     const groups = ageGroupsForSizes(product.sizes);
     if (groups.length) product.ageGroups = groups;
   }
+
+  // Tags from the older age bands move to the current ones (so older products save)
+  const tags: string[] = [...(product.ageGroups || [])];
+  const current = currentAgeGroups(tags);
+  if (current.join("|") !== tags.join("|")) product.ageGroups = current;
 
   // Exactly one primary photo
   if (images.length) {

@@ -12,9 +12,11 @@ import { useCampaign } from "../../context/CampaignContext";
 import { useNavCategories } from "../../hooks/useNavCategories";
 import CategoryThumb from "../CategoryThumb";
 import { AGE_GROUPS, CONTACT } from "../../config/store";
+import { SOCIAL_LINKS } from "../../config/social";
 import { AGE_LABELS, GENDER_LINKS, NEW_IN_PATH, ageLink, genderLink, splitAge } from "../../utils/shopLinks";
 import { salePath } from "../../utils/campaign";
-import logo from "../../assets/logo.png";
+// Store logo with its wordmark (640×342, cropped from the 1024px app icon); drawn on white
+import logo from "../../assets/nevan-handicraft-logo.webp";
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -44,9 +46,12 @@ const MobileMenu = ({ isOpen, onClose, onLogout }: MobileMenuProps) => {
         }}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-          <Link to="/" className="flex items-center gap-2" aria-label="Nevan Handicraft home">
-            <img src={logo} alt="" className="h-9 w-9 object-contain" width={36} height={36} />
-            <span className="text-xl font-bold text-[var(--color-primary)] font-display">Nevan</span>
+          <Link
+            to="/"
+            className="flex items-center rounded-lg dark:bg-white dark:px-1.5 dark:py-0.5"
+            aria-label="Nevan Handicraft home"
+          >
+            <img src={logo} alt="" width={640} height={342} className="h-11 w-auto" />
           </Link>
           <button
             type="button"
@@ -200,6 +205,18 @@ const MobileMenu = ({ isOpen, onClose, onLogout }: MobileMenuProps) => {
           <Link to="/contact" className={rowLink}>
             Contact
           </Link>
+          <p className={`${sectionTitle} mt-3`}>Follow us</p>
+          <ul className="flex flex-wrap gap-2 px-4 pb-1">
+            {SOCIAL_LINKS.map(({ network, href, logo: networkLogo }) => (
+              <li key={network}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className={`${chip} inline-flex items-center gap-2 pl-1.5`}>
+                  <img src={networkLogo} alt="" width={24} height={24} loading="lazy" className="w-6 h-6" />
+                  {network}
+                  <span className="sr-only">(opens in a new tab)</span>
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="flex flex-col items-start gap-2 px-4 py-4 border-t border-[var(--color-border)]">

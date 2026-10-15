@@ -5,9 +5,28 @@
  * backend/utils/constants.ts (the API derives age groups the same way).
  */
 
-// Built-in sizes, smallest first (baby clothes are sized by age). Admins can
-// also enter custom sizes (up to MAX_SIZE_LENGTH characters).
+// The store's sizes (the client's scale, up to 7 years), smallest first. These
+// are the only sizes the admin picker offers; admins can also enter a custom
+// size (up to MAX_SIZE_LENGTH characters).
 export const PRODUCT_SIZES = [
+  "Small (0-12 months)",
+  "Medium (1-3 years)",
+  "Large (3-5 years)",
+  "XL (5-7 years)",
+  "One Size",
+] as const;
+
+export type ProductSize = (typeof PRODUCT_SIZES)[number];
+
+// Older size names that may still be on products: shown and sorted, never
+// offered again (XXL is past the 7-year limit and stays until it sells out)
+export const LEGACY_SIZES = [
+  "Small Size (0-1 yrs)",
+  "Medium Size (1-4 yrs)",
+  "Large Size (4-6 yrs)",
+  "XL Size (6-8 yrs)",
+  "XXL Size (8-10 yrs)",
+  "Standard Size",
   "0-3 Months",
   "3-6 Months",
   "6-12 Months",
@@ -20,50 +39,70 @@ export const PRODUCT_SIZES = [
   "6-7 Years",
   "7-8 Years",
   "8-10 Years",
-  "One Size",
 ] as const;
 
-export type ProductSize = (typeof PRODUCT_SIZES)[number];
-
-// Size names used before the age-based scale (still on older products)
-export const LEGACY_SIZES = [
+// Display order: the scale, older names (XXL after XL), then One Size; unknown
+// (custom) sizes come after
+export const SIZE_ORDER: readonly string[] = [
+  "0-3 Months",
+  "3-6 Months",
+  "6-12 Months",
   "Small Size (0-1 yrs)",
+  "Small (0-12 months)",
+  "12-18 Months",
+  "18-24 Months",
+  "2-3 Years",
   "Medium Size (1-4 yrs)",
+  "Medium (1-3 years)",
+  "3-4 Years",
+  "4-5 Years",
   "Large Size (4-6 yrs)",
+  "Large (3-5 years)",
+  "5-6 Years",
+  "6-7 Years",
   "XL Size (6-8 yrs)",
+  "XL (5-7 years)",
+  "7-8 Years",
+  "8-10 Years",
   "XXL Size (8-10 yrs)",
   "Standard Size",
-] as const;
-
-// Display order; unknown (custom) sizes come after
-export const SIZE_ORDER: readonly string[] = [
-  ...PRODUCT_SIZES.filter((size) => size !== "One Size"),
-  ...LEGACY_SIZES,
   "One Size",
 ];
 
 export const MAX_SIZE_LENGTH = 40;
 export const MAX_COLOR_LENGTH = 30;
 
-// "Shop by Age" bands each size covers
+// Bands used before the client's scale → the current bands they overlap
+export const LEGACY_AGE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  "0-3 Months": ["0-12 Months"],
+  "3-6 Months": ["0-12 Months"],
+  "6-12 Months": ["0-12 Months"],
+  "1-2 Years": ["1-3 Years"],
+  "2-4 Years": ["1-3 Years", "3-5 Years"],
+  "4-6 Years": ["3-5 Years", "5-7 Years"],
+  "6-10 Years": ["5-7 Years"],
+};
+
+// "Shop by Age" band each size covers (One Size, XXL and custom sizes: none)
 export const SIZE_AGE_GROUPS: Readonly<Record<string, readonly string[]>> = {
-  "0-3 Months": ["0-3 Months"],
-  "3-6 Months": ["3-6 Months"],
-  "6-12 Months": ["6-12 Months"],
-  "12-18 Months": ["1-2 Years"],
-  "18-24 Months": ["1-2 Years"],
-  "2-3 Years": ["2-4 Years"],
-  "3-4 Years": ["2-4 Years"],
-  "4-5 Years": ["4-6 Years"],
-  "5-6 Years": ["4-6 Years"],
-  "6-7 Years": ["6-10 Years"],
-  "7-8 Years": ["6-10 Years"],
-  "8-10 Years": ["6-10 Years"],
-  "Small Size (0-1 yrs)": ["0-3 Months", "3-6 Months", "6-12 Months"],
-  "Medium Size (1-4 yrs)": ["1-2 Years", "2-4 Years"],
-  "Large Size (4-6 yrs)": ["4-6 Years"],
-  "XL Size (6-8 yrs)": ["6-10 Years"],
-  "XXL Size (8-10 yrs)": ["6-10 Years"],
+  "Small (0-12 months)": ["0-12 Months"],
+  "Medium (1-3 years)": ["1-3 Years"],
+  "Large (3-5 years)": ["3-5 Years"],
+  "XL (5-7 years)": ["5-7 Years"],
+  "Small Size (0-1 yrs)": ["0-12 Months"],
+  "Medium Size (1-4 yrs)": ["1-3 Years"],
+  "Large Size (4-6 yrs)": ["3-5 Years"],
+  "XL Size (6-8 yrs)": ["5-7 Years"],
+  "0-3 Months": ["0-12 Months"],
+  "3-6 Months": ["0-12 Months"],
+  "6-12 Months": ["0-12 Months"],
+  "12-18 Months": ["1-3 Years"],
+  "18-24 Months": ["1-3 Years"],
+  "2-3 Years": ["1-3 Years"],
+  "3-4 Years": ["3-5 Years"],
+  "4-5 Years": ["3-5 Years"],
+  "5-6 Years": ["5-7 Years"],
+  "6-7 Years": ["5-7 Years"],
 };
 
 export interface PaletteColor {

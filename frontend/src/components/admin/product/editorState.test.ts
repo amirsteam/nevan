@@ -191,7 +191,8 @@ describe("the save request", () => {
       { size: "6-12 Months", color: "white", price: 1000, comparePrice: 1200, stock: 3, sku: null },
     ]);
     // The API works these out from the sizes
-    expect(payload.ageGroups).toEqual(["0-3 Months", "6-12 Months"]);
+    // Older age sizes still map to the current bands
+    expect(payload.ageGroups).toEqual(["0-12 Months"]);
     expect(payload).not.toHaveProperty("price");
     expect(payload).not.toHaveProperty("images");
   });

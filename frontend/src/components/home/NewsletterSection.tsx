@@ -4,18 +4,9 @@
 import { useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { CheckCircle2, Loader2, Mail } from "lucide-react";
-import { FaFacebook, FaInstagram } from "react-icons/fa";
 import { contactAPI } from "../../api/contact";
-import { CONTACT } from "../../config/store";
+import { SOCIAL_LINKS } from "../../config/social";
 import { getErrorMessage } from "../../utils/helpers";
-
-/** "https://www.instagram.com/nevancollection/" -> "@nevancollection" */
-const handleFrom = (url: string): string => `@${url.replace(/\/+$/, "").split("/").pop()}`;
-
-const SOCIALS = [
-  { href: CONTACT.instagram, icon: FaInstagram, network: "Instagram", text: "New pieces and little ones wearing them" },
-  { href: CONTACT.facebook, icon: FaFacebook, network: "Facebook", text: "Offers, festival sales and updates" },
-];
 
 const NewsletterSection = () => {
   const [email, setEmail] = useState("");
@@ -90,7 +81,7 @@ const NewsletterSection = () => {
         </div>
 
         <ul className="relative grid gap-3">
-          {SOCIALS.map(({ href, icon: Icon, network, text }) => (
+          {SOCIAL_LINKS.map(({ href, logo, network, handle, pitch }) => (
             <li key={network}>
               <a
                 href={href}
@@ -98,15 +89,13 @@ const NewsletterSection = () => {
                 rel="noopener noreferrer"
                 className="group flex items-center gap-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] p-4 transition-all hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-md)]"
               >
-                <span className="w-11 h-11 shrink-0 rounded-full bg-[var(--color-primary-soft)] flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-[var(--color-primary)]" aria-hidden="true" />
-                </span>
+                <img src={logo} alt="" width={44} height={44} loading="lazy" className="w-11 h-11 shrink-0" />
                 <span className="min-w-0">
                   <span className="block font-semibold text-sm group-hover:text-[var(--color-primary)] transition-colors">
-                    {handleFrom(href)} on {network}
+                    {handle} on {network}
                     <span className="sr-only"> (opens in a new tab)</span>
                   </span>
-                  <span className="block text-xs text-[var(--color-text-muted)]">{text}</span>
+                  <span className="block text-xs text-[var(--color-text-muted)]">{pitch}</span>
                 </span>
               </a>
             </li>

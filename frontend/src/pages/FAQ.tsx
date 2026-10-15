@@ -43,7 +43,7 @@ const buildFaqs = (shipping: IShippingSettings) => [
     items: [
       {
         q: "What sizes do you offer?",
-        a: "We offer sizes from Newborn (NB) up to 3 years. Each product page includes a detailed size guide with measurements in both centimeters and inches to help you find the perfect fit.",
+        a: "Our clothes come in four sizes: Small (0–12 months), Medium (1–3 years), Large (3–5 years) and XL (5–7 years). Accessories are One Size. Each product page has a size guide with measurements in centimetres and inches to help you find the right fit.",
       },
       {
         q: "What materials are used?",

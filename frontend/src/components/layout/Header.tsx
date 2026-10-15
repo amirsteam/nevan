@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ShoppingBag, Heart, Menu, Search, LogOut, Settings, Package, LayoutDashboard, User } from "lucide-react";
+import { ShoppingCart, Heart, Menu, Search, LogOut, Settings, Package, LayoutDashboard, User, ChevronDown } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useCampaign } from "../../context/CampaignContext";
 import { selectCartCount } from "../../store/cartSlice";
@@ -21,11 +21,18 @@ import MobileMenu from "./MobileMenu";
 import ThemeToggle from "./ThemeToggle";
 import { NEW_IN_PATH } from "../../utils/shopLinks";
 import { salePath } from "../../utils/campaign";
-import logo from "../../assets/logo.png";
+// Store logo with its wordmark (640×342, cropped from the 1024px app icon); drawn on white
+import logo from "../../assets/nevan-handicraft-logo.webp";
 import type { RootState } from "../../store";
 
 // No display class here, so `hidden sm:inline-flex` on a button can't be overridden
-const iconButton = "relative p-2.5 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors";
+const iconButton = "relative p-2 rounded-lg hover:bg-[var(--color-surface-muted)] transition-colors";
+// Header action icons: larger, lighter line icons
+const actionIcon = "w-6 h-6";
+const ACTION_STROKE = 1.75;
+// Person icon + "Hello, … / My Account" (the text from xl up; phones and tablets show the icon)
+const accountTrigger =
+  "flex items-center gap-2 rounded-lg p-2 xl:py-1 xl:pl-1.5 xl:pr-2 hover:bg-[var(--color-surface-muted)] transition-colors";
 
 /** Desktop nav link: full header height, with the active bar on the header's bottom edge */
 const navLinkClass = (active: boolean): string =>
@@ -79,7 +86,7 @@ const Header = (): React.ReactElement => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Account menu: outside click closes; Escape closes and returns focus to the avatar
+  // Account menu: outside click closes; Escape closes and returns focus to the account button
   useEffect(() => {
     if (!userMenuOpen) return;
     userMenuRef.current?.querySelector<HTMLElement>("[data-menu-item]")?.focus();
@@ -111,7 +118,8 @@ const Header = (): React.ReactElement => {
   const newInActive = onShop && params.get("sort") === "-createdAt" && !params.get("search");
   const shopActive = (onShop && !newInActive) || location.pathname.startsWith("/products/");
   const sale = campaign && campaign.sale.label && (isPreview || campaign.state === "live") ? campaign : null;
-  const initial = (user?.name || user?.email || "").trim().charAt(0).toUpperCase();
+  // "Hello, Anjana" — first name, else the part of the email before @
+  const firstName = (user?.name?.trim().split(/\s+/)[0] || user?.email?.split("@")[0] || "there").trim();
 
   const menuItem = "flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-[var(--color-surface-muted)] focus-visible:bg-[var(--color-surface-muted)] transition-colors";
 
@@ -136,14 +144,13 @@ const Header = (): React.ReactElement => {
               <Menu className="w-5 h-5" aria-hidden="true" />
             </button>
 
-            <Link to="/" className="flex items-center gap-2 shrink-0" aria-label="Nevan Handicraft home">
-              <img src={logo} alt="" className="h-9 w-9 object-contain" width={36} height={36} />
-              <span className="flex flex-col leading-none max-[359px]:hidden">
-                <span className="text-xl font-bold text-[var(--color-primary)] font-display">Nevan</span>
-                <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)] font-medium hidden sm:block mt-0.5">
-                  Handicraft
-                </span>
-              </span>
+            {/* The logo is drawn on white: invisible on the light header, a small white card on the dark one */}
+            <Link
+              to="/"
+              className="flex items-center shrink-0 rounded-lg dark:bg-white dark:px-1.5 dark:py-0.5"
+              aria-label="Nevan Handicraft home"
+            >
+              <img src={logo} alt="" width={640} height={342} className="h-11 w-auto sm:h-12" />
             </Link>
           </div>
 
@@ -155,6 +162,9 @@ const Header = (): React.ReactElement => {
             </Link>
             <NavLink to="/categories" className={({ isActive }) => navLinkClass(isActive)}>
               Categories
+            </NavLink>
+            <NavLink to="/about" className={({ isActive }) => navLinkClass(isActive)}>
+              About us
             </NavLink>
             {sale && (
               <NavLink to={salePath(sale.slug)} className={({ isActive }) => navLinkClass(isActive)}>
@@ -191,7 +201,7 @@ const Header = (): React.ReactElement => {
               className={`hidden sm:inline-flex ${iconButton}`}
               aria-label={wishlistCount > 0 ? `Wishlist, ${wishlistCount} saved` : "Wishlist"}
             >
-              <Heart className="w-5 h-5" aria-hidden="true" />
+              <Heart className={actionIcon} strokeWidth={ACTION_STROKE} aria-hidden="true" />
               <CountBadge count={wishlistCount} />
             </Link>
 
@@ -202,7 +212,7 @@ const Header = (): React.ReactElement => {
               className={iconButton}
               aria-label={cartCount > 0 ? `Cart, ${cartCount} ${cartCount === 1 ? "item" : "items"}` : "Cart"}
             >
-              <ShoppingBag className="w-5 h-5" aria-hidden="true" />
+              <ShoppingCart className={actionIcon} strokeWidth={ACTION_STROKE} aria-hidden="true" />
               <CountBadge count={cartCount} max={99} bump={cartBump} />
             </Link>
 
@@ -218,13 +228,18 @@ const Header = (): React.ReactElement => {
                   ref={userButtonRef}
                   type="button"
                   onClick={() => setUserMenuOpen((open) => !open)}
-                  className="flex items-center p-1 rounded-full hover:bg-[var(--color-surface-muted)] transition-colors"
+                  className={accountTrigger}
                   aria-expanded={userMenuOpen}
                   aria-controls="account-menu"
-                  aria-label="Account menu"
+                  aria-label="My Account"
                 >
-                  <span className="w-8 h-8 bg-[var(--color-primary)] rounded-full flex items-center justify-center text-[var(--color-on-primary)] text-sm font-semibold">
-                    {initial || <User className="w-4 h-4" aria-hidden="true" />}
+                  <User className={actionIcon} strokeWidth={ACTION_STROKE} aria-hidden="true" />
+                  <span className="hidden xl:flex flex-col items-start leading-tight text-left" aria-hidden="true">
+                    <span className="max-w-[8rem] truncate text-xs text-[var(--color-text-muted)]">Hello, {firstName}</span>
+                    <span className="flex items-center gap-0.5 text-sm font-semibold">
+                      My Account
+                      <ChevronDown className={`w-4 h-4 transition-transform ${userMenuOpen ? "rotate-180" : ""}`} />
+                    </span>
                   </span>
                 </button>
 
@@ -283,17 +298,14 @@ const Header = (): React.ReactElement => {
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 ml-1">
-                {/* Icon on phones, outlined button from sm up (one link, one accessible name) */}
-                <Link
-                  to="/login"
-                  className="inline-flex items-center justify-center rounded-lg p-2.5 hover:bg-[var(--color-surface-muted)] transition-colors sm:px-3 sm:py-2 sm:border sm:border-[var(--color-border)] sm:text-sm sm:font-medium sm:hover:bg-transparent sm:hover:border-[var(--color-primary)]"
-                >
-                  <User className="w-5 h-5 sm:hidden" aria-hidden="true" />
-                  <span className="sr-only sm:not-sr-only">Sign in</span>
-                </Link>
-                <Link to="/register" className="btn btn-primary text-sm px-3 py-2 hidden sm:inline-flex">
-                  Sign up
+              <div className="ml-1">
+                {/* Same place and look as the signed-in account button; the sign-in page links to sign-up */}
+                <Link to="/login" className={accountTrigger} aria-label="Sign in to My Account">
+                  <User className={actionIcon} strokeWidth={ACTION_STROKE} aria-hidden="true" />
+                  <span className="hidden xl:flex flex-col items-start leading-tight text-left" aria-hidden="true">
+                    <span className="text-xs text-[var(--color-text-muted)]">Hello, sign in</span>
+                    <span className="text-sm font-semibold">My Account</span>
+                  </span>
                 </Link>
               </div>
             )}

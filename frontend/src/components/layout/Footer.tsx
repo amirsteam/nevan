@@ -4,8 +4,10 @@
  */
 import { Link } from "react-router-dom";
 import { Mail, Phone, MapPin } from "lucide-react";
-import { FaFacebook, FaInstagram } from "react-icons/fa";
 import { CONTACT, FABRIC, STORE_SLOGAN } from "../../config/store";
+import { SOCIAL_LINKS } from "../../config/social";
+// Store logo with its wordmark (same as the header); drawn on white
+import logo from "../../assets/nevan-handicraft-logo.webp";
 
 const Footer = (): React.ReactElement => {
   const currentYear = new Date().getFullYear();
@@ -16,34 +18,37 @@ const Footer = (): React.ReactElement => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Brand */}
           <div>
-            <Link to="/" className="inline-block mb-4">
-              <span className="text-2xl font-bold text-[var(--color-primary)]">
-                Nevan
-              </span>
-              <span className="text-lg text-[var(--color-text-muted)]">
-                Handicraft
-              </span>
+            {/* Invisible on the light footer, a small white card on the dark one */}
+            <Link
+              to="/"
+              className="inline-flex mb-4 rounded-lg dark:bg-white dark:px-2 dark:py-1"
+              aria-label="Nevan Handicraft home"
+            >
+              <img src={logo} alt="" width={640} height={342} loading="lazy" className="h-16 w-auto" />
             </Link>
             <p className="font-display italic text-[var(--color-primary)] mb-2">{STORE_SLOGAN}.</p>
             <p className="text-sm text-[var(--color-text-muted)] mb-4">
               Handmade {FABRIC} baby clothing, crafted with a mother's love in Panauti, Nepal.
             </p>
-            <div className="flex gap-3">
-              <a
-                href="https://www.facebook.com/nevancollections"
-                aria-label="Nevan on Facebook"
-                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
-              >
-                <FaFacebook className="w-4 h-4" aria-hidden="true" />
-              </a>
-              <a
-                href="https://www.instagram.com/nevancollection/"
-                aria-label="Nevan on Instagram"
-                className="w-9 h-9 bg-[var(--color-bg)] rounded-full flex items-center justify-center hover:bg-[var(--color-primary)] hover:text-[var(--color-on-primary)] transition-colors"
-              >
-                <FaInstagram className="w-4 h-4" aria-hidden="true" />
-              </a>
-            </div>
+            <p className="text-sm font-semibold mb-2">Follow us for new pieces</p>
+            <ul className="flex flex-wrap gap-2">
+              {SOCIAL_LINKS.map(({ network, href, handle, logo: networkLogo }) => (
+                <li key={network}>
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] py-1.5 pl-1.5 pr-3.5 text-sm font-medium hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+                  >
+                    <img src={networkLogo} alt="" width={28} height={28} loading="lazy" className="h-7 w-7" />
+                    <span>
+                      {network}
+                      <span className="sr-only"> {handle} (opens in a new tab)</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
           </div>
 
           {/* Quick Links */}
@@ -160,6 +165,15 @@ const Footer = (): React.ReactElement => {
             </span>
           </div>
         </div>
+
+        {/* Credit, centred under everything (room below on phones so the chat bubble doesn't cover it) */}
+        <p className="mt-6 mb-16 md:mb-0 text-center text-sm text-[var(--color-text-muted)]">
+          Designed and created by{" "}
+          <a href="https://amirlearner.me" target="_blank" rel="noopener" className="credit-name">
+            Amir Shrestha
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        </p>
       </div>
     </footer>
   );

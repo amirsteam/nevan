@@ -10,3 +10,9 @@ debug_output.txt
 # OS / editor
 .DS_Store
 Thumbs.db
+old_nevan/
+# Live-deployment notes (name the live cluster and security findings; the repo is public)
+deploy-plan-live-upgrade.md
+# Database dumps, image backups and data reports
+backups/
+*.archive.gz

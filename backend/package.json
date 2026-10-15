@@ -13,7 +13,11 @@
     "sync-stock": "ts-node scripts/syncStock.ts",
     "fix-chat-rooms": "ts-node scripts/fixChatRooms.ts",
     "migrate-variant-media": "ts-node scripts/migrateVariantMedia.ts",
-    "test-email": "ts-node scripts/testEmail.ts"
+    "migrate-size-scale": "ts-node scripts/migrateSizeScale.ts",
+    "test-email": "ts-node scripts/testEmail.ts",
+    "check-data": "ts-node --transpile-only scripts/checkData.ts",
+    "backup-images": "ts-node --transpile-only scripts/backupImages.ts",
+    "clone-db": "ts-node --transpile-only scripts/cloneDatabase.ts"
   },
   "keywords": [
     "ecommerce",

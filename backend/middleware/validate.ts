@@ -707,6 +707,7 @@ const campaignValidator = (isCreate: boolean): (ValidationChain | RequestHandler
     body("greeting").optional().trim().isLength({ max: 80 }).withMessage("Greeting cannot exceed 80 characters"),
     body("emoji").optional().trim().isLength({ max: 16 }),
     body("ctaLabel").optional().trim().isLength({ max: 30 }).withMessage("Button text cannot exceed 30 characters"),
+    body("showPopup").optional().isBoolean().withMessage("showPopup must be true or false").toBoolean(),
     required(body("startsAt").isISO8601().withMessage("Start date is required")),
     required(body("endsAt").isISO8601().withMessage("End date is required")),
     body("status").optional().isIn(["draft", "published"]),

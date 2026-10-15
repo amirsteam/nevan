@@ -53,6 +53,7 @@ interface FormState {
   products: PickedProduct[];
   excludeProducts: PickedProduct[];
   pushOnLaunch: boolean;
+  showPopup: boolean;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -345,6 +346,7 @@ const CampaignEditor = () => {
             products: c.sale.products.map((pid) => names.get(String(pid))!).filter(Boolean),
             excludeProducts: c.sale.excludeProducts.map((pid) => names.get(String(pid))!).filter(Boolean),
             pushOnLaunch: c.notify?.pushOnLaunch || false,
+            showPopup: c.showPopup !== false,
           });
         } else {
           const festival = searchParams.get("festival") || "custom";
@@ -358,6 +360,7 @@ const CampaignEditor = () => {
             products: [],
             excludeProducts: [],
             pushOnLaunch: true,
+            showPopup: true,
             ...defaultDates(),
             ...(fromPreset(loadedPresets, festival) as Required<Pick<FormState, "festival" | "name" | "headline" | "greeting" | "emoji" | "palette">>),
           });
@@ -508,6 +511,7 @@ const CampaignEditor = () => {
         excludeProducts: form.excludeProducts.map((p) => p._id),
       },
       notify: { pushOnLaunch: form.pushOnLaunch },
+      showPopup: form.showPopup,
     };
     try {
       const res = id ? await adminAPI.updateCampaign(id, payload) : await adminAPI.createCampaign(payload);
@@ -985,7 +989,22 @@ const CampaignEditor = () => {
           </Section>
 
           {/* 5. Notify */}
-          <Section title="Notify customers" description="App users get a push notification (and a bell entry) when the campaign starts.">
+          <Section title="Notify customers" description="App users get a push notification (and a bell entry) when the campaign starts; website visitors can get a popup.">
+            <label className="flex items-start gap-3 cursor-pointer mb-4">
+              <input
+                type="checkbox"
+                className="mt-1 w-4 h-4 accent-[var(--color-primary)]"
+                checked={form.showPopup}
+                onChange={(e) => update({ showPopup: e.target.checked })}
+              />
+              <span className="text-sm">
+                <span className="font-medium">Show a sale popup on the website</span>
+                <span className="block text-[var(--color-text-muted)]">
+                  Each visitor sees it once while the sale is live: the offer and 4 products from the sale (Featured ones first, then
+                  best sellers). Needs a discount.
+                </span>
+              </span>
+            </label>
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"

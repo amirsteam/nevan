@@ -275,7 +275,7 @@ export const getSubscribers = (
 export type CampaignPayload = Partial<
   Pick<
     IAdminCampaign,
-    "name" | "festival" | "headline" | "subheadline" | "greeting" | "emoji" | "palette" | "ctaLabel" | "startsAt" | "endsAt" | "status"
+    "name" | "festival" | "headline" | "subheadline" | "greeting" | "emoji" | "palette" | "ctaLabel" | "showPopup" | "startsAt" | "endsAt" | "status"
   >
 > & {
   sale?: Partial<IAdminCampaign["sale"]>;
