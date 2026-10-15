@@ -109,7 +109,9 @@ fi
 deploy_backend() {
   say "Backend: install and build in the repository clone"
   cd "$REPO_DIR/backend"
-  run npm ci --no-audit --no-fund
+  # --include=dev: the nodevenv sets the app's NODE_ENV=production, which would
+  # skip the build tools (TypeScript, Vite plugins) that live in devDependencies
+  run npm ci --include=dev --no-audit --no-fund
   run npm run build
   [ "$DRY_RUN" -eq 1 ] || [ -f dist/server.js ] || fail "Build did not produce backend/dist/server.js"
 
@@ -143,7 +145,7 @@ deploy_backend() {
 deploy_frontend() {
   say "Frontend: install and build in the repository clone"
   cd "$REPO_DIR/frontend"
-  run npm ci --no-audit --no-fund
+  run npm ci --include=dev --no-audit --no-fund
   run npm run build
   [ "$DRY_RUN" -eq 1 ] || [ -f dist/index.html ] || fail "Build did not produce frontend/dist/index.html"
 
