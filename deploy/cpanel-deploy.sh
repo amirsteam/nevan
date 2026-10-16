@@ -111,8 +111,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
   done
 fi
 
+# Builds come first and nothing goes live until every build in this run has
+# succeeded: a failed build leaves the site as it was (never a new backend with
+# an old storefront), and the builds never compete for the account's memory
+# with an app that is just restarting.
+
 # ---------- backend ----------
-deploy_backend() {
+build_backend() {
   say "Backend: install and build in the repository clone"
   cd "$REPO_DIR/backend"
   # --include=dev: the nodevenv sets the app's NODE_ENV=production, which would
@@ -120,7 +125,9 @@ deploy_backend() {
   run npm ci --include=dev --no-audit --no-fund
   run npm run build
   [ "$DRY_RUN" -eq 1 ] || [ -f dist/server.js ] || fail "Build did not produce backend/dist/server.js"
+}
 
+release_backend() {
   say "Backend: copy the build into the app root"
   replace_dir "$REPO_DIR/backend/dist" "$APP_ROOT/dist"
   run cp "$REPO_DIR/backend/package.json" "$REPO_DIR/backend/package-lock.json" "$APP_ROOT/"
@@ -148,13 +155,23 @@ deploy_backend() {
 }
 
 # ---------- frontend ----------
-deploy_frontend() {
+build_frontend() {
   say "Frontend: install and build in the repository clone"
   cd "$REPO_DIR/frontend"
   run npm ci --include=dev --no-audit --no-fund
-  run npm run build
+  # The account's memory cap counts every app it runs, so keep the build's heap
+  # small, and try once more after a pause if the server refuses memory
+  if [ "$DRY_RUN" -eq 1 ]; then
+    run npm run build
+  elif ! NODE_OPTIONS="--max-old-space-size=${BUILD_MAX_OLD_SPACE_MB:-768}" npm run build; then
+    echo "    The build stopped (often the account's memory limit). Trying again in 30 seconds..."
+    sleep 30
+    NODE_OPTIONS="--max-old-space-size=${BUILD_MAX_OLD_SPACE_MB:-768}" npm run build       || fail "The storefront build failed twice. Nothing was changed on the live site. Run: bash $REPO_DIR/deploy/cpanel-deploy.sh --frontend-only"
+  fi
   [ "$DRY_RUN" -eq 1 ] || [ -f dist/index.html ] || fail "Build did not produce frontend/dist/index.html"
+}
 
+release_frontend() {
   say "Frontend: copy the build into the web root (nothing there is deleted)"
   local had_htaccess=0
   [ -f "$WEB_ROOT/.htaccess" ] && had_htaccess=1
@@ -165,9 +182,9 @@ deploy_frontend() {
 }
 
 case "$MODE" in
-  backend) deploy_backend ;;
-  frontend) deploy_frontend ;;
-  all) deploy_backend; deploy_frontend ;;
+  backend) build_backend; release_backend ;;
+  frontend) build_frontend; release_frontend ;;
+  all) build_backend; build_frontend; release_backend; release_frontend ;;
 esac
 
 trap - ERR
