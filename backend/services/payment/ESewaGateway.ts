@@ -9,6 +9,13 @@ import axios from 'axios';
 
 const GATEWAY_TIMEOUT_MS = 15000;
 
+/** eSewa status-API answers that mean the shopper definitely didn't pay */
+const NOT_PAID_MESSAGES: Record<string, string> = {
+    NOT_FOUND: 'Payment was not completed',
+    CANCELED: 'Payment was cancelled',
+    FAILED: 'eSewa declined the payment',
+};
+
 class ESewaGateway implements IPaymentGateway {
     name: string = 'esewa';
     private isProduction: boolean;
@@ -57,10 +64,12 @@ class ESewaGateway implements IPaymentGateway {
     }
 
     /**
-     * Ask eSewa's status API about a transaction. Only COMPLETE is a payment; eSewa
-     * still processing (PENDING, AMBIGUOUS), an unknown status or eSewa being
-     * unreachable is 'pending' — never 'failed', so a payment that did go through
-     * isn't written off while it can't be confirmed.
+     * Ask eSewa's status API about a transaction. Only COMPLETE is a payment;
+     * NOT_FOUND, CANCELED and FAILED (eSewa declined it — not in eSewa's documented
+     * list, but what the live API returns) are definitely not paid. eSewa still
+     * processing (PENDING, AMBIGUOUS), any other status or eSewa being unreachable
+     * is 'pending' — never 'failed', so a payment that did go through isn't
+     * written off while it can't be confirmed.
      */
     private async lookup(transactionUuid: string, totalAmount: unknown, transactionCode?: string): Promise<PaymentVerifyResult> {
         let data: any;
@@ -98,12 +107,12 @@ class ESewaGateway implements IPaymentGateway {
                 rawResponse: data,
             };
         }
-        if (status === 'NOT_FOUND' || status === 'CANCELED') {
+        if (Object.prototype.hasOwnProperty.call(NOT_PAID_MESSAGES, status)) {
             return {
                 verified: false,
                 status: 'failed',
                 referenceId: transactionUuid,
-                message: status === 'CANCELED' ? 'Payment was cancelled' : 'Payment was not completed',
+                message: NOT_PAID_MESSAGES[status],
                 rawResponse: data,
             };
         }

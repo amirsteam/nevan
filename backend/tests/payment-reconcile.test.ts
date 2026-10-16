@@ -214,6 +214,35 @@ describe("Retrying a payment", () => {
     expect(retry.body.data.formData.transaction_uuid).toBeDefined();
   });
 
+  it("lets the shopper retry right away after eSewa declines the payment", async () => {
+    // eSewa's live status API answers FAILED for a declined payment (not in its docs)
+    const { user, accessToken } = await createUser();
+    const product = await createProduct({ stock: 2 });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const order = await placeOrder(user._id);
+    statuses[await startPayment(accessToken, order._id)] = "FAILED";
+
+    const retry = await initiate(accessToken, order._id);
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.formData.transaction_uuid).toBeDefined();
+  });
+
+  it("cancels an unpaid order whose eSewa payment was declined once the payment window passes", async () => {
+    const { user, accessToken } = await createUser();
+    const product = await createProduct({ stock: 2 });
+    await fillCart(user._id, [{ product, quantity: 1 }]);
+    const order = await placeOrder(user._id);
+    statuses[await startPayment(accessToken, order._id)] = "FAILED";
+    expect(await stockOf(product._id)).toBe(1);
+
+    await backdate(order._id, 61);
+    expect((await PaymentService.settleOnlinePayments(30)).expired).toBe(1);
+
+    expect((await Order.findById(order._id))!.status).toBe("cancelled");
+    expect(await stockOf(product._id)).toBe(2);
+    expect((await Payment.findOne({ order: order._id }))!.status).toBe("failed");
+  });
+
   it("reports the order paid from check-status once the gateway confirms it", async () => {
     const { user, accessToken } = await createUser();
     const product = await createProduct({ stock: 2 });
