@@ -671,6 +671,33 @@ const subscribeValidator: (ValidationChain | RequestHandler)[] = [
   handleValidationErrors,
 ];
 
+// =============== VISITOR ANALYTICS ===============
+
+/** POST /analytics/events: a batch from the storefront tracker (utils/analytics.ts) */
+const analyticsEventsValidator: (ValidationChain | RequestHandler)[] = [
+  body("visitor").isUUID().withMessage("Invalid visitor id"),
+  body("session").isUUID().withMessage("Invalid session id"),
+  body("referrer").optional().isString().isLength({ max: 500 }),
+  body(["utm.source", "utm.medium", "utm.campaign"]).optional().isString().isLength({ max: 100 }),
+  body("clickIds").optional().isArray({ max: 5 }),
+  body("clickIds.*").optional().isIn(["fbclid", "igshid", "gclid"]),
+  body("events").isArray({ min: 1, max: 25 }).withMessage("Send 1 to 25 events"),
+  body("events.*.type").isIn([
+    "page_view",
+    "product_view",
+    "search",
+    "add_to_cart",
+    "checkout_start",
+    "order_placed",
+  ]),
+  body("events.*.path").optional().isString().isLength({ max: 300 }),
+  body("events.*.product").optional().isMongoId(),
+  body("events.*.order").optional().isMongoId(),
+  body("events.*.query").optional().isString().isLength({ max: 100 }),
+  body("events.*.results").optional().isInt({ min: 0, max: 100000 }).toInt(),
+  handleValidationErrors,
+];
+
 // =============== COMMON VALIDATORS ===============
 
 const mongoIdValidator = (
@@ -748,6 +775,7 @@ export {
   createReviewValidator,
   contactValidator,
   subscribeValidator,
+  analyticsEventsValidator,
   updateProfileValidator,
   createAddressValidator,
   updateAddressValidator,

@@ -17,6 +17,7 @@ import PayNowButton from "../components/PayNowButton";
 import { isOnlinePayment } from "../utils/payment";
 import toast from "react-hot-toast";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { track } from "../utils/analytics";
 
 // How long to keep asking the gateway while it confirms a payment
 const POLL_INTERVAL_MS = 5000;
@@ -34,6 +35,13 @@ const OrderSuccess = () => {
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<IOrder | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // A placed order for the admin Visitors page: COD, or an online order once paid
+  const placedOrderId =
+    order && (order.status ?? order.orderStatus) !== "cancelled" && !isUnpaidOnline(order) ? order._id : null;
+  useEffect(() => {
+    if (placedOrderId) track("order_placed", { order: placedOrderId });
+  }, [placedOrderId]);
   // Checking with the gateway right now
   const [confirming, setConfirming] = useState(false);
   // The gateway says it is still processing a payment for this order

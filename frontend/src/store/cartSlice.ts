@@ -6,6 +6,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { cartAPI } from "../api";
 import type { ICart, ICartItem } from "../types";
 import type { RootState } from "./index";
+import { track } from "../utils/analytics";
 
 // Types
 interface CartState {
@@ -69,6 +70,7 @@ export const addToCart = createAsyncThunk<
         variantId,
         variantDetails,
       );
+      track("add_to_cart", { product: productId });
       return response.data.cart;
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };

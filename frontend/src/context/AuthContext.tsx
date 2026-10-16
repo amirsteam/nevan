@@ -15,6 +15,7 @@ import { authAPI } from "../api";
 import { refreshAccessToken, setAccessToken } from "../api/axios";
 import toast from "react-hot-toast";
 import type { IUser, IRegisterData } from "../types";
+import { setAnalyticsUser } from "../utils/analytics";
 
 // Types
 // `status` is the HTTP status of a failed request (undefined when offline)
@@ -69,6 +70,9 @@ export const AuthProvider = ({
   const [user, setUser] = useState<IUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // A device an admin signs in on is no longer counted in the Visitors stats
+  useEffect(() => setAnalyticsUser(user), [user]);
 
   // Restore the session on mount: the httpOnly refresh cookie (if any) is
   // exchanged for an in-memory access token

@@ -176,6 +176,7 @@ const openApiSpec = {
     { name: "Chat" },
     { name: "Contact" },
     { name: "Campaigns" },
+    { name: "Analytics" },
     { name: "Admin" },
     { name: "System" },
   ],
@@ -619,6 +620,50 @@ const openApiSpec = {
         }),
       }, "none"),
     },
+    "/analytics/events": {
+      post: op(
+        "Analytics",
+        "Record storefront visit events (batched by the web tracker; signed-in shoppers send their token, closing pages send text/plain via sendBeacon). " +
+          "Admins, bots and /admin pages are ignored; unknown products/orders are dropped. Kept 90 days. 204 No Content.",
+        {
+          requestBody: json({
+            type: "object",
+            required: ["visitor", "session", "events"],
+            properties: {
+              visitor: { type: "string", format: "uuid" },
+              session: { type: "string", format: "uuid" },
+              referrer: { type: "string", maxLength: 500 },
+              utm: {
+                type: "object",
+                properties: { source: { type: "string" }, medium: { type: "string" }, campaign: { type: "string" } },
+              },
+              clickIds: { type: "array", items: { type: "string", enum: ["fbclid", "igshid", "gclid"] } },
+              events: {
+                type: "array",
+                minItems: 1,
+                maxItems: 25,
+                items: {
+                  type: "object",
+                  required: ["type"],
+                  properties: {
+                    type: {
+                      type: "string",
+                      enum: ["page_view", "product_view", "search", "add_to_cart", "checkout_start", "order_placed"],
+                    },
+                    path: { type: "string", maxLength: 300 },
+                    product: { type: "string" },
+                    order: { type: "string" },
+                    query: { type: "string", maxLength: 100 },
+                    results: { type: "integer", minimum: 0 },
+                  },
+                },
+              },
+            },
+          }),
+        },
+        "none",
+      ),
+    },
     "/chat/upload": {
       post: op("Chat", "Upload a chat image (signed-in users, or guests with the X-Chat-Guest-Token header). Realtime messaging uses Socket.IO namespace /chat", {
         requestBody: {
@@ -737,6 +782,27 @@ const openApiSpec = {
         {},
         "admin",
       ),
+    },
+    "/admin/analytics": {
+      get: op(
+        "Admin",
+        "Website visitors for a range (Nepal time) vs the period before: totals (visitors, visits, page/product views, searches, add-to-carts, checkouts, " +
+          "ordering visitors, orders placed, conversion), series (hourly for today), funnel, sources, devices, busiest hours, top products (views, carts, orders), " +
+          "top and no-result searches, top pages",
+        { parameters: [{ name: "range", in: "query", schema: { type: "string", enum: ["today", "7d", "30d", "90d"], default: "7d" } }] },
+        "admin",
+      ),
+    },
+    "/admin/analytics/live": {
+      get: op(
+        "Admin",
+        "Online now (active in the last 5 minutes), today's visitors and the 20 latest visits (named only when the shopper was signed in)",
+        {},
+        "admin",
+      ),
+    },
+    "/admin/analytics/sessions/{session}": {
+      get: op("Admin", "One visit's timeline", { parameters: [{ name: "session", in: "path", required: true, schema: { type: "string", format: "uuid" } }] }, "admin"),
     },
     "/admin/products": {
       get: op("Admin", "All products incl. inactive", {

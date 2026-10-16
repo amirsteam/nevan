@@ -10,6 +10,7 @@ import { useAppSelector } from '../../store/hooks';
 import type { IAdminBadges } from '../../types';
 import {
     LayoutDashboard,
+    Eye,
     Package,
     FolderTree,
     ShoppingCart,
@@ -29,6 +30,7 @@ type BadgeKey = 'orders' | 'messages' | 'chat';
 
 const navItems: { to: string; icon: typeof Package; label: string; end?: boolean; badge?: BadgeKey }[] = [
     { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
+    { to: '/admin/visitors', icon: Eye, label: 'Visitors' },
     { to: '/admin/orders', icon: ShoppingCart, label: 'Orders', badge: 'orders' },
     { to: '/admin/chat', icon: MessageCircle, label: 'Live chat', badge: 'chat' },
     { to: '/admin/products', icon: Package, label: 'Products' },

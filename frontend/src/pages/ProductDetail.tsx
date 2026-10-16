@@ -59,6 +59,7 @@ import { ProductDetailSkeleton, Skeleton } from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
 import RecentlyViewed from "../components/RecentlyViewed";
 import { recordProductView } from "../utils/recentlyViewed";
+import { track } from "../utils/analytics";
 import { isLightSwatch, photosForColor, productColors, productSizes, sameName } from "../utils/productOptions";
 import { useAuth } from "../context/AuthContext";
 
@@ -184,6 +185,7 @@ const ProductDetail = () => {
         const fetched = response.data.product;
         setProduct(fetched);
         recordProductView(fetched._id);
+        track("product_view", { product: fetched._id });
         setImageIndex(0);
         setQuantity(1);
         const first = defaultVariant(fetched);

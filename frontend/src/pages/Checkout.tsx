@@ -22,6 +22,7 @@ import { useShippingSettings } from "../hooks/useShippingSettings";
 import { usePageTitle } from "../hooks/usePageTitle";
 import FreeShippingProgress from "../components/FreeShippingProgress";
 import type { IPaymentMethod, ISavedAddress, PaymentMethod } from "../types";
+import { track } from "../utils/analytics";
 
 interface ShippingForm {
   name: string;
@@ -104,6 +105,10 @@ const Checkout = () => {
   const [isGift, setIsGift] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const orderPlacedRef = useRef(false);
+
+  useEffect(() => {
+    track("checkout_start");
+  }, []);
 
   useEffect(() => {
     paymentsAPI

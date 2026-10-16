@@ -38,6 +38,7 @@ import { paginate, escapeRegex } from "../utils/helpers";
 import { disconnectUserSockets } from "../config/socketRegistry";
 import { LOW_STOCK_FILTER, SOLD_OUT_FILTER } from "../utils/stockFilters";
 import * as dashboardService from "../services/dashboardService";
+import * as analyticsService from "../services/analyticsService";
 import { getAdminLog, logAdminAction } from "../services/adminLogService";
 import Order from "../models/Order";
 import * as orderService from "../services/orderService";
@@ -62,6 +63,35 @@ router.get(
   "/badges",
   asyncHandler(async (_req: Request, res: Response) => {
     res.status(200).json({ status: "success", data: await dashboardService.getBadges() });
+  }),
+);
+
+// ==================== VISITORS (website analytics) ====================
+router.get(
+  "/analytics",
+  asyncHandler(async (req: Request, res: Response) => {
+    const range = analyticsService.STATS_RANGES.includes(req.query.range as analyticsService.StatsRange)
+      ? (req.query.range as analyticsService.StatsRange)
+      : "7d";
+    res.status(200).json({ status: "success", data: await analyticsService.getVisitorStats(range) });
+  }),
+);
+
+// Online now, today's visitors and the latest visits — polled by the Visitors page and dashboard card
+router.get(
+  "/analytics/live",
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.status(200).json({ status: "success", data: await analyticsService.getLiveVisitors() });
+  }),
+);
+
+router.get(
+  "/analytics/sessions/:session",
+  asyncHandler(async (req: Request, res: Response) => {
+    const session = String(req.params.session || "");
+    const visit = /^[0-9a-f-]{36}$/i.test(session) ? await analyticsService.getVisitTimeline(session) : null;
+    if (!visit) throw new AppError("Visit not found", 404);
+    res.status(200).json({ status: "success", data: { visit } });
   }),
 );
 

@@ -19,6 +19,7 @@ import { formatPrice } from "../utils/helpers";
 import { usePageTitle } from "../hooks/usePageTitle";
 import CategoryThumb from "../components/CategoryThumb";
 import type { ICategory, IPagination, IProduct } from "../types";
+import { track } from "../utils/analytics";
 
 const SORT_OPTIONS = [
   { value: "-createdAt", label: "Newest" },
@@ -228,6 +229,13 @@ const Products = () => {
         if (cancelled) return;
         setProducts(response.data.products);
         setPagination(response.pagination ?? null);
+        // Searches for the admin Visitors page (first page only, so paging isn't another search)
+        if (current.search && currentPage === 1) {
+          track("search", {
+            query: current.search,
+            results: response.pagination?.totalItems ?? response.data.products.length,
+          });
+        }
       } catch {
         if (!cancelled) setError(true);
       } finally {

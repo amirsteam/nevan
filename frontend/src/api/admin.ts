@@ -14,7 +14,10 @@ import type {
   IOrder,
   IUser,
   IDashboardStats,
-  IAnalytics,
+  ILiveVisitors,
+  IVisitorStats,
+  IVisitTimeline,
+  VisitorRange,
   OrderStatus,
   IAdminBadges,
   IBulkStatusResult,
@@ -77,10 +80,17 @@ const toQueryString = (params: object): string =>
 export const getDashboard = (): ApiResponse<IDashboardStats> =>
   api.get("/admin/dashboard");
 
-export const getDashboardAnalytics = (
-  period: string = "7d",
-): ApiResponse<IAnalytics> =>
-  api.get(`/admin/dashboard/analytics?period=${period}`);
+/**
+ * Visitor analytics (website visits; /admin/visitors)
+ */
+export const getVisitorStats = (range: VisitorRange = "7d"): ApiResponse<IVisitorStats> =>
+  api.get(`/admin/analytics?range=${range}`);
+
+/** Online now, today's visitors and the latest visits */
+export const getLiveVisitors = (): ApiResponse<ILiveVisitors> => api.get("/admin/analytics/live");
+
+export const getVisitTimeline = (session: string): ApiResponse<{ visit: IVisitTimeline }> =>
+  api.get(`/admin/analytics/sessions/${encodeURIComponent(session)}`);
 
 /**
  * Products APIs
@@ -336,7 +346,9 @@ export const getBadges = (): ApiResponse<IAdminBadges> => api.get("/admin/badges
 export const adminAPI = {
   // Dashboard
   getDashboard,
-  getDashboardAnalytics,
+  getVisitorStats,
+  getLiveVisitors,
+  getVisitTimeline,
   getBadges,
   // Products
   getProducts,

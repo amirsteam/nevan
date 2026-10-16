@@ -22,7 +22,7 @@ const Privacy = () => {
           <Shield className="w-10 h-10 text-[var(--color-primary)] mx-auto mb-3" />
           <h1 className="text-3xl md:text-4xl font-bold mb-3">Privacy Policy</h1>
           <p className="text-[var(--color-text-muted)] text-sm">
-            Last updated: February 2026
+            Last updated: October 2026
           </p>
         </div>
 
@@ -39,6 +39,7 @@ const Privacy = () => {
               <li><strong>Shipping Address:</strong> Street, city, district, province</li>
               <li><strong>Order Data:</strong> Items purchased, order history, payment method chosen</li>
               <li><strong>Account Data:</strong> Password (encrypted), wishlist, and review content</li>
+              <li><strong>Visit Statistics:</strong> Pages and products viewed on this website (see section 5)</li>
             </ul>
           </section>
 
@@ -89,10 +90,22 @@ const Privacy = () => {
             <h2 className="text-lg font-semibold text-[var(--color-text)] mb-3">
               5. Cookies & Local Storage
             </h2>
+            <p className="mb-3">
+              Signing in uses one secure, httpOnly cookie that only our server can read. Your browser&apos;s
+              local storage keeps small preferences such as the light or dark theme, a guest chat and what
+              you last viewed. No third-party tracking or advertising cookies are used on our site.
+            </p>
+            <p className="mb-3">
+              <strong>Visit statistics.</strong> To learn which products shoppers like, we record the pages
+              and products viewed, searches, items added to the cart and orders placed on this website, with
+              the kind of device and where the visit came from (for example Facebook or Google). Visits are
+              identified only by a random number stored in your browser; when you are signed in, the visit is
+              linked to your account. We don&apos;t store IP addresses, these records are seen only by the shop
+              and are deleted after 90 days.
+            </p>
             <p>
-              We use browser local storage to maintain your login session and authentication tokens.
-              No third-party tracking cookies are used on our site. We use essential cookies only
-              for site functionality.
+              If your browser sends a &ldquo;Do Not Track&rdquo; or Global Privacy Control signal, no visit
+              statistics are recorded at all.
             </p>
           </section>
 

@@ -19,11 +19,22 @@ const createLimiter = (options: Partial<Options>) =>
     ...options,
   });
 
-// All /api routes
+const ANALYTICS_PATH = "/api/v1/analytics/";
+
+// All /api routes, except visitor analytics (its own counter below), so that
+// visit tracking never uses up a shared network's budget for real requests
 export const apiLimiter = createLimiter({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || String(15 * MINUTE), 10),
   limit: parseInt(process.env.RATE_LIMIT_MAX || "1000", 10),
   message: message("Too many requests from this IP, please try again later"),
+  skip: (req) => process.env.NODE_ENV === "test" || req.originalUrl.startsWith(ANALYTICS_PATH),
+});
+
+// Visitor analytics batches (a few per page); generous for shared carrier IPs
+export const analyticsLimiter = createLimiter({
+  windowMs: 15 * MINUTE,
+  limit: 1500,
+  message: message("Too many requests"),
 });
 
 // Login: only failed attempts count, so shared IPs aren't locked out by normal use

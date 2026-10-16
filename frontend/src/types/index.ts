@@ -531,11 +531,117 @@ export interface ISubscriber {
   createdAt: string;
 }
 
-export interface IAnalytics {
-  period: string;
-  revenue: number[];
-  orders: number[];
-  labels: string[];
+// ============================================
+// Visitor analytics (admin Visitors page)
+// ============================================
+
+export type VisitorRange = "today" | "7d" | "30d" | "90d";
+export type VisitDevice = "mobile" | "tablet" | "desktop";
+
+export interface IVisitTotals {
+  visitors: number;
+  visits: number;
+  pageViews: number;
+  productViews: number;
+  searches: number;
+  addToCarts: number;
+  checkouts: number;
+  /** Website visitors who placed an order */
+  orderingVisitors: number;
+  /** All orders placed (website and app) */
+  ordersPlaced: number;
+  conversion: number;
+}
+
+export interface IVisitorStats {
+  range: VisitorRange;
+  from: string;
+  to: string;
+  granularity: "hour" | "day";
+  /** Whether the period before is still within the kept records */
+  comparable: boolean;
+  retentionDays: number;
+  totals: { current: IVisitTotals; previous: IVisitTotals };
+  /** "HH" (today) or "YYYY-MM-DD" (Nepal days) */
+  series: { key: string; visitors: number; productViews: number; orders: number }[];
+  funnel: { step: string; label: string; visitors: number }[];
+  sources: { source: string; visits: number; orders: number }[];
+  devices: { device: VisitDevice; visits: number }[];
+  hours: { hour: number; pageViews: number }[];
+  topProducts: {
+    _id: string;
+    name: string;
+    slug: string;
+    image?: string;
+    isActive: boolean;
+    views: number;
+    carts: number;
+    orders: number;
+    quantity: number;
+    conversion: number;
+    notSelling: boolean;
+  }[];
+  searches: {
+    top: { query: string; searches: number; results: number | null }[];
+    noResults: { query: string; searches: number }[];
+  };
+  topPages: { path: string; views: number }[];
+}
+
+export interface IVisitProduct {
+  _id: string;
+  name: string;
+  slug: string;
+  image?: string;
+}
+
+export interface IRecentVisit {
+  session: string;
+  /** Only when the shopper was signed in */
+  name: string | null;
+  visitorLabel: string;
+  returning: boolean;
+  device: VisitDevice;
+  source: string;
+  referrerHost: string | null;
+  campaign: string | null;
+  landingPath: string;
+  startedAt: string;
+  lastSeenAt: string;
+  online: boolean;
+  pageViews: number;
+  productViews: number;
+  addToCarts: number;
+  ordered: boolean;
+  productsViewed: number;
+  products: IVisitProduct[];
+}
+
+export interface ILiveVisitors {
+  onlineNow: number;
+  todayVisitors: number;
+  recent: IRecentVisit[];
+}
+
+export interface IVisitTimeline {
+  session: string;
+  name: string | null;
+  visitorLabel: string;
+  device: VisitDevice;
+  source: string;
+  referrerHost: string | null;
+  campaign: string | null;
+  startedAt: string;
+  lastSeenAt: string;
+  events: {
+    type: "page_view" | "product_view" | "search" | "add_to_cart" | "checkout_start" | "order_placed";
+    at: string;
+    path: string;
+    query: string | null;
+    results: number | null;
+    product: IVisitProduct | null;
+    order: { _id: string; orderNumber: string; total: number | null } | null;
+  }[];
 }
 
 // ============================================
