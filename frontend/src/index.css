@@ -49,8 +49,8 @@
   --shadow-lg: 0 12px 32px rgba(61, 50, 48, 0.14);
 
   /* Typography */
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Fraunces Variable", "Fraunces", Georgia, "Times New Roman", serif;
 }
 
 /* Warm dark palette (shared by the system preference and the manual toggle) */

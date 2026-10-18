@@ -1,0 +1,5 @@
+# Built files in /assets have content hashes in their names, so a new release
+# always gets new names: cache them for a year.
+<IfModule mod_headers.c>
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>

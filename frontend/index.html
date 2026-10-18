@@ -16,26 +16,58 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/icon.svg" />
 
-    <!-- Social previews -->
+    <!-- Canonical address and social previews. Product, sale and info pages get
+         their own copies with page-specific values (backend seoPagesService);
+         hooks/useCanonical keeps the canonical link current while browsing. -->
+    <link rel="canonical" href="https://nevanhandicraft.com.np/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Nevan Handicraft" />
+    <meta property="og:url" content="https://nevanhandicraft.com.np/" />
     <meta property="og:title" content="Nevan Handicraft · Soft, handmade baby clothing" />
     <meta
       property="og:description"
       content="Handmade baby and kids clothing from Nepal. Cash on delivery, eSewa, delivery across Nepal."
     />
-    <meta property="og:image" content="/icon.svg" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://nevanhandicraft.com.np/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Nevan Handicraft: soft, handmade baby clothing from Nepal" />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://nevanhandicraft.com.np/#organization",
+            "name": "Nevan Handicraft",
+            "url": "https://nevanhandicraft.com.np/",
+            "logo": "https://nevanhandicraft.com.np/logo.webp",
+            "email": "anjanastha101@gmail.com",
+            "telephone": "+977-9844575932",
+            "address": { "@type": "PostalAddress", "addressLocality": "Panauti", "addressRegion": "Kavrepalanchok", "addressCountry": "NP" },
+            "sameAs": ["https://www.facebook.com/nevancollections", "https://www.instagram.com/nevancollection/"]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://nevanhandicraft.com.np/#website",
+            "url": "https://nevanhandicraft.com.np/",
+            "name": "Nevan Handicraft",
+            "publisher": { "@id": "https://nevanhandicraft.com.np/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": "https://nevanhandicraft.com.np/products?search={search_term_string}",
+              "query-input": "required name=search_term_string"
+            }
+          }
+        ]
+      }
+    </script>
 
-    <!-- Fonts: Inter (body) + Fraunces (headings); swap so text shows immediately on slow networks -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Fonts (Inter, Fraunces) are self-hosted: imported in src/main.tsx -->
     <!-- Product photos: open the connection early (saves a round trip on the first photo) -->
     <link rel="preconnect" href="https://res.cloudinary.com" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
-    />
 
     <!-- Apply the saved theme before first paint (no light flash in dark mode).
          Keep the storage key in sync with src/utils/theme.ts. -->

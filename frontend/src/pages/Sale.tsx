@@ -15,6 +15,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { saleText } from "../utils/campaign";
 import { getErrorMessage } from "../utils/helpers";
 import type { IPagination, IProduct, IPublicCampaign } from "../types";
+import NoIndex from "../components/NoIndex";
 
 const PAGE_SIZE = 24;
 
@@ -64,6 +65,7 @@ const Sale = () => {
   if (error) {
     return (
       <div className="container-app py-16">
+        <NoIndex />
         <EmptyState
           type="search"
           headingLevel="h1"

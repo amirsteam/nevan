@@ -17,7 +17,8 @@
     "test-email": "ts-node scripts/testEmail.ts",
     "check-data": "ts-node --transpile-only scripts/checkData.ts",
     "backup-images": "ts-node --transpile-only scripts/backupImages.ts",
-    "clone-db": "ts-node --transpile-only scripts/cloneDatabase.ts"
+    "clone-db": "ts-node --transpile-only scripts/cloneDatabase.ts",
+    "write-seo-pages": "ts-node --transpile-only scripts/writeSeoPages.ts"
   },
   "keywords": [
     "ecommerce",
@@ -35,7 +36,7 @@
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
-    "cloudinary": "^1.41.3",
+    "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -47,10 +48,9 @@
     "helmet": "^8.1.0",
     "ioredis": "^5.9.2",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.0.2",
+    "mongoose": "9.9.5",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
-    "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^10.0.15",
     "rate-limiter-flexible": "^9.1.0",
     "slugify": "^1.6.6",

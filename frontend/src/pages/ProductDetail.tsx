@@ -60,6 +60,7 @@ import EmptyState from "../components/ui/EmptyState";
 import RecentlyViewed from "../components/RecentlyViewed";
 import { recordProductView } from "../utils/recentlyViewed";
 import { track } from "../utils/analytics";
+import NoIndex from "../components/NoIndex";
 import { isLightSwatch, photosForColor, productColors, productSizes, sameName } from "../utils/productOptions";
 import { useAuth } from "../context/AuthContext";
 
@@ -257,6 +258,7 @@ const ProductDetail = () => {
   if (!product) {
     return (
       <div className="container-app py-12">
+        <NoIndex />
         <EmptyState
           type="products"
           headingLevel="h1"

@@ -3,7 +3,7 @@
  * High-level service for payment processing
  * Uses PaymentFactory to handle different payment gateways
  */
-import mongoose from 'mongoose';
+import mongoose, { type QueryFilter } from 'mongoose';
 import PaymentFactory from './PaymentFactory';
 import Payment, { IPayment } from '../../models/Payment';
 import Order, { IOrder } from '../../models/Order';
@@ -20,7 +20,7 @@ interface PaymentMethod {
     enabled: boolean;
 }
 
-const ONLINE_GATEWAYS = ['esewa', 'khalti'];
+const ONLINE_GATEWAYS: IPayment['gateway'][] = ['esewa', 'khalti'];
 const GATEWAY_NAMES: Record<string, string> = { esewa: 'eSewa', khalti: 'Khalti' };
 
 // Attempts younger than this are left to the shopper's own redirect
@@ -41,7 +41,7 @@ const usesLiveGateways = (): boolean => process.env.NODE_ENV === 'production';
  * this environment: a development server sharing the database must not ask the
  * eSewa sandbox about real payments (it would report them as not found).
  */
-const openAttempts = () => ({
+const openAttempts = (): QueryFilter<IPayment> => ({
     status: { $in: ['initiated', 'pending'] },
     'gatewayResponse.referenceId': { $nin: [null, ''] },
     'metadata.live': { $ne: !usesLiveGateways() },
@@ -146,7 +146,8 @@ class PaymentService {
         const payment = await Payment.create({
             order: order._id,
             user: order.user,
-            gateway: gatewayName,
+            // The order's own method (just checked to equal gatewayName), in its stored spelling
+            gateway: order.payment.method,
             amount: order.pricing.total,
             status: 'initiated',
             // Which gateway endpoints (live or sandbox) know about this attempt
@@ -233,7 +234,7 @@ class PaymentService {
         const payment = reference
             ? await Payment.findOne({
                 order: order._id,
-                gateway: gatewayName,
+                gateway: gatewayName as IPayment['gateway'],
                 $or: [
                     { 'gatewayResponse.referenceId': reference },
                     { 'gatewayResponse.transactionId': reference },

@@ -7,6 +7,7 @@
  */
 import mongoose, { Schema, Document, Types } from "mongoose";
 import { FESTIVAL_KEYS, PALETTE_KEYS } from "../utils/festivals";
+import { refreshSeoOnWrite } from "../utils/seoRefresh";
 
 export type SaleType = "none" | "percent" | "fixed";
 export type SaleScope = "all" | "categories" | "products";
@@ -101,6 +102,9 @@ export const campaignState = (
   if (now >= new Date(campaign.endsAt)) return "ended";
   return "live";
 };
+
+// Search and link-preview page copies follow product, price and sale changes
+refreshSeoOnWrite(campaignSchema);
 
 const Campaign = mongoose.model<ICampaign>("Campaign", campaignSchema);
 

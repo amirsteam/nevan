@@ -4,7 +4,7 @@
  */
 import { getUserPushTokens } from "./authService";
 import User from "../models/User";
-import Notification from "../models/Notification";
+import Notification, { type NotificationType } from "../models/Notification";
 
 interface ExpoPushMessage {
   to: string;
@@ -50,7 +50,7 @@ export async function sendPushNotification(
     try {
       await Notification.create({
         userId,
-        type: (data?.type as string) || "general",
+        type: (data?.type as NotificationType) || "general",
         title,
         body,
         data,

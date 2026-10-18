@@ -15,6 +15,7 @@ import connectDB from './config/db';
 import { initializeSocket } from './config/socket';
 import { PaymentService } from './services/payment';
 import { launchDueCampaigns } from './services/campaignService';
+import { startSeoPageUpkeep } from './services/seoPagesService';
 import { isEmailConfigured, verifyEmailConnection } from './utils/email';
 
 // Handle uncaught exceptions
@@ -98,6 +99,9 @@ const notifyLaunchedCampaigns = () =>
         });
 setInterval(notifyLaunchedCampaigns, 5 * 60 * 1000).unref();
 setTimeout(notifyLaunchedCampaigns, 45 * 1000).unref();
+
+// Search and link-preview copies of the storefront's pages (only with WEB_ROOT)
+startSeoPageUpkeep();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err: any) => {

@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { categoriesAPI } from "../api";
 import { usePageTitle } from "../hooks/usePageTitle";
+import NoIndex from "../components/NoIndex";
 import type { ICategory } from "../types";
 
 const NotFound = () => {
@@ -29,6 +30,7 @@ const NotFound = () => {
 
   return (
     <div className="container-app py-16 md:py-24 text-center max-w-xl">
+      <NoIndex />
       <p className="text-6xl mb-4" aria-hidden="true">
         🧸
       </p>

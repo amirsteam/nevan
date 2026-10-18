@@ -4,7 +4,9 @@
  * Connection strings come from an env file, never from the command line, so they
  * stay out of shell history; only "host/database" is ever printed.
  *
- *   --env-file <path>   file with the connection string (default: backend/.env)
+ *   --env-file <path>   file with the connection string (default: backend/.env;
+ *                       when that doesn't exist, the variable is read from the
+ *                       environment, as on the live server)
  *   --uri-var <NAME>    variable in that file (default: MONGODB_URI)
  *   --db <name>         use this database on the same cluster instead
  */
@@ -51,11 +53,14 @@ export const isLiveDatabase = (uri: string): boolean => LIVE_DATABASES.includes(
  */
 export const resolveUri = (prefix = "", { applyDb = true } = {}): string => {
   const flag = (n: string) => argValue(prefix ? `--${prefix}-${n}` : `--${n}`);
-  const envFile = flag("env-file") ?? path.join(__dirname, "..", "..", ".env");
+  const explicitFile = flag("env-file");
+  const envFile = explicitFile ?? path.join(__dirname, "..", "..", ".env");
   const varName = flag("uri-var") ?? "MONGODB_URI";
-  if (!fs.existsSync(envFile)) throw new Error(`Env file not found: ${envFile}`);
-  const uri = dotenv.parse(fs.readFileSync(envFile))[varName];
-  if (!uri) throw new Error(`${varName} is not set in ${envFile}`);
+  if (explicitFile && !fs.existsSync(envFile)) throw new Error(`Env file not found: ${envFile}`);
+  // Without a .env file (the live server keeps its settings in cPanel) the
+  // variable comes from the environment, e.g. after activating the app's nodevenv
+  const uri = (fs.existsSync(envFile) ? dotenv.parse(fs.readFileSync(envFile))[varName] : undefined) ?? process.env[varName];
+  if (!uri) throw new Error(`${varName} is not set in ${fs.existsSync(envFile) ? envFile : "the environment"}`);
   const db = applyDb ? flag("db") : undefined;
   return db ? withDatabase(uri, db) : uri;
 };

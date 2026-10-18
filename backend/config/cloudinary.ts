@@ -7,10 +7,9 @@
  * - Quality optimization (q_auto)
  * - Responsive transformations
  */
-import { v2 as cloudinary, UploadApiResponse } from "cloudinary";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
-// @ts-ignore
-import multer from "multer";
+import type { Request } from "express";
+import { v2 as cloudinary, UploadApiOptions, UploadApiResponse } from "cloudinary";
+import multer, { StorageEngine } from "multer";
 import AppError from "../utils/AppError";
 
 // Configure Cloudinary
@@ -20,6 +19,47 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
   secure: true, // Use HTTPS
 });
+
+/**
+ * Multer storage that streams each file straight to Cloudinary (nothing is
+ * kept on disk or in memory). Like multer-storage-cloudinary, which this
+ * replaces, the uploaded file gets `path` = the photo's https URL and
+ * `filename` = its Cloudinary public id; callers read those two.
+ */
+export class CloudinaryStorage implements StorageEngine {
+  constructor(private readonly options: { cloudinary: typeof cloudinary; params: UploadApiOptions }) {}
+
+  _handleFile(
+    _req: Request,
+    file: Express.Multer.File,
+    callback: (error?: unknown, info?: Partial<Express.Multer.File>) => void,
+  ): void {
+    // Exactly one answer, or multer waits for ever
+    let answered = false;
+    const done = (error?: unknown, info?: Partial<Express.Multer.File>) => {
+      if (answered) return;
+      answered = true;
+      callback(error, info);
+    };
+    const upload = this.options.cloudinary.uploader.upload_stream(this.options.params, (error, result) => {
+      if (error || !result) return done(error || new Error("Cloudinary upload failed"));
+      done(null, { path: result.secure_url, filename: result.public_id, size: result.bytes });
+    });
+    file.stream.on("error", (error) => {
+      upload.destroy();
+      done(error);
+    });
+    file.stream.pipe(upload);
+  }
+
+  _removeFile(_req: Request, file: Express.Multer.File, callback: (error: Error | null) => void): void {
+    // Multer calls this when a later part of the request fails: drop the orphan
+    this.options.cloudinary.uploader
+      .destroy(file.filename)
+      .then(() => callback(null))
+      .catch((error: Error) => callback(error));
+  }
+}
 
 /**
  * Storage configuration for product images
@@ -35,7 +75,7 @@ const productStorage = new CloudinaryStorage({
       { width: 1200, height: 1200, crop: "limit" }, // Max dimensions
       { quality: "auto", fetch_format: "auto" }, // Auto optimize
     ],
-  } as any,
+  },
 });
 
 /**
@@ -52,7 +92,7 @@ const avatarStorage = new CloudinaryStorage({
       { width: 300, height: 300, crop: "fill", gravity: "face" },
       { quality: "auto", fetch_format: "auto" },
     ],
-  } as any,
+  },
 });
 
 /**
@@ -67,7 +107,7 @@ const categoryStorage = new CloudinaryStorage({
       { width: 800, height: 600, crop: "fill" },
       { quality: "auto", fetch_format: "auto" },
     ],
-  } as any,
+  },
 });
 
 /**
@@ -82,7 +122,7 @@ const chatStorage = new CloudinaryStorage({
       { width: 1000, height: 1000, crop: "limit" },
       { quality: "auto", fetch_format: "auto" },
     ],
-  } as any,
+  },
 });
 
 /**
@@ -98,7 +138,7 @@ const campaignStorage = new CloudinaryStorage({
       { width: 2400, height: 2400, crop: "limit" },
       { quality: "auto", fetch_format: "auto" },
     ],
-  } as any,
+  },
 });
 
 /** All three Cloudinary credentials are set */

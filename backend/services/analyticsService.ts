@@ -8,11 +8,11 @@
  * Orders in the totals come from the Orders collection (all channels); the
  * funnel and conversion use the website's own "order placed" events.
  */
-import mongoose from "mongoose";
+import mongoose, { type QueryFilter } from "mongoose";
 import VisitEvent, { VISIT_EVENT_TYPES, VISIT_RETENTION_DAYS, type VisitEventType } from "../models/VisitEvent";
 import VisitSession from "../models/VisitSession";
 import Product from "../models/Product";
-import Order from "../models/Order";
+import Order, { type IOrder } from "../models/Order";
 import { classifyDevice, classifySource, isBot } from "../utils/visitSource";
 import { DAY_MS, nepalDayStart } from "../utils/nepalTime";
 
@@ -28,7 +28,7 @@ const TOP_LIMIT = 15;
 const NOT_SELLING_MIN_VIEWS = 10;
 
 /** Orders that were really placed: confirmed onwards, or cash on delivery waiting to be confirmed */
-export const PLACED_ORDER_FILTER = {
+export const PLACED_ORDER_FILTER: QueryFilter<IOrder> = {
   $or: [
     { status: { $in: ["confirmed", "processing", "shipped", "delivered"] } },
     { status: "pending", "payment.method": "cod" },

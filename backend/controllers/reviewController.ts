@@ -73,7 +73,7 @@ export const createReview: RequestHandler = asyncHandler(
     const hasOrdered = await Order.exists({
       user: userId,
       "items.product": productId,
-      status: { $in: ["delivered", "completed"] },
+      status: "delivered",
     });
 
     const review = await Review.create({

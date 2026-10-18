@@ -179,6 +179,13 @@ release_frontend() {
   if [ "$DRY_RUN" -eq 0 ] && [ "$had_htaccess" -eq 1 ] && [ ! -f "$WEB_ROOT/.htaccess" ]; then
     fail "$WEB_ROOT/.htaccess disappeared — restore it from the pre-deploy archive"
   fi
+
+  # The backend rewrites the search/link-preview page copies (_seo/, sitemap.xml)
+  # within a minute of seeing a new index.html; make sure it is awake to see it
+  if [ "$DRY_RUN" -eq 0 ]; then
+    curl -fsS --max-time 10 "$HEALTH_URL" >/dev/null 2>&1 || true
+    echo "    Search and link-preview pages update within a minute (needs WEB_ROOT in the backend's environment)"
+  fi
 }
 
 case "$MODE" in

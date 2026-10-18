@@ -3,7 +3,9 @@
  * document (so nothing is missed: product and variant photos, categories,
  * campaign banners, chat images, order-line snapshots, older fields).
  */
-import type { Db } from "mongodb";
+// The driver bundled with Mongoose (the top-level "mongodb" package is the test tooling's)
+import type { mongo } from "mongoose";
+type Db = mongo.Db;
 
 export interface ImageRef {
   url: string;

@@ -2,7 +2,7 @@
  * Order Service
  * Handles order business logic
  */
-import { Types } from "mongoose";
+import { Types, type QueryFilter } from "mongoose";
 import Order, { IOrder, ORDER_TRANSITIONS } from "../models/Order";
 import Payment from "../models/Payment";
 import Cart from "../models/Cart";
@@ -64,7 +64,7 @@ const PAYMENT_METHODS = ["cod", "esewa", "khalti"];
  * Orders holding money the shop has to give back by hand: paid but cancelled
  * (payment arrived too late, or cancelled by the shop), or paid twice.
  */
-const REFUND_REQUIRED_FILTER = {
+const REFUND_REQUIRED_FILTER: QueryFilter<IOrder> = {
   $or: [{ status: "cancelled", "payment.status": "paid" }, { "payment.refundRequired": true }],
 };
 
@@ -72,7 +72,7 @@ const REFUND_REQUIRED_FILTER = {
  * Admin work queues: the dashboard cards and sidebar badge count these, and
  * the order list shows the same orders for ?queue=…
  */
-const ORDER_QUEUE_FILTERS: Record<string, Record<string, unknown>> = {
+const ORDER_QUEUE_FILTERS: Record<string, QueryFilter<IOrder>> = {
   // COD orders to confirm (online orders confirm themselves once paid)
   confirm: { status: "pending", $or: [{ "payment.method": "cod" }, { "payment.status": "paid" }] },
   // Online orders whose payment hasn't arrived yet; nothing to do but wait
@@ -386,16 +386,16 @@ const reserveOrderStock = async (order: IOrder): Promise<void> => {
   await reserveStock(toStockItems(order));
 };
 
-const ONLINE_METHODS = ["esewa", "khalti"];
+const ONLINE_METHODS: IOrder["payment"]["method"][] = ["esewa", "khalti"];
 
 // An eSewa/Khalti order whose money hasn't arrived (yet)
-const UNPAID_ONLINE = { "payment.method": { $in: ONLINE_METHODS }, "payment.status": { $ne: "paid" } };
+const UNPAID_ONLINE: QueryFilter<IOrder> = { "payment.method": { $in: ONLINE_METHODS }, "payment.status": { $ne: "paid" } };
 
 interface CancelOptions {
   // Statuses the order may be cancelled from
-  from: string[];
+  from: IOrder["status"][];
   // Further conditions the order must still meet at the moment of cancelling
-  filter?: Record<string, unknown>;
+  filter?: QueryFilter<IOrder>;
   by?: string | Types.ObjectId;
   reason: string;
 }
@@ -764,7 +764,9 @@ const updateOrderStatus = async (
   }
 
   if (status === "cancelled") {
-    const from = Object.keys(ORDER_TRANSITIONS).filter((s) => ORDER_TRANSITIONS[s].includes("cancelled"));
+    const from = Object.keys(ORDER_TRANSITIONS).filter((s) =>
+      ORDER_TRANSITIONS[s].includes("cancelled"),
+    ) as IOrder["status"][];
     if (!from.includes(order.status)) {
       throw new AppError(`Cannot change order status from ${order.status} to cancelled`, 400);
     }

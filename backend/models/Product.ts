@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import { createSlug } from "../utils/helpers";
 import { PRODUCT_SIZES, MAX_SIZE_LENGTH, MAX_COLOR_LENGTH, AGE_GROUPS, PRODUCT_GENDERS } from "../utils/constants";
 import { adoptVariantImages, syncDerivedFields } from "../utils/productVariants";
+import { refreshSeoOnWrite } from "../utils/seoRefresh";
 
 // Re-export for backward compatibility
 export const VALID_SIZES = PRODUCT_SIZES;
@@ -488,6 +489,9 @@ productSchema.methods.findVariant = function (
     (v) => v.size === size && v.color.toLowerCase() === color.toLowerCase(),
   );
 };
+
+// Search and link-preview page copies follow product, price and sale changes
+refreshSeoOnWrite(productSchema);
 
 const Product = mongoose.model<IProduct, IProductModel>(
   "Product",
