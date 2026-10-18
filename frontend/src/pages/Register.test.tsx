@@ -18,6 +18,11 @@ const renderRegister = (register = vi.fn()) => {
     loginWithGoogle: vi.fn(),
     logout: vi.fn(),
     updateUser: vi.fn(),
+    twoFactorChallenge: null,
+    cancelTwoFactor: vi.fn(),
+    verifyTwoFactor: vi.fn(),
+    startTwoFactorSetup: vi.fn(),
+    enableTwoFactor: vi.fn(),
   };
   render(
     <AuthContext.Provider value={auth}>

@@ -15,6 +15,33 @@ export interface IRefreshSession {
   tokenHash: string;
   expiresAt: Date;
   createdAt: Date;
+  // Signed in with two-step login (admins: sessions without it are refused)
+  mfa?: boolean;
+}
+
+// A browser that may skip the two-step code for a while ("Remember this browser")
+export interface ITrustedDevice {
+  tokenHash: string;
+  expiresAt: Date;
+  label?: string;
+  createdAt: Date;
+}
+
+// Two-step login (authenticator app); see services/twoFactorService.ts
+export interface ITwoFactor {
+  // Encrypted (AES-256-GCM, TWO_FACTOR_KEY); pendingSecret waits for its first code
+  secret?: string;
+  pendingSecret?: string;
+  enabledAt?: Date;
+  // Last accepted 30-second step, so a code can't be used twice
+  lastUsedStep?: number;
+  // SHA-256 hashes of unused backup codes
+  backupCodes: string[];
+  trustedDevices: ITrustedDevice[];
+  failedAttempts: number;
+  lockedUntil?: Date;
+  // Bumped on reset, replace or lock: older sign-in challenges stop working
+  version: number;
 }
 
 // Saved delivery address (address book, max MAX_ADDRESSES)
@@ -45,6 +72,9 @@ export interface IUser extends Document {
   emailVerified: boolean;
   passwordChangedAt?: Date;
   role: "customer" | "admin";
+  // Two-step login is on (admins need it); details live in twoFactor (never sent)
+  twoFactorEnabled: boolean;
+  twoFactor?: ITwoFactor;
   isActive: boolean;
   refreshSessions: IRefreshSession[];
   lastLogin?: Date;
@@ -113,11 +143,43 @@ const userSchema = new Schema<IUser>(
             tokenHash: { type: String, required: true },
             expiresAt: { type: Date, required: true },
             createdAt: { type: Date, default: Date.now },
+            mfa: { type: Boolean },
           },
           { _id: false },
         ),
       ],
       default: [],
+      select: false,
+    },
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactor: {
+      type: new Schema<ITwoFactor>(
+        {
+          secret: { type: String },
+          pendingSecret: { type: String },
+          enabledAt: { type: Date },
+          lastUsedStep: { type: Number },
+          backupCodes: { type: [String], default: [] },
+          trustedDevices: {
+            type: [
+              new Schema<ITrustedDevice>(
+                {
+                  tokenHash: { type: String, required: true },
+                  expiresAt: { type: Date, required: true },
+                  label: { type: String, maxlength: 120 },
+                  createdAt: { type: Date, default: Date.now },
+                },
+                { _id: false },
+              ),
+            ],
+            default: [],
+          },
+          failedAttempts: { type: Number, default: 0 },
+          lockedUntil: { type: Date },
+          version: { type: Number, default: 0 },
+        },
+        { _id: false },
+      ),
       select: false,
     },
     lastLogin: { type: Date },
@@ -138,6 +200,7 @@ const userSchema = new Schema<IUser>(
         delete ret.resetPasswordExpires;
         delete ret.resetPasswordAttempts;
         delete ret.passwordChangedAt;
+        delete ret.twoFactor;
         return ret;
       },
     },

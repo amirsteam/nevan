@@ -13,7 +13,7 @@ import {
     StatusBadge,
     ConfirmDialog,
 } from '../../components/admin';
-import { Shield, ShieldCheck, ToggleLeft, ToggleRight, Mail, ShoppingCart } from 'lucide-react';
+import { KeyRound, Shield, ShieldCheck, ToggleLeft, ToggleRight, Mail, ShoppingCart } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAuth } from '../../context/AuthContext';
@@ -44,6 +44,7 @@ const Users = () => {
     // Dialogs
     const [roleDialog, setRoleDialog] = useState<{ open: boolean; user: IUser | null; newRole: UserRole | '' }>({ open: false, user: null, newRole: '' });
     const [statusDialog, setStatusDialog] = useState<{ open: boolean; user: IUser | null }>({ open: false, user: null });
+    const [twoFactorDialog, setTwoFactorDialog] = useState<IUser | null>(null);
     const [updating, setUpdating] = useState(false);
 
     // Fetch users
@@ -130,6 +131,22 @@ const Users = () => {
         } finally {
             setUpdating(false);
             setRoleDialog({ open: false, user: null, newRole: '' });
+        }
+    };
+
+    // Another admin lost their phone and backup codes
+    const handleTwoFactorResetConfirm = async () => {
+        if (!twoFactorDialog) return;
+        setUpdating(true);
+        try {
+            const response = await adminAPI.resetUserTwoFactor(twoFactorDialog._id);
+            toast.success(response.data.message || 'Two-step login reset');
+            fetchUsers();
+        } catch (error) {
+            toast.error(getErrorMessage(error, "Couldn't reset two-step login"));
+        } finally {
+            setUpdating(false);
+            setTwoFactorDialog(null);
         }
     };
 
@@ -258,6 +275,15 @@ const Users = () => {
             icon: user.role === 'admin' ? Shield : ShieldCheck,
             onClick: () => handleRoleClick(user),
         },
+        ...(user.role === 'admin' && user.twoFactorEnabled
+            ? [
+                  {
+                      label: 'Reset two-step login',
+                      icon: KeyRound,
+                      onClick: () => setTwoFactorDialog(user),
+                  },
+              ]
+            : []),
     ];
 
     return (
@@ -368,6 +394,18 @@ const Users = () => {
                 }
                 confirmText={roleDialog.newRole === 'admin' ? 'Make Admin' : 'Remove Admin'}
                 variant={roleDialog.newRole === 'admin' ? 'warning' : 'danger'}
+                loading={updating}
+            />
+
+            {/* Two-step login reset (lost phone) */}
+            <ConfirmDialog
+                isOpen={!!twoFactorDialog}
+                onClose={() => setTwoFactorDialog(null)}
+                onConfirm={handleTwoFactorResetConfirm}
+                title="Reset two-step login?"
+                message={`Only do this if ${twoFactorDialog?.name ?? 'this admin'} lost their phone and backup codes and you've confirmed it's really them. They'll be signed out everywhere and set up a new authenticator app at their next sign-in.`}
+                confirmText="Reset"
+                variant="danger"
                 loading={updating}
             />
         </div>

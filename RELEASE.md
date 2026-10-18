@@ -145,6 +145,38 @@ The full runbook is in `.agent/workflows/deploy-update-cpanel-git.md`.
 
 ---
 
+## Admin two-step login
+
+Admin accounts sign in with their password **and** a 6-digit code from an authenticator app (Google Authenticator or Microsoft Authenticator). Customers are not affected.
+
+**Once, before the first release that has it:**
+
+1. In Terminal, make a key:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+2. In cPanel → Setup Node.js App → backend → Environment variables, add `TWO_FACTOR_KEY` with that value. Click Save, then Restart.
+   - Without it, admins can't sign in at all; the API log says so.
+   - **Never change or delete it afterwards:** every admin would have to set up their app again.
+3. Release as usual. Every admin is signed out once, on the website and in the mobile app.
+4. Each admin signs in on the website, scans the QR code with the phone, and saves the 10 backup codes (print them, or keep them away from the phone).
+
+**Day to day:**
+- The mobile app doesn't do two-step login yet, so admins do admin work on the website. Shopping in the app is unaffected for customers.
+- "Remember this browser" skips the code for 30 days on that browser. Changing the password, "Sign out everywhere" or Profile → Security → Forget remembered browsers ends that.
+- **New phone:** Profile → Security → Move to a new phone (needs a code from the old phone).
+
+**If an admin lost their phone:**
+1. **They still have a backup code:** they sign in with it ("Lost your phone? Use a backup code"), then Profile → Security → Move to a new phone.
+2. **No backup codes either:** another admin opens Users → that admin → **Reset two-step login**. They set it up again at their next sign-in.
+3. **Nobody can sign in:** in cPanel Terminal, after `source ~/nodevenv/backend/24/bin/activate`, run
+   ```bash
+   node ~/backend/dist/scripts/resetTwoFactor.js --env-file ~/.nevan-backup.env --email <admin email>
+   ```
+   Check the account shown, then run it again with `--apply` added.
+
+---
+
 ## Never
 
 - Never run `npm run seed` against the live database (it refuses, but don't try).

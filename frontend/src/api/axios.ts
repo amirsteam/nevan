@@ -89,7 +89,9 @@ api.interceptors.response.use(
                              originalRequest.url.includes('/auth/register') ||
                              originalRequest.url.includes('/auth/google') ||
                              originalRequest.url.includes('/auth/refresh-token') ||
-                             originalRequest.url.includes('/auth/logout');
+                             originalRequest.url.includes('/auth/logout') ||
+                             // Two-step sign-in steps: a 401 means the sign-in expired, not the session
+                             /\/auth\/2fa\/(verify|setup|enable)/.test(originalRequest.url);
 
         if (error.response?.status === 401 && !originalRequest._retry && !isAuthRequest) {
             originalRequest._retry = true;

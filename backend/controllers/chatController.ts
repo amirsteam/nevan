@@ -6,7 +6,7 @@ import { Request, Response, NextFunction } from "express";
 import { Types } from "mongoose";
 import AppError from "../utils/AppError";
 import User from "../models/User";
-import { generateGuestToken, verifyAccessToken, verifyGuestToken } from "../utils/tokenUtils";
+import { generateGuestToken, missingTwoFactor, verifyAccessToken, verifyGuestToken } from "../utils/tokenUtils";
 
 /**
  * Start an anonymous support-chat session for a website visitor
@@ -40,8 +40,8 @@ export const chatUploadAuth = async (req: Request, _res: Response, next: NextFun
     try {
         if (bearer) {
             const decoded = verifyAccessToken(bearer);
-            const user = await User.findById(decoded.userId).select("isActive");
-            if (user?.isActive) return next();
+            const user = await User.findById(decoded.userId).select("isActive role");
+            if (user?.isActive && !missingTwoFactor(user, decoded)) return next();
         } else if (typeof guestToken === "string") {
             verifyGuestToken(guestToken);
             return next();

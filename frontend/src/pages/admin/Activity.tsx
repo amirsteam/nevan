@@ -20,6 +20,7 @@ const ACTION_LABELS: Record<string, string> = {
   "user.activated": "Activated account",
   "user.deactivated": "Deactivated account",
   "user.role": "Changed role",
+  "user.two_factor_reset": "Reset two-step login",
   "order.refund": "Recorded refund",
   "order.cash_collected": "Marked cash collected",
   "product.deleted": "Deleted product",

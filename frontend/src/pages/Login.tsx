@@ -7,13 +7,14 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import AuthLayout from "../components/auth/AuthLayout";
 import GoogleSignInButton from "../components/auth/GoogleSignInButton";
 import SignInForm from "../components/auth/SignInForm";
+import TwoFactorFlow from "../components/auth/TwoFactorFlow";
 
 // Router state: where to go afterwards (ProtectedRoute, sign-up page) and a known email
 type AuthPageState = { from?: { pathname?: string; search?: string }; email?: string } | null;
 
 const Login = () => {
   usePageTitle("Sign in");
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, twoFactorChallenge } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,10 +44,15 @@ const Login = () => {
         </>
       }
     >
-      <div className="space-y-4">
-        <GoogleSignInButton text="signin_with" onSuccess={goBack} />
-        <SignInForm onSuccess={goBack} initialEmail={state?.email} />
-      </div>
+      {/* Admins: the authenticator step replaces the form until it's done */}
+      {twoFactorChallenge ? (
+        <TwoFactorFlow onSuccess={goBack} />
+      ) : (
+        <div className="space-y-4">
+          <GoogleSignInButton text="signin_with" onSuccess={goBack} />
+          <SignInForm onSuccess={goBack} initialEmail={state?.email} />
+        </div>
+      )}
     </AuthLayout>
   );
 };

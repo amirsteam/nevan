@@ -73,6 +73,14 @@ export const resetCodeLimiter = createLimiter({
   message: message("Too many attempts, please try again in 15 minutes"),
 });
 
+// Admin two-step login codes (each account also locks after 10 wrong codes)
+export const twoFactorLimiter = createLimiter({
+  windowMs: 15 * MINUTE,
+  limit: 20,
+  skipSuccessfulRequests: true,
+  message: message("Too many code attempts, please try again in 15 minutes"),
+});
+
 // Payment verification calls third-party gateways
 export const paymentLimiter = createLimiter({
   windowMs: 15 * MINUTE,

@@ -10,6 +10,7 @@ export type AdminAction =
   | "user.activated"
   | "user.deactivated"
   | "user.role"
+  | "user.two_factor_reset"
   | "order.refund"
   | "order.cash_collected"
   | "product.deleted"

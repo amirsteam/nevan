@@ -260,6 +260,10 @@ export const updateUserRole = (
   role: "customer" | "admin",
 ): ApiResponse<{ user: IUser }> => api.put(`/admin/users/${id}/role`, { role });
 
+// Another admin lost their phone: their two-step login is set up again at next sign-in
+export const resetUserTwoFactor = (id: string): ApiResponse<{ user: IUser }> =>
+  api.post(`/admin/users/${id}/reset-two-factor`);
+
 /**
  * Contact messages and newsletter subscribers
  */
@@ -381,6 +385,7 @@ export const adminAPI = {
   getUsers,
   updateUserStatus,
   updateUserRole,
+  resetUserTwoFactor,
   // Campaigns
   getCampaignPresets,
   getCampaigns,

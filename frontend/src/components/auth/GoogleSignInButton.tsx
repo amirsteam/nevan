@@ -69,6 +69,8 @@ const GoogleButton = ({ text = "continue_with", onSuccess }: GoogleSignInButtonP
     const result = await loginWithGoogle(credential);
     setBusy(false);
 
+    // Admin: the page shows the authenticator step next
+    if (result.twoFactor) return;
     if (!result.success) {
       setError(result.error || "Google sign-in failed. Please try again.");
       return;

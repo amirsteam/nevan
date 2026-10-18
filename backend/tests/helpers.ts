@@ -17,7 +17,8 @@ export const createUser = async (overrides: Record<string, unknown> = {}) => {
     password: "password123",
     ...overrides,
   });
-  const { accessToken } = generateTokenPair(user);
+  // Admins in tests are signed in with two-step login
+  const { accessToken } = generateTokenPair(user, { mfa: user.role === "admin" });
   return { user, accessToken };
 };
 

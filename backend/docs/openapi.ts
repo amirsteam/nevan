@@ -258,13 +258,57 @@ const openApiSpec = {
       }, "none"),
     },
     "/auth/login": {
-      post: op("Auth", "Log in (failed attempts are rate limited)", {
+      post: op("Auth", "Log in (failed attempts are rate limited). Admins get { twoFactorRequired | twoFactorSetupRequired, challengeToken } instead of tokens (finish with /auth/2fa/*); admins without an Origin header (mobile app) get 403", {
         requestBody: json({
           type: "object",
           required: ["email", "password"],
           properties: { email: { type: "string", format: "email" }, password: { type: "string" } },
         }),
       }, "none"),
+    },
+    "/auth/2fa/verify": {
+      post: op("Auth", "Finish an admin sign-in with an authenticator code or a backup code; rememberDevice sets a 30-day trustedDevice cookie. Wrong code 400; 10 wrong codes lock for 15 minutes (429)", {
+        requestBody: json({
+          type: "object",
+          required: ["challengeToken"],
+          properties: {
+            challengeToken: { type: "string" },
+            code: { type: "string", pattern: "^\\d{6}$" },
+            backupCode: { type: "string" },
+            rememberDevice: { type: "boolean" },
+          },
+        }),
+      }, "none"),
+    },
+    "/auth/2fa/setup": {
+      post: op("Auth", "First admin sign-in: a new authenticator (otpauthUrl, qrCode data URL, manualKey)", {
+        requestBody: json({ type: "object", required: ["challengeToken"], properties: { challengeToken: { type: "string" } } }),
+      }, "none"),
+    },
+    "/auth/2fa/enable": {
+      post: op("Auth", "Confirm the new authenticator's first code: two-step login on, signed in, backupCodes returned once", {
+        requestBody: json({
+          type: "object",
+          required: ["challengeToken", "code"],
+          properties: { challengeToken: { type: "string" }, code: { type: "string" }, rememberDevice: { type: "boolean" } },
+        }),
+      }, "none"),
+    },
+    "/auth/2fa": {
+      get: op("Auth", "Two-step login status of the signed-in user (enabled, enabledAt, backupCodesLeft, rememberedBrowsers)"),
+    },
+    "/auth/2fa/backup-codes": {
+      post: op("Auth", "New backup codes (old ones stop working); needs a current code", {
+        requestBody: json({ type: "object", required: ["code"], properties: { code: { type: "string" } } }),
+      }, "admin"),
+    },
+    "/auth/2fa/replace": {
+      post: op("Auth", "Move to a new phone: { code } from the current app returns a new QR; { newCode } from the new app finishes (other sessions and remembered browsers end)", {
+        requestBody: json({ type: "object", properties: { code: { type: "string" }, newCode: { type: "string" } } }),
+      }, "admin"),
+    },
+    "/auth/2fa/devices": {
+      delete: op("Auth", "Forget every remembered browser"),
     },
     "/auth/refresh-token": {
       post: op("Auth", "Exchange a refresh token (cookie or body) for a new token pair", {
@@ -998,6 +1042,11 @@ const openApiSpec = {
       put: op("Admin", "Change user role (not your own account: 409)", {
         parameters: [pathParam("id")],
         requestBody: json({ type: "object", required: ["role"], properties: { role: { type: "string", enum: ["customer", "admin"] } } }),
+      }, "admin"),
+    },
+    "/admin/users/{id}/reset-two-factor": {
+      post: op("Admin", "Reset another admin's two-step login after a lost phone; signs them out (not your own account: 409)", {
+        parameters: [pathParam("id")],
       }, "admin"),
     },
     "/admin/contact-messages": {

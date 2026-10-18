@@ -3,7 +3,7 @@
  * Verifies JWT access tokens and attaches user to request
  */
 import { Request, Response, NextFunction } from "express";
-import { verifyAccessToken } from "../utils/tokenUtils";
+import { missingTwoFactor, SIGN_IN_WITH_TWO_FACTOR, verifyAccessToken } from "../utils/tokenUtils";
 import User from "../models/User";
 import AppError from "../utils/AppError";
 import asyncHandler from "../utils/asyncHandler";
@@ -57,6 +57,10 @@ const protect = asyncHandler(
         );
       }
 
+      if (missingTwoFactor(user, decoded)) {
+        return next(new AppError(SIGN_IN_WITH_TWO_FACTOR, 401));
+      }
+
       // Attach user to request
       req.user = user;
       next();
@@ -97,7 +101,7 @@ const optionalAuth = asyncHandler(
       const decoded = verifyAccessToken(token);
       const user = await User.findById(decoded.userId);
 
-      if (user && user.isActive) {
+      if (user && user.isActive && !missingTwoFactor(user, decoded)) {
         req.user = user;
       }
     } catch (error) {

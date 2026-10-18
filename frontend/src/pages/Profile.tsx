@@ -22,6 +22,7 @@ import AddressForm from "../components/AddressForm";
 import PasswordStrength from "../components/PasswordStrength";
 import { passwordProblem } from "../utils/password";
 import ThemeToggle from "../components/layout/ThemeToggle";
+import TwoFactorSettings from "../components/account/TwoFactorSettings";
 import type { ISavedAddress, ISavedAddressInput } from "../types";
 
 const TABS = [
@@ -429,8 +430,9 @@ const Profile = () => {
         <TabContent value="addresses" className="mt-6">
           <AddressesPanel />
         </TabContent>
-        <TabContent value="security" className="mt-6">
+        <TabContent value="security" className="mt-6 space-y-6">
           <SecurityPanel />
+          {user?.role === "admin" && user.twoFactorEnabled && <TwoFactorSettings />}
         </TabContent>
         <TabContent value="appearance" className="mt-6">
           <div className="card p-5 md:p-6 max-w-xl space-y-3">

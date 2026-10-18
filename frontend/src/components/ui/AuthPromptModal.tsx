@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 import { usePendingCart } from "../../context/PendingCartContext";
 import { formatPrice } from "../../utils/helpers";
 import Modal from "./Modal";
@@ -13,11 +14,13 @@ import Tabs, { TabContent, TabList, TabTrigger } from "./Tabs";
 import GoogleSignInButton from "../auth/GoogleSignInButton";
 import SignInForm from "../auth/SignInForm";
 import SignUpForm from "../auth/SignUpForm";
+import TwoFactorFlow from "../auth/TwoFactorFlow";
 
 type TabValue = "signin" | "signup";
 
 const AuthPromptModal = () => {
   const { pendingItem, isModalOpen, closeModal } = usePendingCart();
+  const { twoFactorChallenge, cancelTwoFactor } = useAuth();
   const [activeTab, setActiveTab] = useState<TabValue>("signin");
   // Filled when sign-up finds an existing account, so sign-in starts with that email
   const [signInEmail, setSignInEmail] = useState("");
@@ -25,6 +28,8 @@ const AuthPromptModal = () => {
   // The pending item is added to the cart by the component that opened this
   const handleClose = () => {
     closeModal();
+    // Closing mid-way drops an admin's unfinished two-step sign-in
+    cancelTwoFactor();
     setActiveTab("signin");
     setSignInEmail("");
   };
@@ -63,39 +68,49 @@ const AuthPromptModal = () => {
         </div>
       )}
 
-      <GoogleSignInButton onSuccess={handleClose} />
+      {twoFactorChallenge ? (
+        <TwoFactorFlow onSuccess={handleClose} />
+      ) : (
+        <>
+          <GoogleSignInButton onSuccess={handleClose} />
 
-      <Tabs value={activeTab} defaultValue="signin" onChange={(v) => setActiveTab(v as TabValue)}>
-        <TabList variant="underline">
-          <TabTrigger value="signin" variant="underline">
-            Sign in
-          </TabTrigger>
-          <TabTrigger value="signup" variant="underline">
-            Create account
-          </TabTrigger>
-        </TabList>
+          <Tabs
+            value={activeTab}
+            defaultValue="signin"
+            onChange={(v) => setActiveTab(v as TabValue)}
+          >
+            <TabList variant="underline">
+              <TabTrigger value="signin" variant="underline">
+                Sign in
+              </TabTrigger>
+              <TabTrigger value="signup" variant="underline">
+                Create account
+              </TabTrigger>
+            </TabList>
 
-        <TabContent value="signin">
-          <SignInForm
-            key={signInEmail}
-            initialEmail={signInEmail}
-            submitLabel={`Sign in${action}`}
-            onSuccess={handleClose}
-            onLeave={handleClose}
-          />
-        </TabContent>
-        <TabContent value="signup">
-          <SignUpForm
-            submitLabel={`Create account${action}`}
-            onSuccess={handleClose}
-            onSignInInstead={(email) => {
-              setSignInEmail(email);
-              setActiveTab("signin");
-            }}
-            onLeave={handleClose}
-          />
-        </TabContent>
-      </Tabs>
+            <TabContent value="signin">
+              <SignInForm
+                key={signInEmail}
+                initialEmail={signInEmail}
+                submitLabel={`Sign in${action}`}
+                onSuccess={handleClose}
+                onLeave={handleClose}
+              />
+            </TabContent>
+            <TabContent value="signup">
+              <SignUpForm
+                submitLabel={`Create account${action}`}
+                onSuccess={handleClose}
+                onSignInInstead={(email) => {
+                  setSignInEmail(email);
+                  setActiveTab("signin");
+                }}
+                onLeave={handleClose}
+              />
+            </TabContent>
+          </Tabs>
+        </>
+      )}
     </Modal>
   );
 };

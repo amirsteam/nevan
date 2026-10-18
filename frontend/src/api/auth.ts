@@ -8,6 +8,9 @@ import type {
   IApiResponse,
   IRegisterData,
   IAuthResponse,
+  ITwoFactorPendingResponse,
+  ITwoFactorSetup,
+  ITwoFactorStatus,
   ISavedAddress,
   ISavedAddressInput,
 } from "../types";
@@ -22,17 +25,74 @@ export const authAPI = {
     return response.data;
   },
 
+  // Admins get a two-step challenge instead of a session
   login: async (
     email: string,
     password: string,
-  ): Promise<IApiResponse<IAuthResponse>> => {
+  ): Promise<IApiResponse<IAuthResponse | ITwoFactorPendingResponse>> => {
     const response = await api.post("/auth/login", { email, password });
     return response.data;
   },
 
   // Signs in, or creates the account, from a Google Identity Services ID token
-  google: async (idToken: string): Promise<IApiResponse<IAuthResponse>> => {
+  google: async (idToken: string): Promise<IApiResponse<IAuthResponse | ITwoFactorPendingResponse>> => {
     const response = await api.post("/auth/google", { idToken });
+    return response.data;
+  },
+
+  // ---------- Two-step login (admins) ----------
+
+  // Finish a sign-in with an authenticator code or a backup code
+  verifyTwoFactor: async (input: {
+    challengeToken: string;
+    code?: string;
+    backupCode?: string;
+    rememberDevice?: boolean;
+  }): Promise<IApiResponse<IAuthResponse>> => {
+    const response = await api.post("/auth/2fa/verify", input);
+    return response.data;
+  },
+
+  // First sign-in: a new authenticator to scan
+  setupTwoFactor: async (challengeToken: string): Promise<IApiResponse<ITwoFactorSetup>> => {
+    const response = await api.post("/auth/2fa/setup", { challengeToken });
+    return response.data;
+  },
+
+  // Its first code turns two-step login on and signs in (backup codes come back once)
+  enableTwoFactor: async (input: {
+    challengeToken: string;
+    code: string;
+    rememberDevice?: boolean;
+  }): Promise<IApiResponse<IAuthResponse>> => {
+    const response = await api.post("/auth/2fa/enable", input);
+    return response.data;
+  },
+
+  twoFactorStatus: async (): Promise<IApiResponse<ITwoFactorStatus>> => {
+    const response = await api.get("/auth/2fa");
+    return response.data;
+  },
+
+  regenerateBackupCodes: async (code: string): Promise<IApiResponse<{ backupCodes: string[] }>> => {
+    const response = await api.post("/auth/2fa/backup-codes", { code });
+    return response.data;
+  },
+
+  // New phone, step 1: a code from the current app → the new QR code
+  startTwoFactorReplace: async (code: string): Promise<IApiResponse<ITwoFactorSetup>> => {
+    const response = await api.post("/auth/2fa/replace", { code });
+    return response.data;
+  },
+
+  // Step 2: the new app's first code
+  finishTwoFactorReplace: async (newCode: string): Promise<IApiResponse<null>> => {
+    const response = await api.post("/auth/2fa/replace", { newCode });
+    return response.data;
+  },
+
+  forgetTrustedDevices: async (): Promise<IApiResponse<null>> => {
+    const response = await api.delete("/auth/2fa/devices");
     return response.data;
   },
 

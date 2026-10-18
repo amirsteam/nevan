@@ -61,6 +61,8 @@ export interface IUser {
   hasPassword?: boolean;
   emailVerified?: boolean;
   googleLinked?: boolean;
+  // Admins: two-step login (authenticator app) is set up
+  twoFactorEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   // GET /admin/users only: orders placed, spent (confirmed to delivered), last order
@@ -74,6 +76,35 @@ export interface IAuthResponse {
   // Google sign-in only
   isNewUser?: boolean;
   passwordRemoved?: boolean;
+  // After two-step login: backup codes left, and the new codes right after setup (shown once)
+  backupCodesLeft?: number;
+  backupCodes?: string[];
+}
+
+/** Admin sign-in: password accepted, the authenticator step comes next (no tokens yet) */
+export interface ITwoFactorPendingResponse {
+  twoFactorRequired?: true;
+  twoFactorSetupRequired?: true;
+  challengeToken: string;
+}
+
+export interface ITwoFactorChallenge {
+  purpose: "verify" | "setup";
+  challengeToken: string;
+}
+
+/** A new authenticator to add: scan the QR code or type the key */
+export interface ITwoFactorSetup {
+  otpauthUrl: string;
+  qrCode: string;
+  manualKey: string;
+}
+
+export interface ITwoFactorStatus {
+  enabled: boolean;
+  enabledAt: string | null;
+  backupCodesLeft: number;
+  rememberedBrowsers: number;
 }
 
 export interface ILoginCredentials {

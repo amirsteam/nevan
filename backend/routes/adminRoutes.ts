@@ -42,6 +42,7 @@ import * as analyticsService from "../services/analyticsService";
 import { getAdminLog, logAdminAction } from "../services/adminLogService";
 import Order from "../models/Order";
 import * as orderService from "../services/orderService";
+import * as authService from "../services/authService";
 import AppError from "../utils/AppError";
 
 const router = express.Router();
@@ -411,6 +412,27 @@ router.put(
     res.status(200).json({
       status: "success",
       message: `User role updated to ${role}`,
+      data: { user },
+    });
+  }),
+);
+
+// Another admin lost their phone and backup codes: two-step login off, signed out
+// everywhere; they set it up again at their next sign-in
+router.post(
+  "/users/:id/reset-two-factor",
+  mongoIdValidator("id"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = await authService.resetTwoFactorFor(String((req.user as any)._id), String(req.params.id));
+    await logAdminAction(
+      req,
+      "user.two_factor_reset",
+      { type: "user", id: user._id, label: `${user.name} (${user.email})` },
+      "Two-step login reset",
+    );
+    res.status(200).json({
+      status: "success",
+      message: `Two-step login reset for ${user.name}. They set it up again at their next sign-in.`,
       data: { user },
     });
   }),

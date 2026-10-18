@@ -12,7 +12,12 @@ import {
   verifyRefreshToken,
   hashToken,
   getTokenExpiry,
+  generateTwoFactorChallenge,
+  verifyTwoFactorChallenge,
+  SIGN_IN_WITH_TWO_FACTOR,
+  type TwoFactorPurpose,
 } from "../utils/tokenUtils";
+import * as twoFactor from "./twoFactorService";
 import AppError from "../utils/AppError";
 import { sendPasswordResetEmail } from "../utils/email";
 import { verifyGoogleIdToken } from "../utils/googleAuth";
@@ -51,12 +56,37 @@ interface GoogleAuthResult extends AuthResult {
   passwordRemoved: boolean;
 }
 
+/** Password (or Google) accepted; an admin must still finish two-step login */
+export interface TwoFactorPending {
+  twoFactor: { purpose: TwoFactorPurpose; challengeToken: string };
+}
+
+/** Where a sign-in comes from (the controller knows) */
+export interface SignInContext {
+  // Browsers send an Origin header; the mobile app doesn't
+  browser: boolean;
+  // "Remember this browser" cookie, when present
+  trustedDeviceToken?: string;
+}
+
+/** A finished two-step sign-in, plus a remembered-browser cookie when asked for */
+export interface TwoFactorSignIn extends AuthResult {
+  trustedDevice?: { token: string; expiresAt: Date };
+  // Only right after setup (shown once)
+  backupCodes?: string[];
+  backupCodesLeft: number;
+}
+
+const MOBILE_ADMIN_MESSAGE =
+  "Admin accounts use two-step login. Sign in on the website (nevanhandicraft.com.np) for admin work.";
+
 /**
  * Issue a token pair and record its refresh session on the user (caller saves).
  * Expired sessions are pruned and only the newest MAX_SESSIONS are kept.
+ * `mfa` marks a session that passed two-step login (required for admins).
  */
-const startSession = (user: IUser): TokenPair => {
-  const tokens = generateTokenPair(user);
+const startSession = (user: IUser, { mfa = false }: { mfa?: boolean } = {}): TokenPair => {
+  const tokens = generateTokenPair(user, { mfa });
   const now = Date.now();
 
   const sessions: IRefreshSession[] = (user.refreshSessions || []).filter(
@@ -66,10 +96,52 @@ const startSession = (user: IUser): TokenPair => {
     tokenHash: hashToken(tokens.refreshToken),
     expiresAt: getTokenExpiry(tokens.refreshToken),
     createdAt: new Date(),
+    ...(mfa && { mfa: true }),
   });
 
   user.refreshSessions = sessions.slice(-MAX_SESSIONS);
   return tokens;
+};
+
+/**
+ * After the password (or Google): customers get their session; admins finish
+ * two-step login first (a remembered browser skips the code). The mobile app
+ * has no two-step screens yet, so admins are sent to the website.
+ */
+const secondStep = async (user: IUser, ctx: SignInContext): Promise<AuthResult | TwoFactorPending> => {
+  if (user.role !== "admin") {
+    const tokens = startSession(user);
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+    return { user, tokens };
+  }
+
+  if (!ctx.browser) throw new AppError(MOBILE_ADMIN_MESSAGE, 403);
+  if (!twoFactor.isTwoFactorConfigured()) {
+    throw new AppError(
+      "Two-step login isn't set up on this server yet (TWO_FACTOR_KEY). Admin sign-in is paused until it is.",
+      503,
+    );
+  }
+
+  if (twoFactor.isTrustedDevice(user, ctx.trustedDeviceToken)) {
+    const tokens = startSession(user, { mfa: true });
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+    return { user, tokens };
+  }
+
+  const purpose: TwoFactorPurpose = user.twoFactorEnabled ? "verify" : "setup";
+  return {
+    twoFactor: {
+      purpose,
+      challengeToken: generateTwoFactorChallenge({
+        userId: String(user._id),
+        purpose,
+        ver: user.twoFactor?.version || 0,
+      }),
+    },
+  };
 };
 
 /**
@@ -107,14 +179,15 @@ const registerUser = async (
 const loginUser = async (
   email: string,
   password: string,
-): Promise<AuthResult> => {
+  ctx: SignInContext = { browser: true },
+): Promise<AuthResult | TwoFactorPending> => {
   // Find user with password field
   if (typeof email !== "string" || typeof password !== "string") {
     throw new AppError("Invalid email or password", 401);
   }
 
   const user = await User.findOne({ email }).select(
-    "+password +refreshSessions",
+    "+password +refreshSessions +twoFactor",
   );
 
   // Unknown emails and Google-only accounts still pay for a bcrypt comparison
@@ -130,12 +203,8 @@ const loginUser = async (
     throw new AppError("Your account has been deactivated", 401);
   }
 
-  // Generate new tokens, record the session and last login
-  const tokens = startSession(user);
-  user.lastLogin = new Date();
-  await user.save({ validateBeforeSave: false });
-
-  return { user, tokens };
+  // Tokens, session and last login (admins: after two-step login)
+  return secondStep(user, ctx);
 };
 
 /**
@@ -159,7 +228,7 @@ const findOrCreateGoogleUser = async (profile: {
   // Same normalization express-validator applies on register/login
   const email = validator.normalizeEmail(profile.email) || profile.email.toLowerCase();
 
-  const byGoogleId = await User.findOne({ googleId: profile.sub }).select("+refreshSessions");
+  const byGoogleId = await User.findOne({ googleId: profile.sub }).select("+refreshSessions +twoFactor");
   if (byGoogleId) {
     return { user: byGoogleId, isNewUser: false, passwordRemoved: false, sessionsRevoked: false };
   }
@@ -199,15 +268,24 @@ const findOrCreateGoogleUser = async (profile: {
 /**
  * Sign in (or sign up) with a Google ID token from the web or mobile app
  */
-const googleSignIn = async (idToken: string): Promise<GoogleAuthResult> => {
+const googleSignIn = async (
+  idToken: string,
+  ctx: SignInContext = { browser: true },
+): Promise<GoogleAuthResult | TwoFactorPending> => {
   const profile = await verifyGoogleIdToken(idToken);
 
-  const attempt = async (): Promise<GoogleAuthResult> => {
+  const attempt = async (): Promise<GoogleAuthResult | TwoFactorPending> => {
     const { user, isNewUser, passwordRemoved, sessionsRevoked } =
       await findOrCreateGoogleUser(profile);
 
     if (!user.isActive) {
       throw new AppError("Your account has been deactivated", 401);
+    }
+
+    // An admin linked to Google (before becoming admin) still needs two-step login
+    if (user.role === "admin") {
+      const result = await secondStep(user, ctx);
+      return "twoFactor" in result ? result : { ...result, isNewUser: false, passwordRemoved: false };
     }
 
     const tokens = startSession(user);
@@ -241,6 +319,11 @@ const logoutUser = async (
     });
   } else {
     await User.findByIdAndUpdate(userId, { refreshSessions: [] });
+    // "Sign out everywhere" also forgets remembered browsers
+    await User.updateOne(
+      { _id: userId, twoFactor: { $exists: true } },
+      { $set: { "twoFactor.trustedDevices": [] } },
+    );
     disconnectUserSockets(String(userId));
   }
 };
@@ -291,12 +374,19 @@ const refreshAccessToken = async (refreshToken: string): Promise<TokenPair> => {
       throw new AppError("Invalid refresh token", 401);
     }
 
+    // Admin sessions from before two-step login (or from before becoming admin) end here
+    if (user.role === "admin" && !session.mfa) {
+      user.refreshSessions = (user.refreshSessions || []).filter((s) => s.tokenHash !== tokenHash);
+      await user.save({ validateBeforeSave: false });
+      throw new AppError(SIGN_IN_WITH_TWO_FACTOR, 401);
+    }
+
     // Rotate: the old token expires after a short grace period
     const graceExpiry = new Date(now + ROTATION_GRACE_MS);
     if (new Date(session.expiresAt) > graceExpiry) {
       session.expiresAt = graceExpiry;
     }
-    const tokens = startSession(user);
+    const tokens = startSession(user, { mfa: !!session.mfa });
     await user.save({ validateBeforeSave: false });
 
     return tokens;
@@ -315,7 +405,7 @@ const changePassword = async (
   currentPassword: string,
   newPassword: string,
 ): Promise<{ message: string; tokens: TokenPair }> => {
-  const user = await User.findById(userId).select("+password +refreshSessions");
+  const user = await User.findById(userId).select("+password +refreshSessions +twoFactor");
 
   if (!user) {
     throw new AppError("User not found", 404);
@@ -335,7 +425,9 @@ const changePassword = async (
 
   user.password = newPassword;
   user.refreshSessions = []; // Invalidate all sessions
-  const tokens = startSession(user);
+  if (user.twoFactor) twoFactor.forgetDevices(user);
+  // This device passed two-step login to get here (protect refuses admins without it)
+  const tokens = startSession(user, { mfa: user.role === "admin" });
   await user.save();
   disconnectUserSockets(String(user._id));
 
@@ -540,7 +632,7 @@ const resetPassword = async (
   otp: string,
   newPassword: string,
 ): Promise<{ message: string }> => {
-  const user = await checkResetCode(email, otp, "+password +refreshSessions");
+  const user = await checkResetCode(email, otp, "+password +refreshSessions +twoFactor");
 
   // Update password; the emailed code proves the user owns the address
   user.password = newPassword;
@@ -549,6 +641,8 @@ const resetPassword = async (
   user.resetPasswordExpires = undefined;
   user.resetPasswordAttempts = 0;
   user.refreshSessions = []; // Invalidate all sessions
+  // Two-step login stays on (the email alone must not be enough); remembered browsers are forgotten
+  if (user.twoFactor) twoFactor.forgetDevices(user);
   await user.save();
   disconnectUserSockets(String(user._id));
 
@@ -556,6 +650,195 @@ const resetPassword = async (
     message:
       "Password reset successfully. Please login with your new password.",
   };
+};
+
+// ==================== Two-step login (admins) ====================
+
+const TWO_FACTOR_FIELDS = "+refreshSessions +twoFactor";
+const WRONG_CODE = "That code didn't work. Check the time on your phone and try the newest code.";
+
+/** The admin a sign-in challenge belongs to, if it is still current */
+const challengedUser = async (challengeToken: unknown, purpose: TwoFactorPurpose): Promise<IUser> => {
+  let challenge;
+  try {
+    challenge = verifyTwoFactorChallenge(String(challengeToken || ""));
+  } catch {
+    throw new AppError("This sign-in has expired. Enter your email and password again.", 401);
+  }
+  if (challenge.purpose !== purpose) throw new AppError("Enter your email and password again.", 401);
+
+  const user = await User.findById(challenge.userId).select(TWO_FACTOR_FIELDS);
+  if (!user || !user.isActive || user.role !== "admin") {
+    throw new AppError("This sign-in has expired. Enter your email and password again.", 401);
+  }
+  // Say "locked" before "expired": a lock also retires the challenges issued before it
+  twoFactor.assertNotLocked(user);
+  if ((user.twoFactor?.version || 0) !== challenge.ver) {
+    throw new AppError("This sign-in has expired. Enter your email and password again.", 401);
+  }
+  // Setup only while two-step login is off; verification only while it is on
+  if ((purpose === "setup") === !!user.twoFactorEnabled) {
+    throw new AppError("Enter your email and password again.", 401);
+  }
+  return user;
+};
+
+/** Count a wrong code, save, and answer (400, not 401: a 401 makes clients refresh) */
+const wrongCode = async (user: IUser): Promise<never> => {
+  twoFactor.recordFailure(user);
+  await user.save({ validateBeforeSave: false });
+  twoFactor.assertNotLocked(user);
+  throw new AppError(WRONG_CODE, 400);
+};
+
+const finishTwoFactorSignIn = async (
+  user: IUser,
+  options: { rememberDevice?: boolean; deviceLabel?: string; backupCodes?: string[] },
+): Promise<TwoFactorSignIn> => {
+  const tokens = startSession(user, { mfa: true });
+  const trustedDevice = options.rememberDevice ? twoFactor.trustDevice(user, options.deviceLabel) : undefined;
+  user.lastLogin = new Date();
+  await user.save({ validateBeforeSave: false });
+  return {
+    user,
+    tokens,
+    trustedDevice,
+    backupCodes: options.backupCodes,
+    backupCodesLeft: user.twoFactor?.backupCodes.length || 0,
+  };
+};
+
+/** Second step of an admin sign-in: an authenticator code or a backup code */
+const verifyTwoFactorSignIn = async (input: {
+  challengeToken: string;
+  code?: string;
+  backupCode?: string;
+  rememberDevice?: boolean;
+  deviceLabel?: string;
+}): Promise<TwoFactorSignIn> => {
+  const user = await challengedUser(input.challengeToken, "verify");
+  const ok = input.backupCode
+    ? twoFactor.useBackupCode(user, input.backupCode)
+    : twoFactor.checkCode(user, input.code);
+  if (!ok) return wrongCode(user);
+  return finishTwoFactorSignIn(user, input);
+};
+
+/** First sign-in of an admin without two-step login: a new authenticator to scan */
+const startTwoFactorSetup = async (challengeToken: string) => {
+  const user = await challengedUser(challengeToken, "setup");
+  const setup = await twoFactor.beginSetup(user);
+  await user.save({ validateBeforeSave: false });
+  return setup;
+};
+
+/** Confirm the new authenticator with its first code: two-step login is on, signed in */
+const enableTwoFactor = async (input: {
+  challengeToken: string;
+  code: string;
+  rememberDevice?: boolean;
+  deviceLabel?: string;
+}): Promise<TwoFactorSignIn> => {
+  const user = await challengedUser(input.challengeToken, "setup");
+  if (!user.twoFactor?.pendingSecret) throw new AppError("Scan the QR code first", 400);
+  if (!twoFactor.checkPendingCode(user, input.code)) return wrongCode(user);
+  twoFactor.adoptPendingSecret(user);
+  const backupCodes = twoFactor.issueBackupCodes(user);
+  return finishTwoFactorSignIn(user, { ...input, backupCodes });
+};
+
+/** A signed-in admin's own account, with its two-step details */
+const signedInAdmin = async (userId: string): Promise<IUser> => {
+  const user = await User.findById(userId).select(TWO_FACTOR_FIELDS);
+  if (!user) throw new AppError("User not found", 404);
+  if (user.role !== "admin" || !user.twoFactorEnabled) {
+    throw new AppError("Two-step login is for admin accounts", 403);
+  }
+  twoFactor.assertNotLocked(user);
+  return user;
+};
+
+/** Admin Security page: confirm with a current code first */
+const requireCurrentCode = async (user: IUser, code: unknown): Promise<void> => {
+  if (!twoFactor.checkCode(user, code)) await wrongCode(user);
+};
+
+const getTwoFactorStatus = async (userId: string) => {
+  const user = await User.findById(userId).select("+twoFactor");
+  if (!user) throw new AppError("User not found", 404);
+  return twoFactor.statusOf(user);
+};
+
+const regenerateBackupCodes = async (userId: string, code: string): Promise<string[]> => {
+  const user = await signedInAdmin(userId);
+  await requireCurrentCode(user, code);
+  const codes = twoFactor.issueBackupCodes(user);
+  await user.save({ validateBeforeSave: false });
+  return codes;
+};
+
+/** Moving to a new phone, step 1: a current code, then a new QR code */
+const beginTwoFactorReplace = async (userId: string, code: string) => {
+  const user = await signedInAdmin(userId);
+  await requireCurrentCode(user, code);
+  const setup = await twoFactor.beginSetup(user);
+  await user.save({ validateBeforeSave: false });
+  return setup;
+};
+
+/** Step 2: the new app's first code. Other sessions and remembered browsers end. */
+const confirmTwoFactorReplace = async (
+  userId: string,
+  code: string,
+  currentRefreshToken?: string,
+): Promise<void> => {
+  const user = await signedInAdmin(userId);
+  if (!user.twoFactor?.pendingSecret) throw new AppError("Start again: scan the new QR code first", 400);
+  if (!twoFactor.checkPendingCode(user, code)) await wrongCode(user);
+  twoFactor.adoptPendingSecret(user);
+  twoFactor.forgetDevices(user);
+  // Keep only this browser's session: whoever had the old phone is signed out
+  const keep = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+  user.refreshSessions = (user.refreshSessions || []).filter((s) => s.tokenHash === keep);
+  await user.save({ validateBeforeSave: false });
+};
+
+const forgetRememberedBrowsers = async (userId: string): Promise<void> => {
+  const user = await User.findById(userId).select("+twoFactor");
+  if (!user) throw new AppError("User not found", 404);
+  if (user.twoFactor) {
+    twoFactor.forgetDevices(user);
+    await user.save({ validateBeforeSave: false });
+  }
+};
+
+/**
+ * Another admin lost their phone and backup codes: turn their two-step login
+ * off and sign them out; they set it up again at their next sign-in.
+ */
+const resetTwoFactorFor = async (actingAdminId: string, targetId: string): Promise<IUser> => {
+  if (String(actingAdminId) === String(targetId)) {
+    throw new AppError("Ask another admin to reset your two-step login", 409);
+  }
+  const user = await User.findById(targetId).select(TWO_FACTOR_FIELDS);
+  if (!user) throw new AppError("User not found", 404);
+  twoFactor.resetState(user);
+  user.refreshSessions = [];
+  await user.save({ validateBeforeSave: false });
+  disconnectUserSockets(String(user._id));
+  return user;
+};
+
+export {
+  verifyTwoFactorSignIn,
+  startTwoFactorSetup,
+  enableTwoFactor,
+  getTwoFactorStatus,
+  regenerateBackupCodes,
+  beginTwoFactorReplace,
+  confirmTwoFactorReplace,
+  forgetRememberedBrowsers,
+  resetTwoFactorFor,
 };
 
 export {

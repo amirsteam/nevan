@@ -16,6 +16,7 @@ import { initializeSocket } from './config/socket';
 import { PaymentService } from './services/payment';
 import { launchDueCampaigns } from './services/campaignService';
 import { startSeoPageUpkeep } from './services/seoPagesService';
+import { isTwoFactorConfigured } from './services/twoFactorService';
 import { isEmailConfigured, verifyEmailConnection } from './utils/email';
 
 // Handle uncaught exceptions
@@ -75,6 +76,11 @@ setTimeout(settlePayments, 30 * 1000).unref();
 
 // Email (password reset codes, contact form copies): say clearly at startup
 // whether it works, instead of failing silently when someone resets a password
+// Admin two-step login: without its key admins can't sign in at all
+if (!isTwoFactorConfigured()) {
+    console.error('❌ TWO_FACTOR_KEY is missing or invalid: admin sign-in is paused. Set it to 64 hex characters (see env.production.example).');
+}
+
 if (!isEmailConfigured()) {
     console.warn(
         process.env.NODE_ENV === 'production'

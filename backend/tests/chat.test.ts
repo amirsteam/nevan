@@ -580,3 +580,15 @@ describe("Duplicate open conversation repair", () => {
     expect(names).toContain("one_open_room_per_signed_in_customer");
   });
 });
+
+describe("Chat sign-in for admins", () => {
+  it("refuses an admin token issued without two-step login", async () => {
+    const jwt = require("jsonwebtoken");
+    const { user } = await createUser({ role: "admin" });
+    const oldToken = jwt.sign({ userId: String(user._id), role: "admin" }, process.env.JWT_ACCESS_SECRET as string);
+    await expect(connect(oldToken)).rejects.toThrow(/two-step login/);
+
+    const { accessToken } = await createUser({ role: "admin" }); // signed in with two-step login
+    await expect(connect(accessToken)).resolves.toBeDefined();
+  });
+});

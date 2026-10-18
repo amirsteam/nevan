@@ -8,6 +8,7 @@ import {
   body,
   param,
   query,
+  oneOf,
   ValidationChain,
 } from "express-validator";
 import AppError from "../utils/AppError";
@@ -103,6 +104,61 @@ const googleAuthValidator: (ValidationChain | RequestHandler)[] = [
     .withMessage("Google sign-in token is required")
     .isLength({ min: 1, max: 4096 })
     .withMessage("Google sign-in token is required"),
+  handleValidationErrors,
+];
+
+// ---------- Two-step login (admins) ----------
+
+const challengeTokenRule = () =>
+  body("challengeToken")
+    .isString()
+    .withMessage("Enter your email and password again")
+    .isLength({ min: 1, max: 2048 })
+    .withMessage("Enter your email and password again");
+
+const totpCodeRule = (field: string) =>
+  body(field)
+    .customSanitizer((value) => (typeof value === "string" ? value.replace(/\s+/g, "") : value))
+    .matches(/^\d{6}$/)
+    .withMessage("Enter the 6-digit code from your authenticator app");
+
+const rememberDeviceRule = () =>
+  body("rememberDevice").optional().isBoolean({ strict: true }).withMessage("rememberDevice must be true or false");
+
+/** An authenticator code, or a backup code instead */
+const twoFactorVerifyValidator: (ValidationChain | RequestHandler)[] = [
+  challengeTokenRule(),
+  oneOf(
+    [
+      totpCodeRule("code"),
+      body("backupCode")
+        .isString()
+        .customSanitizer((value) => (typeof value === "string" ? value.toUpperCase().replace(/[^0-9A-Z]/g, "") : value))
+        .isLength({ min: 10, max: 10 }),
+    ],
+    { message: "Enter the 6-digit code from your app, or a backup code" },
+  ),
+  rememberDeviceRule(),
+  handleValidationErrors,
+];
+
+const twoFactorSetupValidator: (ValidationChain | RequestHandler)[] = [challengeTokenRule(), handleValidationErrors];
+
+const twoFactorEnableValidator: (ValidationChain | RequestHandler)[] = [
+  challengeTokenRule(),
+  totpCodeRule("code"),
+  rememberDeviceRule(),
+  handleValidationErrors,
+];
+
+/** Signed-in admin confirms with a current code */
+const twoFactorCodeValidator: (ValidationChain | RequestHandler)[] = [totpCodeRule("code"), handleValidationErrors];
+
+/** Moving to a new phone: the current app's code, then the new app's */
+const twoFactorReplaceValidator: (ValidationChain | RequestHandler)[] = [
+  oneOf([totpCodeRule("code"), totpCodeRule("newCode")], {
+    message: "Enter the 6-digit code from your authenticator app",
+  }),
   handleValidationErrors,
 ];
 
@@ -754,6 +810,11 @@ export {
   registerValidator,
   loginValidator,
   googleAuthValidator,
+  twoFactorVerifyValidator,
+  twoFactorSetupValidator,
+  twoFactorEnableValidator,
+  twoFactorCodeValidator,
+  twoFactorReplaceValidator,
   forgotPasswordValidator,
   verifyResetOtpValidator,
   resetPasswordValidator,

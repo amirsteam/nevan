@@ -5,6 +5,7 @@ import { cache } from '../utils/cache';
 // Deterministic secrets for tests (never read from a developer's .env)
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test-access-secret';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret';
+process.env.TWO_FACTOR_KEY = process.env.TWO_FACTOR_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.ESEWA_MERCHANT_CODE = process.env.ESEWA_MERCHANT_CODE || 'EPAYTEST';
 process.env.ESEWA_SECRET_KEY = process.env.ESEWA_SECRET_KEY || 'test-esewa-secret';
 process.env.BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';

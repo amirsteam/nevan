@@ -14,7 +14,7 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { Redis } from "ioredis";
 import { RateLimiterMemory } from "rate-limiter-flexible";
 import mongoose from "mongoose";
-import { verifyAccessToken, verifyGuestToken } from "../utils/tokenUtils";
+import { missingTwoFactor, SIGN_IN_WITH_TWO_FACTOR, verifyAccessToken, verifyGuestToken } from "../utils/tokenUtils";
 import { sendEmail } from "../utils/email";
 import { getFrontendUrl } from "../utils/helpers";
 import User from "../models/User";
@@ -296,6 +296,7 @@ export const initializeSocket = (httpServer: HttpServer): Server => {
                 if (!user || !user.isActive) {
                     return next(new Error("User not found or inactive"));
                 }
+                if (missingTwoFactor(user, decoded)) return next(new Error(SIGN_IN_WITH_TWO_FACTOR));
                 authSocket.userId = user._id.toString();
                 authSocket.userRole = user.role as "customer" | "admin";
                 authSocket.isGuest = false;

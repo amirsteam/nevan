@@ -55,6 +55,11 @@ const renderHeader = (authValue = {}) => {
     loginWithGoogle: vi.fn(),
     register: vi.fn(),
     updateUser: vi.fn(),
+    twoFactorChallenge: null,
+    cancelTwoFactor: vi.fn(),
+    verifyTwoFactor: vi.fn(),
+    startTwoFactorSetup: vi.fn(),
+    enableTwoFactor: vi.fn(),
     ...authValue
   };
 

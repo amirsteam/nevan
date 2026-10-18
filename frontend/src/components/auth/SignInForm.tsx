@@ -60,6 +60,8 @@ const SignInForm = ({ onSuccess, initialEmail = "", submitLabel = "Sign in", onL
 
     if (result.success) {
       onSuccess();
+    } else if (result.twoFactor) {
+      // Admin: the page shows the authenticator step next
     } else {
       setFormError(result.error || "Couldn't sign you in. Please try again.");
       passwordRef.current?.select();
